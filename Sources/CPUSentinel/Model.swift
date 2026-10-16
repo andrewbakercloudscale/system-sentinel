@@ -29,7 +29,8 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
     override init() {
         sentinel = Sentinel(
             policies: PolicyStore(fileURL: Model.supportDir.appendingPathComponent("policies.json")),
-            history: History(fileURL: Model.supportDir.appendingPathComponent("history.jsonl")))
+            history: History(fileURL: Model.supportDir.appendingPathComponent("history.jsonl")),
+            dailyUsage: DailyUsage(fileURL: Model.supportDir.appendingPathComponent("usage-24h.json")))
         super.init()
         sentinel.detector.threshold = threshold
         sentinel.detector.window = windowSeconds
@@ -91,6 +92,35 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
                 self.flagged.remove(s.pid)
                 self.tick()
             }
+        }
+    }
+
+    /// The deliberate override for a protected process: the admin password prompt.
+    func killProtected(_ s: ProcessSample) {
+        Task.detached {
+            let outcome = Killer.killProtectedAsAdmin(s)
+            await MainActor.run {
+                let ok = outcome == .terminated || outcome == .alreadyGone
+                self.sentinel.history.record(ok ? .killed : .killFailed, s, detail: "as admin: \(outcome)")
+                self.lastAction = "\(s.displayName): \(Self.describe(outcome))"
+                self.tick()
+            }
+        }
+    }
+
+    /// Opens Terminal with the sudo kill typed and run, so the password goes to sudo itself.
+    func openSudoShell(_ s: ProcessSample) {
+        let cmd = Killer.sudoCommand(for: s).replacingOccurrences(of: "\"", with: "\\\"")
+        let source = "tell application \"Terminal\"\nactivate\ndo script \"\(cmd)\"\nend tell"
+        var error: NSDictionary?
+        NSAppleScript(source: source)?.executeAndReturnError(&error)
+        if let error {
+            let code = error[NSAppleScript.errorNumber] as? Int
+            lastError = code == -1743
+                ? "Allow CPU Sentinel to control Terminal in System Settings > Privacy & Security > Automation."
+                : "Could not open Terminal: \(error[NSAppleScript.errorMessage] ?? error)"
+        } else {
+            lastAction = "Terminal: \(Killer.sudoCommand(for: s))"
         }
     }
 

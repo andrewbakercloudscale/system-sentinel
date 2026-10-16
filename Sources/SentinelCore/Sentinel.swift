@@ -17,6 +17,7 @@ public final class Sentinel {
     public let history: History
     public let limiter: RateLimiter
     public let cpuHistory: CPUHistory
+    public let dailyUsage: DailyUsage
     public private(set) var latest: [ProcessSample] = []
 
     private let sampler: () throws -> [ProcessSample]
@@ -28,6 +29,7 @@ public final class Sentinel {
         history: History,
         limiter: RateLimiter = RateLimiter(),
         cpuHistory: CPUHistory = CPUHistory(),
+        dailyUsage: DailyUsage = DailyUsage(fileURL: nil),
         sampler: @escaping () throws -> [ProcessSample] = ProcessSampler.sample,
         killer: @escaping (ProcessSample) -> KillOutcome = { Killer.kill($0) }
     ) {
@@ -36,6 +38,7 @@ public final class Sentinel {
         self.history = history
         self.limiter = limiter
         self.cpuHistory = cpuHistory
+        self.dailyUsage = dailyUsage
         self.sampler = sampler
         self.killer = killer
     }
@@ -52,6 +55,7 @@ public final class Sentinel {
     public func tick(at now: Date = Date()) throws -> [SentinelEvent] {
         latest = try sampler()
         cpuHistory.record(latest, at: now)
+        dailyUsage.record(latest, at: now)
         var events: [SentinelEvent] = []
         for actor in detector.update(latest, at: now) {
             let s = actor.sample

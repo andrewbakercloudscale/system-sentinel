@@ -21,6 +21,8 @@
     <!-- Menu bar only: no Dock icon, no app menu. -->
     <key>LSUIElement</key>
     <true/>
+    <key>NSAppleEventsUsageDescription</key>
+    <string>CPU Sentinel opens a Terminal sudo shell and lists and closes Chrome tabs you choose.</string>
     <key>NSHumanReadableCopyright</key>
     <string>CloudScale Consulting</string>
 </dict>

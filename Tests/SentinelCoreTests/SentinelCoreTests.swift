@@ -257,6 +257,54 @@ final class HistoryWindowTests: XCTestCase {
     }
 }
 
+final class DailyUsageTests: XCTestCase {
+    let t0 = Date(timeIntervalSince1970: 36_000 * 100)  // on an hour boundary
+
+    func testCoreSecondsAddUpByPathAcrossPids() {
+        let u = DailyUsage(fileURL: nil)
+        u.record([], at: t0)
+        // Two renderers of one binary at 50% each for one minute, then a restart under a new pid.
+        for i in 1...12 {
+            u.record([ProcessSample(pid: 10, uid: 501, cpu: 50, path: "/r"), ProcessSample(pid: 11, uid: 501, cpu: 50, path: "/r"),
+                      ProcessSample(pid: i < 7 ? 20 : 21, uid: 501, cpu: 25, path: "/w")], at: t0 + Double(i) * 5)
+        }
+        let rows = u.summaries(at: t0 + 60)
+        XCTAssertEqual(rows.map(\.key), ["/r", "/w"])
+        XCTAssertEqual(rows[0].coreSeconds, 60, accuracy: 0.01)
+        XCTAssertEqual(rows[0].average, 100, accuracy: 0.01)
+        XCTAssertEqual(rows[1].average, 25, accuracy: 0.01)
+        XCTAssertEqual(rows[0].peak, 50)
+        XCTAssertEqual(rows[0].hourly.count, 24)
+        XCTAssertEqual(rows[0].hourly.last!, 100, accuracy: 0.01)
+    }
+
+    func testSleepGapIsNotCountedAndOldHoursAgeOut() {
+        let u = DailyUsage(fileURL: nil)
+        u.record([], at: t0)
+        u.record([ProcessSample(pid: 1, uid: 501, cpu: 100, path: "/a")], at: t0 + 5)
+        // Asleep for two hours: the step is capped.
+        u.record([ProcessSample(pid: 1, uid: 501, cpu: 100, path: "/a")], at: t0 + 7205)
+        XCTAssertEqual(u.sampled(at: t0 + 7205), 20, accuracy: 0.01)
+        u.record([ProcessSample(pid: 1, uid: 501, cpu: 0, path: "/a")], at: t0 + 27 * 3600)
+        XCTAssertTrue(u.summaries(at: t0 + 27 * 3600).isEmpty, "a day old usage is gone")
+    }
+
+    func testGroupingAndPersistence() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("usage-\(UUID()).json")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let u = DailyUsage(fileURL: url)
+        u.record([], at: t0)
+        u.record([ProcessSample(pid: 1, uid: 501, cpu: 40, path: "/A.app/Contents/MacOS/A"),
+                  ProcessSample(pid: 2, uid: 501, cpu: 60, path: "/A.app/Contents/Helpers/H.app/Contents/MacOS/H")], at: t0 + 5)
+        u.save()
+        let back = DailyUsage(fileURL: url)
+        let rows = back.summaries(at: t0 + 5, group: { AppIdentity.groupKey(of: $0) }, name: { AppIdentity.appName(of: $0) })
+        XCTAssertEqual(rows.count, 1)
+        XCTAssertEqual(rows[0].name, "A")
+        XCTAssertEqual(rows[0].coreSeconds, 5, accuracy: 0.01)
+    }
+}
+
 final class AppIdentityTests: XCTestCase {
     func testOutermostBundle() {
         let r = "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/1/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)"

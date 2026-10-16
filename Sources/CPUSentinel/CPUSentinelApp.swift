@@ -1,3 +1,4 @@
+import AppKit
 import SentinelCore
 import SwiftUI
 
@@ -9,9 +10,9 @@ struct CPUSentinelApp: App {
         MenuBarExtra {
             MenuView(model: model)
         } label: {
-            Image(systemName: icon)
-                .symbolRenderingMode(.palette)
-                .foregroundStyle(color)
+            // The menu bar draws SwiftUI images as monochrome templates, so the colour has to
+            // be baked into a non-template NSImage.
+            Image(nsImage: menuIcon)
         }
         .menuBarExtraStyle(.window)
     }
@@ -24,12 +25,21 @@ struct CPUSentinelApp: App {
         }
     }
 
-    private var color: Color {
+    private var color: NSColor {
         switch model.level {
-        case .normal: return .primary
-        case .busy: return .orange
-        case .alert: return .red
+        case .normal: return .systemGreen
+        case .busy: return .systemOrange
+        case .alert: return .systemRed
         }
+    }
+
+    private var menuIcon: NSImage {
+        let config = NSImage.SymbolConfiguration(pointSize: 15, weight: .semibold)
+            .applying(NSImage.SymbolConfiguration(paletteColors: [color]))
+        let img = NSImage(systemSymbolName: icon, accessibilityDescription: "CPU Sentinel")?
+            .withSymbolConfiguration(config) ?? NSImage()
+        img.isTemplate = false
+        return img
     }
 }
 
@@ -47,6 +57,7 @@ struct MenuView: View {
             }
             Picker("", selection: $tab) {
                 Text("Processes").tag(0)
+                Text("24 h").tag(4)
                 Text("Rules").tag(1)
                 Text("History").tag(2)
                 Text("Settings").tag(3)
@@ -58,6 +69,7 @@ struct MenuView: View {
             case 0: ProcessList(model: model)
             case 1: RulesView(model: model)
             case 2: HistoryView(model: model)
+            case 4: DailyView(model: model)
             default: SettingsView(model: model)
             }
 
@@ -70,11 +82,18 @@ struct MenuView: View {
             Divider()
             HStack {
                 Spacer()
-                Button("Quit") { NSApplication.shared.terminate(nil) }
+                Button {
+                    model.sentinel.dailyUsage.save()
+                    NSApplication.shared.terminate(nil)
+                } label: {
+                    Label("Quit", systemImage: "power")
+                }
+                .buttonStyle(.bordered)
+                .tint(.secondary)
             }
         }
         .padding(12)
-        .frame(width: 440)
+        .frame(width: 580)
     }
 }
 
@@ -108,13 +127,14 @@ struct ProcessList: View {
                         Image(systemName: "slider.horizontal.3")
                     }
                     .menuStyle(.borderlessButton)
+                    .tint(.blue)
+                    .foregroundStyle(.blue)
                     .frame(width: 22)
                     .help("Rule for this process")
                     if Safety.canKillManually(s) {
-                        Button("Kill") { model.kill(s) }
-                            .help(s.isRoot ? "Runs as root: asks for your password" : "Stop politely, force after 5 s")
+                        KillButton(isRoot: s.isRoot) { model.kill(s) }
                     } else {
-                        Text("protected").font(.caption2).foregroundStyle(.secondary).frame(width: 52)
+                        SudoButton(model: model, sample: s)
                     }
                 }
             }
@@ -165,6 +185,8 @@ struct RulesView: View {
                         model.sentinel.policies.set(.alert, for: path)
                         model.objectWillChange.send()
                     }
+                    .buttonStyle(.bordered)
+                    .tint(.red)
                 }
             }
         }
@@ -212,5 +234,159 @@ struct SettingsView: View {
             Text("Protected and never killable: WindowServer, kernel_task, launchd, loginwindow, Finder, Dock and other core macOS processes. Root processes can be killed by hand (asks for your password), never automatically. Auto-kill stops after 3 kills of the same app in an hour.")
                 .font(.caption2).foregroundStyle(.secondary)
         }
+    }
+}
+
+/// Red for a normal kill, orange for a root kill (asks for the password).
+struct KillButton: View {
+    let isRoot: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Label("Kill", systemImage: isRoot ? "lock.fill" : "xmark.octagon.fill")
+                .font(.callout.weight(.semibold))
+        }
+        .buttonStyle(.borderedProminent)
+        .tint(isRoot ? .orange : .red)
+        .frame(width: 72, alignment: .trailing)
+        .help(isRoot ? "Runs as root: asks for your password" : "Stop politely, force after 5 s")
+    }
+}
+
+/// A protected process: a red-outlined sudo button that says what killing it will do,
+/// then offers a Terminal sudo shell, the admin password prompt, or the command to copy.
+struct SudoButton: View {
+    @ObservedObject var model: Model
+    let sample: ProcessSample
+
+    var body: some View {
+        Button(action: confirm) {
+            Label("sudo", systemImage: "terminal.fill").font(.callout.weight(.semibold))
+        }
+        .buttonStyle(.bordered)
+        .tint(.red)
+        .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.red, lineWidth: 1))
+        .frame(width: 72, alignment: .trailing)
+        .help("Protected macOS process: kill it as admin")
+    }
+
+    private func confirm() {
+        let alert = NSAlert()
+        alert.alertStyle = .critical
+        alert.messageText = "Kill \(sample.name) (pid \(sample.pid)) as admin?"
+        alert.informativeText = Self.consequence(of: sample.name)
+            + "\n\nCommand:\n\(Killer.sudoCommand(for: sample))"
+        alert.addButton(withTitle: "Open sudo shell")
+        alert.addButton(withTitle: "Kill with password")
+        alert.addButton(withTitle: "Copy command")
+        alert.addButton(withTitle: "Cancel")
+        alert.buttons[1].hasDestructiveAction = true
+        NSApp.activate(ignoringOtherApps: true)
+        switch alert.runModal() {
+        case .alertFirstButtonReturn: model.openSudoShell(sample)
+        case .alertSecondButtonReturn: model.killProtected(sample)
+        case .alertThirdButtonReturn:
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(Killer.sudoCommand(for: sample), forType: .string)
+            model.lastAction = "Copied: \(Killer.sudoCommand(for: sample))"
+        default: break
+        }
+    }
+
+    static func consequence(of name: String) -> String {
+        switch name {
+        case "WindowServer": return "WindowServer draws the whole screen. Killing it logs you out immediately and every unsaved document is lost."
+        case "loginwindow": return "Killing loginwindow logs you out immediately."
+        case "kernel_task": return "kernel_task is the kernel. It cannot be killed; high CPU here is macOS throttling for heat."
+        case "Finder", "Dock", "SystemUIServer": return "\(name) restarts by itself within seconds. Usually harmless."
+        case "coreaudiod": return "Sound stops briefly while coreaudiod restarts."
+        default: return "\(name) is a core macOS process. launchd normally restarts it, but the Mac may misbehave until it does."
+        }
+    }
+}
+
+/// Heat colour for a CPU percentage: green, yellow, orange, red.
+func heat(_ cpu: Double) -> Color {
+    cpu < 10 ? .green : cpu < 40 ? .yellow : cpu < 80 ? .orange : .red
+}
+
+/// The heaviest CPU users over the last 24 hours, from `DailyUsage`.
+struct DailyView: View {
+    @ObservedObject var model: Model
+    @AppStorage("dailyByApp") private var byApp = true
+
+    var body: some View {
+        let now = Date()
+        let usage = model.sentinel.dailyUsage
+        let rows = Array(usage.summaries(
+            at: now,
+            group: byApp ? { AppIdentity.groupKey(of: $0) } : nil,
+            name: byApp ? { key in
+                AppIdentity.bundlePath(of: key) != nil ? AppIdentity.appName(of: key) : (key as NSString).lastPathComponent
+            } : nil).prefix(12))
+        let maxSeconds = rows.first?.coreSeconds ?? 1
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("Top CPU, last 24 hours").font(.subheadline.weight(.semibold))
+                Spacer()
+                Toggle("By app", isOn: $byApp).toggleStyle(.switch).controlSize(.mini)
+            }
+            HourBars(values: usage.totalHourly(at: now), height: 28)
+            Text("\(Model.duration(usage.sampled(at: now))) recorded. Average is over the time CPU Sentinel was running.")
+                .font(.caption2).foregroundStyle(.secondary)
+            if rows.isEmpty {
+                Text("Nothing recorded yet. Usage builds up while CPU Sentinel runs.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            HStack {
+                Text("Process").frame(maxWidth: .infinity, alignment: .leading)
+                Text("by hour").frame(width: 96)
+                Text("avg").frame(width: 44, alignment: .trailing)
+                Text("peak").frame(width: 44, alignment: .trailing)
+                Text("CPU time").frame(width: 64, alignment: .trailing)
+            }
+            .font(.caption2).foregroundStyle(.secondary)
+            ForEach(Array(rows.enumerated()), id: \.element.key) { i, r in
+                HStack(spacing: 8) {
+                    Text("\(i + 1)").font(.caption.monospacedDigit()).foregroundStyle(.secondary).frame(width: 16)
+                    IconView(icon: IconCache.shared.icon(for: ProcessSample(pid: 0, uid: 501, cpu: 0, path: r.key)), size: 22)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(r.name).lineLimit(1).truncationMode(.middle)
+                        GeometryReader { g in
+                            Capsule().fill(heat(r.average).gradient)
+                                .frame(width: max(3, g.size.width * r.coreSeconds / maxSeconds))
+                        }
+                        .frame(height: 4)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    HourBars(values: r.hourly, height: 18).frame(width: 96)
+                    Text(String(format: "%.1f%%", r.average)).foregroundStyle(heat(r.average)).frame(width: 44, alignment: .trailing)
+                    Text(String(format: "%.0f%%", r.peak)).foregroundStyle(heat(r.peak)).frame(width: 44, alignment: .trailing)
+                    Text(Model.duration(r.coreSeconds)).frame(width: 64, alignment: .trailing)
+                        .help("Core time: 100% for one minute is 1m")
+                }
+                .font(.callout.monospacedDigit())
+            }
+        }
+    }
+}
+
+/// 24 hourly bars, oldest on the left, each coloured by its heat.
+struct HourBars: View {
+    let values: [Double]
+    let height: CGFloat
+
+    var body: some View {
+        let top = max(values.max() ?? 0, 1)
+        HStack(alignment: .bottom, spacing: 1) {
+            ForEach(Array(values.enumerated()), id: \.offset) { _, v in
+                RoundedRectangle(cornerRadius: 1)
+                    .fill(v > 0 ? heat(v) : Color.gray.opacity(0.2))
+                    .frame(height: max(1, height * v / top))
+                    .frame(maxWidth: .infinity)
+            }
+        }
+        .frame(height: height, alignment: .bottom)
     }
 }
