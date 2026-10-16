@@ -61,7 +61,7 @@ not a promise.
 ## Technical approach
 
 - **Swift 6, SwiftUI `MenuBarExtra`**, macOS 14+. No Dock icon (`LSUIElement`).
-- **Sampling every 5 s** via `ps` (see below for why not `libproc`)
+- **Sampling every 5 s** via `ps`
   at about 30 ms a run. `proc_pid_rusage` was the plan and returns EPERM for every root
   process; `ps` holds a private entitlement an ad-hoc app cannot. Cost: under 1% CPU.
 - **Notifications:** `UserNotifications` with action buttons.
