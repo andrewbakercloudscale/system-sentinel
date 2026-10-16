@@ -105,6 +105,16 @@ extension ProcessSampler {
         guard tv.tv_sec > 0 else { return nil }
         return Date(timeIntervalSince1970: Double(tv.tv_sec) + Double(tv.tv_usec) / 1_000_000)
     }
+
+    /// The pid that started this one, so "screencapture" can be traced to the app running it.
+    public static func parentPID(of pid: Int32) -> Int32? {
+        var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, pid]
+        var info = kinfo_proc()
+        var size = MemoryLayout<kinfo_proc>.stride
+        guard sysctl(&mib, 4, &info, &size, nil, 0) == 0, size > 0 else { return nil }
+        let ppid = info.kp_eproc.e_ppid
+        return ppid > 0 ? ppid : nil
+    }
 }
 
 public enum SamplerError: Error, Equatable {

@@ -1,3 +1,4 @@
+import AppKit
 import Charts
 import SentinelCore
 import SwiftUI
@@ -13,7 +14,7 @@ struct OverviewView: View {
                 NowDonut(model: model).frame(width: 290)
                 LastHourChart(model: model)
             }
-            InsightList(insights: model.insights)
+            InsightList(model: model)
         }
     }
 }
@@ -283,40 +284,169 @@ struct FlowLayout: Layout {
 
 /// The plain-English findings, most urgent first.
 private struct InsightList: View {
-    let insights: [Insight]
+    @ObservedObject var model: Model
+    /// Which insights are open. Kept by id, since the list is rebuilt every 5 seconds.
+    @State private var open: Set<String> = []
+    /// Snapshots show every insight open, to review the full text.
+    private let expandAll = Model.snapshotDir != nil
 
     var body: some View {
         Card(title: "Insights", symbol: "sparkles", tint: Tab.trends.color) {
-            if insights.isEmpty {
+            if model.insights.isEmpty {
                 Text("Nothing to report yet. Insights appear as CPU Sentinel learns this Mac's patterns.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             VStack(spacing: 8) {
-                ForEach(insights) { i in
-                    HStack(alignment: .top, spacing: 10) {
-                        SymbolTile(symbol: i.symbol, color: color(i.tone))
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(i.title).font(.callout.weight(.semibold)).fixedSize(horizontal: false, vertical: true)
-                            Text(i.detail).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                        }
-                        Spacer(minLength: 0)
-                    }
-                    .padding(8)
-                    .background(RoundedRectangle(cornerRadius: 9).fill(color(i.tone).opacity(0.07)))
-                    .overlay(alignment: .leading) {
-                        UnevenRoundedRectangle(topLeadingRadius: 9, bottomLeadingRadius: 9).fill(color(i.tone)).frame(width: 3)
-                    }
+                ForEach(model.insights) { i in
+                    InsightCard(model: model, insight: i, expanded: Binding(
+                        get: { expandAll || open.contains(i.id) },
+                        set: { if $0 { open.insert(i.id) } else { open.remove(i.id) } }))
                 }
             }
         }
     }
+}
 
-    private func color(_ t: Insight.Tone) -> Color {
-        switch t {
-        case .good: return Theme.heat(0)
-        case .info: return Color(light: "#2563eb", dark: "#60a5fa")
-        case .warning: return Theme.heat(50)
-        case .critical: return Theme.heat(100)
+func toneColor(_ t: Insight.Tone) -> Color {
+    switch t {
+    case .good: return Theme.heat(0)
+    case .info: return Color(light: "#2563eb", dark: "#60a5fa")
+    case .warning: return Theme.heat(50)
+    case .critical: return Theme.heat(100)
+    }
+}
+
+/// One finding: headline and summary, opening to the full story, every process involved
+/// (what it is, who started it, buttons to act on it) and the steps to fix it.
+private struct InsightCard: View {
+    @ObservedObject var model: Model
+    let insight: Insight
+    @Binding var expanded: Bool
+
+    var body: some View {
+        let i = insight
+        let color = toneColor(i.tone)
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 10) {
+                SymbolTile(symbol: i.symbol, color: color)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(i.title).font(.callout.weight(.semibold)).fixedSize(horizontal: false, vertical: true)
+                    Text(i.detail).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
+                if i.expandable {
+                    Button { withAnimation(.easeInOut(duration: 0.15)) { expanded.toggle() } } label: {
+                        Label(expanded ? "Less" : "More", systemImage: expanded ? "chevron.up" : "chevron.down")
+                            .font(.caption.weight(.semibold)).foregroundStyle(color)
+                            .padding(.horizontal, 8).padding(.vertical, 4)
+                            .background(Capsule().fill(color.opacity(0.12)))
+                            .contentShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .help("What this means and what to do")
+                }
+            }
+            .contentShape(Rectangle())
+            .onTapGesture { if i.expandable { withAnimation(.easeInOut(duration: 0.15)) { expanded.toggle() } } }
+
+            if expanded {
+                if let why = i.why {
+                    Section("What is happening") {
+                        Text(why).font(.caption).fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                if !i.related.isEmpty {
+                    Section(i.related.count == 1 ? "The process" : "The processes involved") {
+                        VStack(spacing: 6) {
+                            ForEach(i.related) { r in RelatedRow(model: model, related: r) }
+                        }
+                    }
+                }
+                if !i.steps.isEmpty {
+                    Section("What to do") {
+                        VStack(alignment: .leading, spacing: 5) {
+                            ForEach(Array(i.steps.enumerated()), id: \.offset) { n, step in
+                                HStack(alignment: .top, spacing: 8) {
+                                    Text("\(n + 1)").font(.caption2.weight(.bold)).foregroundStyle(.white)
+                                        .frame(width: 16, height: 16).background(Circle().fill(color))
+                                    Text(step).font(.caption).fixedSize(horizontal: false, vertical: true)
+                                }
+                            }
+                        }
+                    }
+                }
+                ExplainButton { model.explain(i) }
+            }
         }
+        .padding(10)
+        .background(RoundedRectangle(cornerRadius: 9).fill(color.opacity(0.07)))
+        .overlay(alignment: .leading) {
+            UnevenRoundedRectangle(topLeadingRadius: 9, bottomLeadingRadius: 9).fill(color).frame(width: 3)
+        }
+    }
+
+    private struct Section<Content: View>: View {
+        let title: String
+        @ViewBuilder var content: Content
+        init(_ title: String, @ViewBuilder content: () -> Content) {
+            self.title = title
+            self.content = content()
+        }
+        var body: some View {
+            VStack(alignment: .leading, spacing: 5) {
+                Text(title.uppercased()).font(.system(size: 9, weight: .bold)).foregroundStyle(.secondary).kerning(0.5)
+                content
+            }
+            .padding(.leading, 36)
+        }
+    }
+}
+
+/// A process inside an insight: what it is, who started it, its CPU, and what to do with it.
+private struct RelatedRow: View {
+    @ObservedObject var model: Model
+    let related: Insight.Related
+
+    var body: some View {
+        let s = related.sample
+        HStack(alignment: .top, spacing: 8) {
+            IconView(icon: IconCache.shared.icon(for: s), size: 24)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text(s.displayName).font(.caption.weight(.semibold))
+                    Text(Fmt.pct(s.cpu)).font(.caption2.weight(.bold)).monospacedDigit().foregroundStyle(.white)
+                        .padding(.horizontal, 5).padding(.vertical, 1)
+                        .background(Capsule().fill(Theme.heat(s.cpu)))
+                    if s.isRoot { Pill(text: "root", color: Tab.settings.color) }
+                }
+                if let about = related.about {
+                    Text(about).font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }
+                if let parent = related.parent {
+                    Label("started by \(parent)", systemImage: "arrow.turn.down.right")
+                        .font(.caption2).foregroundStyle(.tertiary)
+                }
+            }
+            Spacer(minLength: 4)
+            Button { model.explain(s) } label: {
+                Image(systemName: "sparkles").foregroundStyle(Tab.trends.color)
+            }
+            .buttonStyle(.plain)
+            .help("Explain \(s.name) with ChatGPT")
+            if let app = NSRunningApplication(processIdentifier: s.pid), app.bundleURL != nil, app.activationPolicy == .regular {
+                Button { app.activate() } label: { Image(systemName: "eye.fill").foregroundStyle(Tab.processes.color) }
+                    .buttonStyle(.plain)
+                    .help("Bring \(s.name) to the front")
+            }
+            if s.pid == getpid() {
+                EmptyView()
+            } else if Safety.canKillManually(s) {
+                KillButton(isRoot: s.isRoot) { model.kill(s) }
+            } else {
+                SudoButton(model: model, sample: s)
+            }
+        }
+        .padding(6)
+        .background(RoundedRectangle(cornerRadius: 7).fill(Color.primary.opacity(0.035)))
     }
 }

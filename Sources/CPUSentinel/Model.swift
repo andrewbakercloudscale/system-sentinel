@@ -96,6 +96,48 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
         lastAction = "Opened ChatGPT about \(s.displayName)"
     }
 
+    /// ChatGPT about an insight: the finding, the processes involved, and this Mac.
+    func explain(_ insight: Insight) {
+        let procs = insight.related.map { r in
+            "- \(r.sample.name) (pid \(r.sample.pid)): \(Int(r.sample.cpu))% CPU now, 15 min average \(Int(average(r.sample, 900)))%\(r.parent.map { ", started by \($0)" } ?? ""), path \(r.sample.path)"
+        }.joined(separator: "\n")
+        let prompt = """
+        My Mac's CPU monitor reports: "\(insight.title). \(insight.detail)"
+        Explain in plain terms what is going on, how to confirm the cause, and step by step how to fix or reduce it on macOS. Say what is safe to stop.
+
+        Processes involved:
+        \(procs.isEmpty ? "(none listed)" : procs)
+
+        \(machineSummary())
+        """
+        open(prompt)
+        lastAction = "Opened ChatGPT about: \(insight.title)"
+    }
+
+    private func open(_ prompt: String) {
+        guard var c = URLComponents(string: "https://chatgpt.com/") else { return }
+        c.queryItems = [URLQueryItem(name: "q", value: prompt)]
+        if let url = c.url { NSWorkspace.shared.open(url) }
+    }
+
+    private func machineSummary() -> String {
+        var hw = [CChar](repeating: 0, count: 64)
+        var size = hw.count
+        sysctlbyname("hw.model", &hw, &size, nil, 0)
+        let displays = NSScreen.screens.map { screen -> String in
+            let px = screen.convertRectToBacking(screen.frame).size
+            return "\(Int(px.width))x\(Int(px.height)) @ \(screen.maximumFramesPerSecond) Hz"
+        }
+        let others = sentinel.latest.filter { $0.cpu >= 3 }.sorted { $0.cpu > $1.cpu }.prefix(10)
+            .map { "\($0.name) \(Int($0.cpu))%" }.joined(separator: ", ")
+        return """
+        Mac: \(String(cString: hw)), \(Int(cores)) cores, macOS \(ProcessInfo.processInfo.operatingSystemVersionString)
+        Thermal state: \(["nominal", "fair", "serious", "critical"][min(ProcessInfo.processInfo.thermalState.rawValue, 3)])
+        Displays: \(displays.joined(separator: "; "))
+        Busiest processes right now: \(others.isEmpty ? "none" : others)
+        """
+    }
+
     func explainPrompt(_ s: ProcessSample) -> String {
         let os = ProcessInfo.processInfo.operatingSystemVersionString
         var hw = [CChar](repeating: 0, count: 64)
@@ -167,7 +209,19 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
             hourStarts: DailyUsage.hourStarts(at: now, hours: 24).map { Date(timeIntervalSince1970: Double($0)) },
             events: sentinel.history.entries,
             thermal: ProcessInfo.processInfo.thermalState.rawValue,
-            lowPower: ProcessInfo.processInfo.isLowPowerModeEnabled)
+            lowPower: ProcessInfo.processInfo.isLowPowerModeEnabled,
+            parents: parentNames())
+    }
+
+    /// Who started each busy process: "screencapture, started by claude".
+    private func parentNames() -> [Int32: String] {
+        let names = Dictionary(sentinel.latest.map { ($0.pid, $0.displayName) }, uniquingKeysWith: { a, _ in a })
+        var out: [Int32: String] = [:]
+        for s in sentinel.latest where s.cpu >= 0.5 {
+            guard let pp = ProcessSampler.parentPID(of: s.pid), pp > 1, let n = names[pp] else { continue }
+            out[s.pid] = "\(n) (pid \(pp))"
+        }
+        return out
     }
 
     func hotFor(_ s: ProcessSample) -> String? {

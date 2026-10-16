@@ -330,6 +330,10 @@ final class InsightsTests: XCTestCase {
         let ws = out.first { $0.id == "ws-capture" }
         XCTAssertNotNil(ws)
         XCTAssertTrue(ws!.detail.contains("SkyComputerUseService"))
+        XCTAssertNotNil(ws!.why)
+        XCTAssertFalse(ws!.steps.isEmpty)
+        XCTAssertEqual(ws!.related.map(\.sample.name), ["WindowServer", "SkyComputerUseService"])
+        XCTAssertNotNil(ws!.related[1].about)
     }
 
     func testHeatComesFirstAndQuietIsGood() {

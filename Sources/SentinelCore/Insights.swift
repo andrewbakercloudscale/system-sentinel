@@ -154,6 +154,21 @@ public struct Insight: Equatable, Sendable, Identifiable {
     public let symbol: String
     public let title: String
     public let detail: String
+    /// The longer explanation shown when the insight is expanded.
+    public var why: String?
+    /// What to do, in order.
+    public var steps: [String] = []
+    /// The processes involved, each with what it is and who started it.
+    public var related: [Related] = []
+
+    public struct Related: Equatable, Sendable, Identifiable {
+        public let sample: ProcessSample
+        public let about: String?
+        public let parent: String?
+        public var id: Int32 { sample.pid }
+    }
+
+    public var expandable: Bool { why != nil || !steps.isEmpty || !related.isEmpty }
 
     public init(id: String, tone: Tone, symbol: String, title: String, detail: String) {
         self.id = id
@@ -187,10 +202,13 @@ public struct InsightInput: Sendable {
     /// ProcessInfo.ThermalState raw value: 0 nominal, 1 fair, 2 serious, 3 critical.
     public var thermal: Int
     public var lowPower: Bool
+    /// pid to the name of the process that started it, for the busy ones.
+    public var parents: [Int32: String] = [:]
 
     public init(cores: Double, samples: [ProcessSample], total1m: Double, total15m: Double, total60m: Double,
                 avg15m: [Int32: Double], recordedMinutes: Double, daily: [DailyUsage.Summary], dailySampled: TimeInterval,
-                totalHourly: [Double], hourStarts: [Date], events: [HistoryEntry], thermal: Int, lowPower: Bool) {
+                totalHourly: [Double], hourStarts: [Date], events: [HistoryEntry], thermal: Int, lowPower: Bool, parents: [Int32: String] = [:]) {
+        self.parents = parents
         self.cores = cores
         self.samples = samples
         self.total1m = total1m
@@ -246,7 +264,7 @@ public enum Insights {
         } else if load < 10 {
             out.append(Insight(id: "quiet", tone: .good, symbol: "checkmark.seal.fill",
                                title: "All quiet",
-                               detail: "Only \(fmtCores(i.total1m)) of \(Int(cores)) in use. Nothing needs attention."))
+                               detail: String(format: "Only %.1f of %d cores in use. Nothing needs attention.", i.total1m / 100, Int(cores))))
         }
 
         // Sustained hogs: hot for the whole last 15 minutes, not a passing spike.
@@ -272,7 +290,7 @@ public enum Insights {
             guard !explained.contains("hog-\(s.pid)"), s.name != "WindowServer", let n = ProcessGuide.note(for: s.name),
                   n.verdict != .yours else { continue }
             out.append(Insight(id: "why-\(s.name)", tone: .info, symbol: "questionmark.bubble.fill",
-                               title: "\(s.name) (\(Int(s.cpu))%): \(n.headline.lowercasedFirst)",
+                               title: "\(s.name) (\(Int(s.cpu))%): \(n.headline)",
                                detail: n.detail))
             if out.filter({ $0.id.hasPrefix("why-") }).count >= 2 { break }
         }
@@ -344,7 +362,104 @@ public enum Insights {
                                detail: "It ignored the polite stop signal. Only a force kill (kill -9) would stop it\(failed.name == "WindowServer" ? ", which logs you out" : "")."))
         }
 
-        return out.sorted { $0.tone > $1.tone }
+        return out.map { enrich($0, i) }.sorted { $0.tone > $1.tone }
+    }
+
+    /// What screen-capturing processes are, in words.
+    static let captureAbout: [String: String] = [
+        "SkyComputerUseService": "An AI computer-use agent (Sky, now part of ChatGPT). It takes screenshots of your screen so the AI can see it, often several a second while it works.",
+        "Codex Computer Use": "OpenAI Codex's computer-use helper. Screenshots the screen so Codex can see and click.",
+        "replayd": "macOS's screen recording service. Busy while any app records, streams or shares the screen.",
+        "screencapture": "macOS's screenshot command. A copy that keeps reappearing means some app is taking screenshots in a loop; \"started by\" shows which.",
+        "screencaptureui": "The screenshot toolbar and recording overlay (Cmd-Shift-5).",
+        "ScreenSharingAgent": "Screen Sharing: someone is viewing or controlling this Mac.",
+        "screensharingd": "The Screen Sharing server: a remote session is connected.",
+    ]
+
+    static let captureNames = Set(captureAbout.keys)
+
+    private static func related(_ s: ProcessSample, _ i: InsightInput, about: String? = nil) -> Insight.Related {
+        Insight.Related(sample: s, about: about ?? ProcessGuide.note(for: s.name)?.headline, parent: i.parents[s.pid])
+    }
+
+    /// Adds the longer story, the processes involved and the steps to every insight.
+    static func enrich(_ insight: Insight, _ i: InsightInput) -> Insight {
+        var x = insight
+        let byCPU = i.samples.sorted { $0.cpu > $1.cpu }
+        func pid(_ prefix: String) -> Int32? { Int32(x.id.dropFirst(prefix.count)) }
+        switch x.id {
+        case "ws-capture":
+            let ws = i.samples.filter { $0.name == "WindowServer" }
+            let caps = byCPU.filter { captureNames.contains($0.name) && $0.cpu >= 0.5 }
+            x.why = "WindowServer is the part of macOS that composites every window into the image on your displays. Normally it only redraws what changes. A screen capture asks it for a complete, fresh copy of the whole screen, at full Retina resolution, every time. A recorder or an AI agent doing that several times a second keeps WindowServer working even when nothing on screen is moving, and the cost grows with the number and resolution of your displays."
+            x.related = ws.map { related($0, i, about: "Composites everything you see. Its CPU is the cost of the captures below.") }
+                + caps.map { related($0, i, about: captureAbout[$0.name]) }
+            x.steps = [
+                "Stop any screen recording: look for the stop button in the menu bar, or press Cmd-Shift-5 and stop it.",
+                "Pause or quit AI computer-use agents (ChatGPT or Codex computer use, Sky) when you are not using them. Idle, they may still screenshot.",
+                "End Screen Sharing or remote support sessions you no longer need.",
+                "Review System Settings > Privacy & Security > Screen & System Audio Recording and switch off apps that should not be capturing.",
+                "If screencapture keeps coming back, quit the app shown as \"started by\".",
+            ]
+        case "ws":
+            x.related = i.samples.filter { $0.name == "WindowServer" }.map { related($0, i) }
+            x.why = "WindowServer redraws whatever changes on any display. Its load scales with pixels times refresh rate: a 5K or scaled \"looks like\" resolution on an external display renders far more pixels than it shows, and 120 Hz doubles the work of 60 Hz. Transparency, blur, animated wallpapers, video and many visible windows all add to it."
+            x.steps = [
+                "System Settings > Accessibility > Display: turn on Reduce transparency and Reduce motion.",
+                "System Settings > Displays: use the display's native (\"Default\") resolution rather than a scaled one, and 60 Hz if you do not need 120.",
+                "Close or minimise windows playing video or animations, including browser tabs.",
+                "Disconnect a display you are not using.",
+            ]
+        case "thermal":
+            x.why = "When the chip gets too hot, macOS lowers its clock speed and parks work under kernel_task to slow everything down. Every app takes longer, which makes CPU figures look higher for the same work. It is a symptom of sustained load or poor cooling, not a fault in kernel_task."
+            x.related = byCPU.prefix(5).map { related($0, i) }
+            x.steps = [
+                "Stop or quit the heaviest processes below.",
+                "Put the Mac on a hard, flat surface; keep vents clear.",
+                "Check Trends for what has been heavy for the last hours.",
+                "If it happens at low load, have the fans and thermal paste checked.",
+            ]
+        case "lowpower":
+            x.steps = ["Turn it off in System Settings > Battery > Low Power Mode when plugged in and you need speed."]
+        case "busy", "spike":
+            x.why = "Percentages here are of the whole Mac: 100% means every core is busy. Above about 70% apps start waiting for each other and the Mac feels sluggish."
+            x.related = byCPU.prefix(5).map { related($0, i) }
+            x.steps = ["Look at the processes below; the top one or two usually account for most of it.", "Use Explain on any you do not recognise.", "Quit or kill what you do not need, or set a rule on the Processes tab."]
+        case _ where x.id.hasPrefix("hog-"):
+            if let p = pid("hog-"), let s = i.samples.first(where: { $0.pid == p }) {
+                x.related = [related(s, i)]
+                x.why = ProcessGuide.note(for: s.name)?.detail
+                    ?? "It has stayed busy for the whole window rather than spiking, which usually means a long job, a loop, or something stuck."
+                x.steps = ["Check it is doing something you expect (a build, an export, a sync).", "If not, quit it from its app, or Kill it here.", "If it does this often, set Auto-kill or Ignore on the Processes tab."]
+            }
+        case _ where x.id.hasPrefix("why-"):
+            let name = String(x.id.dropFirst(4))
+            x.related = i.samples.filter { $0.name == name }.map { related($0, i) }
+            if let n = ProcessGuide.note(for: name) {
+                switch n.verdict {
+                case .wait: x.steps = ["Leave it: this finishes on its own.", "Keeping the Mac plugged in and awake lets it finish sooner.", "If it is still busy after a day, use Explain for specific fixes."]
+                case .safe: x.steps = ["It is safe to kill; macOS restarts it when needed.", "If it comes straight back busy, use Explain for the cause."]
+                case .avoid: x.steps = ["Do not kill it; find what is making it busy instead.", "Use Explain for the usual causes."]
+                case .yours: x.steps = ["Quit it from its app if you do not need it now."]
+                }
+            }
+        case _ where x.id.hasPrefix("many-"):
+            let name = String(x.id.dropFirst(5))
+            x.related = byCPU.filter { (name == "Chrome tab" ? $0.isChromeRenderer : $0.name == name) }.prefix(6).map { related($0, i) }
+            x.why = "Each copy is small, so none stands out in a top-10 list, but they share the same cores."
+            x.steps = name == "Chrome tab"
+                ? ["Close tabs you are not using; background tabs with video, ads or live dashboards cost the most.", "Chrome's Window > Task Manager shows which tab is which process."]
+                : ["Close the sessions or windows you no longer need.", "Check none of them is stuck in a loop: compare their 15 minute averages on the Processes tab."]
+        case "top24", "split", "peakhour":
+            x.steps = ["Open the Trends tab for the hour-by-hour breakdown and the full ranking."]
+        case _ where x.id.hasPrefix("repeat-"):
+            x.steps = ["Find it on the Processes tab and right-click to set a rule.", "Auto-kill if you never want it running hot; Ignore if it is expected (for example a nightly build)."]
+        case _ where x.id.hasPrefix("failed-"):
+            x.why = "A kill first sends SIGTERM, a polite request to exit. Some system processes ignore it on purpose. SIGKILL (kill -9) cannot be ignored, but stopping a core process that way takes down what depends on it."
+            x.steps = ["Usually better: find what is making it busy, using Explain.", "If you must, run sudo kill -9 <pid> in Terminal, after saving your work."]
+        default: break
+        }
+        return x
     }
 
     /// "2.3 cores" or "45% of a core".
