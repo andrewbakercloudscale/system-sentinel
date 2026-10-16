@@ -116,6 +116,7 @@ struct ProcessList: View {
                         Text(s.displayName).lineLimit(1).truncationMode(.middle)
                         HStack(spacing: 6) {
                             Text("pid \(s.pid)")
+                            if let started = model.started(s) { Text(started) }
                             if s.isRoot { Text("root") }
                             if let hot = model.hotFor(s) { Text("hot \(hot)") }
                             policyBadge(model.policy(for: s))

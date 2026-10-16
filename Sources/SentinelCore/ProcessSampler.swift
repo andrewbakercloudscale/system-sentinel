@@ -93,6 +93,20 @@ public enum ProcessSampler {
     }
 }
 
+extension ProcessSampler {
+    /// When a process started, from the kernel's process table. Unlike `proc_pid_rusage`
+    /// this works for root and other users' processes too. nil if the pid has gone.
+    public static func startTime(of pid: Int32) -> Date? {
+        var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, pid]
+        var info = kinfo_proc()
+        var size = MemoryLayout<kinfo_proc>.stride
+        guard sysctl(&mib, 4, &info, &size, nil, 0) == 0, size > 0 else { return nil }
+        let tv = info.kp_proc.p_starttime
+        guard tv.tv_sec > 0 else { return nil }
+        return Date(timeIntervalSince1970: Double(tv.tv_sec) + Double(tv.tv_usec) / 1_000_000)
+    }
+}
+
 public enum SamplerError: Error, Equatable {
     case psFailed(Int32)
 }

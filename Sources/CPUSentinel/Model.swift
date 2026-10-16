@@ -18,6 +18,7 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
     private var timer: Timer?
     /// Processes named in a pending notification, so its Kill button acts on the right one.
     private var pending: [String: ProcessSample] = [:]
+    private var startTimes: [Int32: Date] = [:]
 
     @AppStorage("threshold") var threshold: Double = 80 { didSet { sentinel.detector.threshold = threshold } }
     @AppStorage("windowSeconds") var windowSeconds: Double = 120 { didSet { sentinel.detector.window = windowSeconds } }
@@ -58,6 +59,7 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
             totalCPU = sentinel.totalCPU
             let live = Set(sentinel.latest.map(\.pid))
             flagged.formIntersection(live)
+            startTimes = startTimes.filter { live.contains($0.key) }
             // A flagged process that has cooled down is no longer flagged.
             flagged = flagged.filter { sentinel.detector.hotDuration(of: $0, at: Date()) != nil }
             lastError = nil
@@ -70,6 +72,20 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
     func hotFor(_ s: ProcessSample) -> String? {
         guard let d = sentinel.detector.hotDuration(of: s.pid, at: Date()), d >= 10 else { return nil }
         return Self.duration(d)
+    }
+
+    /// "started 09:14 (2h 5m ago)", or the date for anything older than today. Cached per
+    /// pid: a pid's start time never changes, and a reused pid is a new entry anyway since
+    /// dead pids are dropped.
+    func started(_ s: ProcessSample) -> String? {
+        if startTimes[s.pid] == nil { startTimes[s.pid] = ProcessSampler.startTime(of: s.pid) }
+        guard let t = startTimes[s.pid] else { return nil }
+        let when = Calendar.current.isDateInToday(t)
+            ? t.formatted(date: .omitted, time: .shortened)
+            : t.formatted(.dateTime.day().month(.abbreviated).hour().minute())
+        let ago = Date().timeIntervalSince(t)
+        let age = ago >= 86_400 ? "\(Int(ago / 86_400))d \(Int(ago.truncatingRemainder(dividingBy: 86_400) / 3600))h" : Self.duration(ago)
+        return "started \(when) (\(age) ago)"
     }
 
     static func duration(_ d: TimeInterval) -> String {

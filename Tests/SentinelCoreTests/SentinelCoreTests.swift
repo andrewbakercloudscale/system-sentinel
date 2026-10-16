@@ -30,6 +30,17 @@ final class ParserTests: XCTestCase {
     }
 }
 
+final class StartTimeTests: XCTestCase {
+    func testStartTimesForThisProcessAndARootDaemon() throws {
+        let mine = try XCTUnwrap(ProcessSampler.startTime(of: getpid()))
+        XCTAssertLessThan(mine, Date())
+        XCTAssertGreaterThan(mine, Date().addingTimeInterval(-3600))
+        let launchd = try XCTUnwrap(ProcessSampler.startTime(of: 1), "root processes must be readable")
+        XCTAssertLessThanOrEqual(launchd, mine)
+        XCTAssertNil(ProcessSampler.startTime(of: 99_999_999))
+    }
+}
+
 final class DetectorTests: XCTestCase {
     let t0 = Date(timeIntervalSince1970: 1_000_000)
 
