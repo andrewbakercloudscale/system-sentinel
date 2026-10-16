@@ -8,12 +8,7 @@ most CPU over the last day and week, and explains what each macOS process is for
 something gets stuck at high CPU it tells you, and it can kill that process in one click or
 automatically.
 
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/images/overview-dark.png">
-    <img src="docs/images/overview-light.png" width="620" alt="The Overview tab: a load gauge, a donut of what is using CPU now, a last-hour chart by app and insights">
-  </picture>
-</p>
+![The Overview tab: a load gauge, a donut of what is using CPU now, a last-hour chart by app and insights](docs/images/overview-light.png)
 
 ## Why
 
@@ -41,32 +36,30 @@ CPU Sentinel answers each of those. It was built after a macOS energy logger
 
 ## Screenshots
 
-<table>
-  <tr>
-    <td width="50%"><b>Processes</b>: the top 30, each with uptime, a 15 minute trend, averages, memory and Kill<br><br>
-      <picture>
-        <source media="(prefers-color-scheme: dark)" srcset="docs/images/processes-dark.png">
-        <img src="docs/images/processes-light.png" alt="Processes tab">
-      </picture></td>
-    <td width="50%"><b>Trends</b>: CPU by hour, stacked by app, and the heaviest users<br><br>
-      <picture>
-        <source media="(prefers-color-scheme: dark)" srcset="docs/images/trends-dark.png">
-        <img src="docs/images/trends-light.png" alt="Trends tab">
-      </picture></td>
-  </tr>
-  <tr>
-    <td><b>Events</b>: everything flagged, killed or auto-killed over 7 days<br><br>
-      <picture>
-        <source media="(prefers-color-scheme: dark)" srcset="docs/images/events-dark.png">
-        <img src="docs/images/events-light.png" alt="Events tab">
-      </picture></td>
-    <td><b>Settings</b>: what counts as a stuck process, launch at login<br><br>
-      <picture>
-        <source media="(prefers-color-scheme: dark)" srcset="docs/images/settings-dark.png">
-        <img src="docs/images/settings-light.png" alt="Settings tab">
-      </picture></td>
-  </tr>
-</table>
+### Processes
+The top 30, each with uptime, a 15 minute trend, averages, memory and Kill.
+
+![Processes tab](docs/images/processes-light.png)
+
+### Trends
+CPU by hour, stacked by app, and the heaviest users over 24 hours or 7 days.
+
+![Trends tab](docs/images/trends-light.png)
+
+### Events
+Everything flagged, killed or auto-killed over 7 days.
+
+![Events tab](docs/images/events-light.png)
+
+### Settings
+What counts as a stuck process, and launch at login.
+
+![Settings tab](docs/images/settings-light.png)
+
+### Dark mode
+Every screen has its own dark design.
+
+![Trends tab in dark mode](docs/images/trends-dark.png)
 
 ## Install
 
@@ -77,8 +70,7 @@ bash scripts/build-app.sh      # runs the tests, builds, installs to ~/Applicati
 ```
 
 You need macOS 14 or later, and Xcode or its command line tools (`xcode-select --install`).
-Look for the red chip <img src="docs/images/menubar-normal.png" height="16" alt="menu bar icon">
-in the menu bar.
+Look for the red chip ![menu bar icon](docs/images/menubar-normal.png) in the menu bar.
 
 A prebuilt app is attached to each [release](https://github.com/andrewbakercloudscale/cpu-sentinel/releases).
 It isn't notarised by Apple, so after moving it to Applications, run this once or macOS

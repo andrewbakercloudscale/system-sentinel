@@ -45,8 +45,8 @@ source Activity Monitor uses. CPU Sentinel itself uses well under 1% of one core
 
 | Icon | Meaning |
 |---|---|
-| <img src="images/menubar-normal.png" height="18"> | Running. Click to open the panel. |
-| <img src="images/menubar-alert.png" height="18"> | A process has stayed over your threshold and was flagged. Check Events or the notification. |
+| ![normal](images/menubar-normal.png) | Running. Click to open the panel. |
+| ![alert](images/menubar-alert.png) | A process has stayed over your threshold and was flagged. Check Events or the notification. |
 
 The pill in the top right shows the whole Mac's load right now. Its dot turns from green
 to amber to red as the load rises.
@@ -55,10 +55,7 @@ to amber to red as the load rises.
 
 ## Overview
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="images/overview-dark.png">
-  <img src="images/overview-light.png" width="560" alt="Overview tab">
-</picture>
+![Overview tab](images/overview-light.png)
 
 The answer to "is my Mac busy, and why?" in one screen:
 
@@ -133,10 +130,7 @@ be capturing.
 
 ## Processes
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="images/processes-dark.png">
-  <img src="images/processes-light.png" width="560" alt="Processes tab">
-</picture>
+![Processes tab](images/processes-light.png)
 
 The 30 busiest processes, refreshed every 5 seconds.
 
@@ -170,10 +164,7 @@ Manager) to match them up.
 
 ## Trends
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="images/trends-dark.png">
-  <img src="images/trends-light.png" width="560" alt="Trends tab">
-</picture>
+![Trends tab](images/trends-light.png)
 
 What used the CPU over time, kept across restarts.
 
@@ -193,10 +184,7 @@ app can use more CPU time than the time that passed.
 
 ## Events
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="images/events-dark.png">
-  <img src="images/events-light.png" width="560" alt="Events tab">
-</picture>
+![Events tab](images/events-light.png)
 
 Everything CPU Sentinel did, or decided not to do:
 
@@ -215,10 +203,7 @@ with its time and CPU.
 
 ## Rules
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="images/rules-dark.png">
-  <img src="images/rules-light.png" width="560" alt="Rules tab">
-</picture>
+![Rules tab](images/rules-light.png)
 
 Every app you have set a rule for, and a button to remove each one. Rules are keyed by the
 program's path, so they survive restarts and new process IDs. All Chrome tabs share one
@@ -234,10 +219,7 @@ path, so a rule for one tab applies to every tab.
 
 ## Settings
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="images/settings-dark.png">
-  <img src="images/settings-light.png" width="560" alt="Settings tab">
-</picture>
+![Settings tab](images/settings-light.png)
 
 - **Over N% CPU for N minutes without a break** decides when a process is flagged. The
   default is 80% (of one core) for 2 minutes. Builds and other short bursts never count;
