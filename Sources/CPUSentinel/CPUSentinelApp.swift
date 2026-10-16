@@ -17,19 +17,17 @@ struct CPUSentinelApp: App {
         .menuBarExtraStyle(.window)
     }
 
+    private var menuIcon: NSImage { Self.menuIcon(alert: model.level == .alert) }
+
     /// Always red, so it stands out in the menu bar; the glyph carries the state.
-    private let color = NSColor(srgbRed: 0.86, green: 0.15, blue: 0.15, alpha: 1)
+    private static let color = NSColor(srgbRed: 0.86, green: 0.15, blue: 0.15, alpha: 1)
 
-    private var glyphName: String {
-        model.level == .alert ? "exclamationmark.triangle.fill" : "cpu"
-    }
-
-    /// A solid coloured badge with a white chip glyph: readable on light and dark menu bars,
-    /// which a thin coloured outline symbol was not.
-    private var menuIcon: NSImage {
+    /// A solid coloured badge with a white chip glyph (a warning triangle when something is
+    /// flagged): readable on light and dark menu bars, which a thin coloured outline symbol was not.
+    static func menuIcon(alert: Bool) -> NSImage {
         let size = NSSize(width: 24, height: 18)
         let fill = color
-        let glyph = NSImage(systemSymbolName: glyphName, accessibilityDescription: "CPU Sentinel")?
+        let glyph = NSImage(systemSymbolName: alert ? "exclamationmark.triangle.fill" : "cpu", accessibilityDescription: "CPU Sentinel")?
             .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 13, weight: .bold)
                 .applying(NSImage.SymbolConfiguration(paletteColors: [.white])))
         let img = NSImage(size: size, flipped: false) { rect in
@@ -281,6 +279,18 @@ struct SettingsView: View {
 enum Snapshot {
     static func run(_ model: Model, into dir: String) {
         try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        for alert in [false, true] {
+            let icon = CPUSentinelApp.menuIcon(alert: alert)
+            let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 96, pixelsHigh: 72, bitsPerSample: 8,
+                                       samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,
+                                       bytesPerRow: 0, bitsPerPixel: 0)!
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+            icon.draw(in: NSRect(x: 0, y: 0, width: 96, height: 72))
+            NSGraphicsContext.restoreGraphicsState()
+            try? rep.representation(using: .png, properties: [:])?
+                .write(to: URL(fileURLWithPath: dir).appendingPathComponent("menubar-\(alert ? "alert" : "normal").png"))
+        }
         for appearance in [NSAppearance.Name.aqua, .darkAqua] {
             for tab in Tab.allCases {
                 let view = MenuView(model: model, tab: tab, fullLength: true)

@@ -1,67 +1,131 @@
 # CPU Sentinel
 
-A macOS menu bar app that shows what is using your CPU, explains why, and kills what you
-choose, by hand or automatically per process. Design and reasoning: [PLAN.md](PLAN.md).
+**Find out what is using your Mac's CPU, why, and whether to do anything about it.**
+
+CPU Sentinel lives in the menu bar. It samples every process every 5 seconds and shows the
+load on a gauge, as charts and as plain-English insights. It records which apps used the
+most CPU over the last day and week, and explains what each macOS process is for. When
+something gets stuck at high CPU it tells you, and it can kill that process in one click or
+automatically.
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/overview-dark.png">
+    <img src="docs/images/overview-light.png" width="620" alt="The Overview tab: a load gauge, a donut of what is using CPU now, a last-hour chart by app and insights">
+  </picture>
+</p>
+
+## Why
+
+On a Mac that feels slow, Activity Monitor gives you a list of numbers. It doesn't tell you:
+
+- **which processes are a problem** rather than a passing spike;
+- **what a process is,** like `mediaanalysisd`, `knowledgeconstructiond` or `WindowServer`;
+- **whether it's safe to kill** a process;
+- **which app used the most CPU** over the last day or week.
+
+CPU Sentinel answers each of those. It was built after a macOS energy logger
+(`PerfPowerServices`) used one and a half cores for 37 hours and nothing said so.
+
+## Highlights
+
+| | |
+|---|---|
+| **Insights in plain English** | "WindowServer is busy because the screen is being captured", "Photos is analysing your library", "3 Chrome tab processes use 40% together". Click **More** to see what is happening, each process involved and who started it, and numbered steps to fix it. |
+| **Explain with ChatGPT** | The sparkles button opens ChatGPT with a ready-made prompt: the process, its CPU history, your Mac model and its busiest processes, asking what it is and how to bring it down. |
+| **A day and a week of history** | Hourly CPU by app for the last 24 hours or 7 days, the heaviest users and when each one peaked. Kept across restarts and sleep. |
+| **Know when a process started** | Every process shows its uptime, so a renderer that has been busy for 13 days is easy to spot. |
+| **Kill anything, carefully** | One-click kill for your own processes, your password for root ones, and a separate sudo button with a warning for core macOS processes. |
+| **Rules that remember** | Per app: alert (the default), ignore, or auto-kill. Auto-kill is limited to 3 kills an hour per app. |
+| **Dark mode, and a window you can move** | Every screen is designed for light and dark. **Pop out** moves the panel into a normal window you can drag. |
+
+## Screenshots
+
+<table>
+  <tr>
+    <td width="50%"><b>Processes</b>: the top 30, each with uptime, a 15 minute trend, averages, memory and Kill<br><br>
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="docs/images/processes-dark.png">
+        <img src="docs/images/processes-light.png" alt="Processes tab">
+      </picture></td>
+    <td width="50%"><b>Trends</b>: CPU by hour, stacked by app, and the heaviest users<br><br>
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="docs/images/trends-dark.png">
+        <img src="docs/images/trends-light.png" alt="Trends tab">
+      </picture></td>
+  </tr>
+  <tr>
+    <td><b>Events</b>: everything flagged, killed or auto-killed over 7 days<br><br>
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="docs/images/events-dark.png">
+        <img src="docs/images/events-light.png" alt="Events tab">
+      </picture></td>
+    <td><b>Settings</b>: what counts as a stuck process, launch at login<br><br>
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="docs/images/settings-dark.png">
+        <img src="docs/images/settings-light.png" alt="Settings tab">
+      </picture></td>
+  </tr>
+</table>
 
 ## Install
 
 ```bash
+git clone https://github.com/andrewbakercloudscale/cpu-sentinel.git
+cd cpu-sentinel
 bash scripts/build-app.sh      # runs the tests, builds, installs to ~/Applications, launches
 ```
 
-Needs Xcode (or its command line tools) and macOS 14+. On first launch macOS asks to allow
-notifications: allow them, or alerts only show in the menu. The app is ad-hoc signed, so it
-runs on the Mac that built it; sharing a build needs a Developer ID and notarisation.
+You need macOS 14 or later, and Xcode or its command line tools (`xcode-select --install`).
+Look for the red chip <img src="docs/images/menubar-normal.png" height="16" alt="menu bar icon">
+in the menu bar.
 
-## Use
+A prebuilt app is attached to each [release](https://github.com/andrewbakercloudscale/cpu-sentinel/releases).
+It isn't notarised by Apple, so after moving it to Applications, run this once or macOS
+won't open it:
 
-The red chip in the menu bar opens the panel. **Pop out** moves it into a normal window you
-can drag and resize.
+```bash
+xattr -cr "/Applications/CPU Sentinel.app"
+```
 
-- **Overview:** a gauge of the whole Mac, cores busy, thermal state, 1, 15 and 60 minute
-  averages, a donut of what is using CPU now and a stacked chart of the last hour.
-  Below that, **insights**: plain-language findings such as sustained high CPU, overheating,
-  an unfamiliar macOS service, many copies of one app adding up, a repeat offender, or
-  WindowServer busy because something is capturing the screen. **More** on any insight
-  shows what is happening, each process involved (what it is, which app started it, its CPU,
-  with Explain and Kill buttons) and numbered steps to fix it.
-- **Processes:** the top 30, filterable and sortable by now, 15 minutes, 1 hour or memory.
-  Each row shows when the process started, a 15 minute sparkline, its averages and memory,
-  an info popover with a guide to known macOS processes, and Kill or Sudo.
-- **Trends:** the last 24 hours or 7 days, stacked by app or by process, and the heaviest
-  users with their share, average, peak and when they peaked. Kept across restarts.
-- **Events:** what was flagged, killed, auto-killed or failed to die, charted over 7 days.
-- **Rules:** every per-process rule, removable. **Settings:** threshold, window and launch at
-  login, applied with Save.
-- **Explain** (sparkles button) opens ChatGPT with a prompt describing the process or
-  insight, your Mac and its busiest processes, asking what it is and how to bring it down.
-- **Notification** when a process stays over the threshold (default 80% for 2 minutes):
-  Kill, Ignore for 1 hour, Always ignore, or Always auto-kill.
+## Documentation
 
-100% means one core in the process lists; the charts show percent of the whole Mac.
+- **[User guide](docs/guide.md):** every screen, reading the charts, insights, killing
+  processes, rules, notifications, privacy and troubleshooting.
+- **[Process guide](docs/processes.md):** what the common macOS background processes are,
+  why they get busy, and whether to kill them.
+- **[PLAN.md](PLAN.md):** design and reasoning.
 
-## Safety
+## Safety, in short
 
-- Core macOS processes (WindowServer, kernel_task, launchd, loginwindow, Finder, Dock and
-  others) are never auto-killed and have no Kill button. **Sudo** kills one after a warning
-  of what will happen (killing WindowServer logs you out) and an admin password, or opens a
-  Terminal with the `sudo kill` command typed in. pid 0, pid 1 and the app itself are
-  always refused.
-- Root processes (e.g. PerfPowerServices) are killed by hand only, with your password.
-- Auto-kill only for processes you opted in, and at most 3 times an hour per app.
-- Killing a "Chrome tab (renderer N)" closes that site's tabs with "Aw, Snap"; Chrome does
-  not reveal which tab a renderer serves.
+- Core macOS processes (WindowServer, kernel_task, launchd, Finder, Dock and others) are never
+  killed automatically and have no Kill button. Their **sudo** button warns you what will
+  happen first.
+- Root processes need your admin password and are never auto-killed.
+- Auto-kill applies only to apps you opted in, at most 3 times an hour each.
 
-## Files
+## Privacy
 
-All in `~/Library/Application Support/CPUSentinel/`:
+Everything stays on your Mac. CPU Sentinel sends nothing anywhere. The only time data
+leaves is when you click **Explain**. That opens ChatGPT in your browser with a prompt
+describing the process and your Mac. [What's in it](docs/guide.md#explain-with-chatgpt).
 
-- Rules: `policies.json`
-- Events: `history.jsonl`
-- Hourly usage for Trends (7 days): `usage-24h.json`
+## Development
 
-## Tests
+```bash
+swift test                     # 31 tests, including a real CPU burner that must be flagged and killed
+swift build                    # debug build
+bash scripts/build-app.sh      # test, build, bundle, install, launch
+```
 
-`swift test`: 31 tests, including a real `yes` burner that must be seen, flagged and killed,
-checks that protected and root processes are never auto-killed, hourly usage accounting
-across sleep gaps, and the insight rules.
+To render every tab, in light and dark, to PNG files without touching your data:
+
+```bash
+"build/CPU Sentinel.app/Contents/MacOS/CPUSentinel" --snapshot /tmp/shots --after 600 --expand 2
+```
+
+`--after` sets how many seconds to sample before rendering (default 22). `--expand` opens
+only the first n insights (default all). The README screenshots are made this way.
+
+The code is split into `SentinelCore` (sampling, detection, history, insights; tested) and
+`CPUSentinel` (the SwiftUI app).

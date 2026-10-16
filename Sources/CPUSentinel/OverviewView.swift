@@ -287,8 +287,11 @@ private struct InsightList: View {
     @ObservedObject var model: Model
     /// Which insights are open. Kept by id, since the list is rebuilt every 5 seconds.
     @State private var open: Set<String> = []
-    /// Snapshots show every insight open, to review the full text.
-    private let expandAll = Model.snapshotDir != nil
+    /// Snapshots open the first `--expand` insights (all by default), to review the full text.
+    private func expandAll(_ i: Insight) -> Bool {
+        guard Model.snapshotDir != nil else { return false }
+        return (model.insights.firstIndex { $0.id == i.id } ?? 0) < Model.snapshotExpand
+    }
 
     var body: some View {
         Card(title: "Insights", symbol: "sparkles", tint: Tab.trends.color) {
@@ -299,7 +302,7 @@ private struct InsightList: View {
             VStack(spacing: 8) {
                 ForEach(model.insights) { i in
                     InsightCard(model: model, insight: i, expanded: Binding(
-                        get: { expandAll || open.contains(i.id) },
+                        get: { expandAll(i) || open.contains(i.id) },
                         set: { if $0 { open.insert(i.id) } else { open.remove(i.id) } }))
                 }
             }

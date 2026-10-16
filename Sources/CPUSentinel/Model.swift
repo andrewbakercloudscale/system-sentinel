@@ -30,11 +30,18 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
         .appendingPathComponent("CPUSentinel", isDirectory: true)
 
     /// Set by `--snapshot`: render screens to PNG without writing any of the owner's data.
-    static let snapshotDir: String? = {
+    static let snapshotDir: String? = argument("--snapshot")
+    /// `--after <seconds>`: how long to sample before rendering. Longer fills the last-hour chart
+    /// and sparklines; the README screenshots use several minutes.
+    static let snapshotDelay: Double = argument("--after").flatMap(Double.init) ?? 22
+    /// `--expand <n>`: open only the first n insights in snapshots (default: all of them).
+    static let snapshotExpand: Int = argument("--expand").flatMap(Int.init) ?? .max
+
+    private static func argument(_ name: String) -> String? {
         let args = CommandLine.arguments
-        guard let i = args.firstIndex(of: "--snapshot"), args.indices.contains(i + 1) else { return nil }
+        guard let i = args.firstIndex(of: name), args.indices.contains(i + 1) else { return nil }
         return args[i + 1]
-    }()
+    }
 
     override init() {
         sentinel = Sentinel(
@@ -52,7 +59,7 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
             Task { @MainActor in self?.tick() }
         }
         if let dir = Model.snapshotDir {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 22) { Snapshot.run(self, into: dir) }
+            DispatchQueue.main.asyncAfter(deadline: .now() + Model.snapshotDelay) { Snapshot.run(self, into: dir) }
         }
     }
 
