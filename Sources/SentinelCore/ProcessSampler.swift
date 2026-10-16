@@ -61,7 +61,30 @@ public enum ProcessSampler {
         guard task.terminationStatus == 0 else {
             throw SamplerError.psFailed(task.terminationStatus)
         }
-        return parse(String(decoding: data, as: UTF8.self))
+        return resolve(parse(String(decoding: data, as: UTF8.self)))
+    }
+
+    /// `ps` prints the full path for most processes, but a bare name ("system_profiler")
+    /// for some and a bracketed one ("(system_profiler)") for a process that is exiting.
+    /// Left alone, one program showed up as two or three apps in the charts and rankings.
+    /// The kernel knows the real executable; a process already gone keeps its bare name.
+    /// Only a path whose file name matches is taken: a program that renames itself ("claude"
+    /// runs as ".../versions/2.1.301", "npm exec ..." runs as node) keeps the name it chose.
+    public static func resolve(_ samples: [ProcessSample], pathOf: (Int32) -> String? = executablePath) -> [ProcessSample] {
+        samples.map { s in
+            guard !s.path.hasPrefix("/") else { return s }
+            var path = s.path
+            if path.hasPrefix("("), path.hasSuffix(")") { path = String(path.dropFirst().dropLast()) }
+            if let full = pathOf(s.pid), (full as NSString).lastPathComponent == path { path = full }
+            return path == s.path ? s : ProcessSample(pid: s.pid, uid: s.uid, cpu: s.cpu, path: path, rssKB: s.rssKB)
+        }
+    }
+
+    /// The executable's full path from the kernel. Works for other users' processes too.
+    public static func executablePath(of pid: Int32) -> String? {
+        var buf = [CChar](repeating: 0, count: 4 * Int(MAXPATHLEN))
+        let n = proc_pidpath(pid, &buf, UInt32(buf.count))
+        return n > 0 ? String(cString: buf) : nil
     }
 
     /// Parses `pid uid %cpu rss comm` lines. The command is everything after the fourth field,

@@ -41,6 +41,32 @@ final class StartTimeTests: XCTestCase {
     }
 }
 
+final class ResolvePathTests: XCTestCase {
+    /// ps printed "system_profiler", "(system_profiler)" and "/usr/sbin/system_profiler" for
+    /// one program, and the Overview donut listed it twice.
+    func testBareAndBracketedNamesBecomeOneProgram() {
+        let samples = [
+            ProcessSample(pid: 10, uid: 0, cpu: 20, path: "system_profiler"),
+            ProcessSample(pid: 11, uid: 0, cpu: 5, path: "(system_profiler)"),
+            ProcessSample(pid: 12, uid: 0, cpu: 7, path: "/usr/sbin/system_profiler"),
+            ProcessSample(pid: 13, uid: 0, cpu: 1, path: "(gone)"),
+            ProcessSample(pid: 14, uid: 501, cpu: 3, path: "claude"),
+        ]
+        let known: [Int32: String] = [10: "/usr/sbin/system_profiler", 11: "/usr/sbin/system_profiler",
+                                      14: "/Users/me/.local/share/claude/versions/2.1.301"]
+        let out = ProcessSampler.resolve(samples) { known[$0] }
+        XCTAssertEqual(out.map(\.path), ["/usr/sbin/system_profiler", "/usr/sbin/system_profiler",
+                                         "/usr/sbin/system_profiler", "gone", "claude"])
+        XCTAssertEqual(out[0].cpu, 20)
+    }
+
+    func testExecutablePathFromTheKernelIncludingRoot() {
+        XCTAssertEqual(ProcessSampler.executablePath(of: 1), "/sbin/launchd")
+        XCTAssertNotNil(ProcessSampler.executablePath(of: getpid()))
+        XCTAssertNil(ProcessSampler.executablePath(of: 99_999_999))
+    }
+}
+
 final class DetectorTests: XCTestCase {
     let t0 = Date(timeIntervalSince1970: 1_000_000)
 
