@@ -113,7 +113,7 @@ describing the process and your Mac. [What's in it](docs/guide.md#explain-with-c
 ## Development
 
 ```bash
-swift test                     # 31 tests, including a real CPU burner that must be flagged and killed
+swift test                     # 33 tests, including a real CPU burner that must be flagged and killed
 swift build                    # debug build
 bash scripts/build-app.sh      # test, build, bundle, install, launch
 ```
