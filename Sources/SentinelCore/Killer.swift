@@ -33,6 +33,20 @@ public enum Killer {
         return waitForExit(s.pid, timeout: 2) ? .forceKilled : .failed("still running after SIGKILL")
     }
 
+    /// The deliberate override for a protected process: admin prompt, after the UI has said
+    /// what will happen (WindowServer logs the owner out). pid 0 and 1 and this app stay
+    /// refused: there is no outcome of killing those that anyone wants.
+    public static func killProtectedAsAdmin(_ s: ProcessSample) -> KillOutcome {
+        guard s.pid > 1, s.pid != getpid() else { return .refused("\(s.name) cannot be killed") }
+        guard isAlive(s.pid) else { return .alreadyGone }
+        return killAsAdmin(s)
+    }
+
+    /// The command the owner can paste into Terminal instead.
+    public static func sudoCommand(for s: ProcessSample) -> String {
+        "sudo kill -TERM \(s.pid)   # \(s.name)"
+    }
+
     /// Root and other users' processes: the standard macOS admin prompt via osascript.
     /// launchd restarts the daemons this is meant for (PerfPowerServices), so TERM is enough.
     static func killAsAdmin(_ s: ProcessSample) -> KillOutcome {

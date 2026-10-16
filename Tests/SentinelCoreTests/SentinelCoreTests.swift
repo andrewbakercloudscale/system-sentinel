@@ -8,13 +8,14 @@ private func ps(_ pid: Int32, _ cpu: Double, _ path: String = "/usr/bin/yes", ui
 final class ParserTests: XCTestCase {
     func testParsesPathsWithSpacesAndCommaDecimals() {
         let out = """
-          13560     0 171,6 /usr/libexec/PerfPowerServices
-          18060   501  37.8 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/154.0.8037.95/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)
+          13560     0 171,6  11856 /usr/libexec/PerfPowerServices
+          18060   501  37.8 375632 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/154.0.8037.95/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)
             garbage line
         """
         let s = ProcessSampler.parse(out)
         XCTAssertEqual(s.count, 2)
-        XCTAssertEqual(s[0], ProcessSample(pid: 13560, uid: 0, cpu: 171.6, path: "/usr/libexec/PerfPowerServices"))
+        XCTAssertEqual(s[0], ProcessSample(pid: 13560, uid: 0, cpu: 171.6, path: "/usr/libexec/PerfPowerServices", rssKB: 11856))
+        XCTAssertEqual(s[1].rssKB, 375632)
         XCTAssertTrue(s[0].isRoot)
         XCTAssertEqual(s[1].cpu, 37.8)
         XCTAssertTrue(s[1].isChromeRenderer)
@@ -212,5 +213,64 @@ final class IntegrationTests: XCTestCase {
         XCTAssertEqual(Killer.kill(s), .terminated)
         burner.waitUntilExit()
         XCTAssertFalse(Killer.isAlive(pid))
+    }
+}
+
+final class HistoryWindowTests: XCTestCase {
+    let t0 = Date(timeIntervalSince1970: 2_000_000)
+
+    func testAveragesAreEnergyLike() {
+        let h = CPUHistory(retention: 3600, interval: 5)
+        // 60 min of recording; pid 9 hot (100%) only for the last 6 min.
+        for i in 0..<720 {
+            let t = t0 + Double(i) * 5
+            let hot = i >= 648
+            h.record([ProcessSample(pid: 9, uid: 501, cpu: hot ? 100 : 0, path: "/x"), ProcessSample(pid: 2, uid: 501, cpu: 50, path: "/y")], at: t)
+        }
+        let now = t0 + 719 * 5
+        XCTAssertEqual(h.average(9, over: 60, at: now), 100, accuracy: 1)
+        XCTAssertEqual(h.average(9, over: 3600, at: now), 10, accuracy: 1)
+        XCTAssertEqual(h.average(2, over: 900, at: now), 50, accuracy: 1)
+        XCTAssertEqual(h.totalAverage(over: 60, at: now), 150, accuracy: 1)
+    }
+
+    func testAFreshStartDoesNotDeflate() {
+        let h = CPUHistory(interval: 5)
+        for i in 0..<12 { h.record([ProcessSample(pid: 3, uid: 501, cpu: 80, path: "/z")], at: t0 + Double(i) * 5) }
+        XCTAssertEqual(h.average(3, over: 3600, at: t0 + 55), 80, accuracy: 1, "one minute of data must not read as 80/60")
+    }
+
+    func testDeadPidLosesItsHistory() {
+        let h = CPUHistory(interval: 5)
+        h.record([ProcessSample(pid: 4, uid: 501, cpu: 90, path: "/a")], at: t0)
+        h.record([], at: t0 + 5)
+        h.record([ProcessSample(pid: 4, uid: 501, cpu: 0, path: "/b")], at: t0 + 10)
+        XCTAssertEqual(h.average(4, over: 60, at: t0 + 10), 0)
+    }
+
+    func testSparklineBuckets() {
+        let h = CPUHistory(interval: 5)
+        for i in 0..<12 { h.record([ProcessSample(pid: 5, uid: 501, cpu: i < 6 ? 0 : 60, path: "/s")], at: t0 + Double(i) * 5) }
+        let line = h.sparkline(5, over: 60, buckets: 2, at: t0 + 60)
+        XCTAssertEqual(line.count, 2)
+        XCTAssertLessThan(line[0], line[1])
+    }
+}
+
+final class AppIdentityTests: XCTestCase {
+    func testOutermostBundle() {
+        let r = "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/1/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)"
+        XCTAssertEqual(AppIdentity.bundlePath(of: r), "/Applications/Google Chrome.app")
+        XCTAssertEqual(AppIdentity.appName(of: r), "Google Chrome")
+        XCTAssertNil(AppIdentity.bundlePath(of: "/usr/libexec/PerfPowerServices"))
+        XCTAssertEqual(AppIdentity.appName(of: "/usr/libexec/PerfPowerServices"), "PerfPowerServices")
+        XCTAssertTrue(AppIdentity.isSystem("/usr/libexec/PerfPowerServices"))
+        XCTAssertFalse(AppIdentity.isSystem("/Users/me/.local/bin/claude"))
+    }
+
+    func testProtectedOverrideStillRefusesLaunchdAndSelf() {
+        XCTAssertEqual(Killer.killProtectedAsAdmin(ProcessSample(pid: 1, uid: 0, cpu: 1, path: "/sbin/launchd")), .refused("launchd cannot be killed"))
+        XCTAssertEqual(Killer.killProtectedAsAdmin(ProcessSample(pid: getpid(), uid: getuid(), cpu: 1, path: "/me")), .refused("me cannot be killed"))
+        XCTAssertEqual(Killer.sudoCommand(for: ProcessSample(pid: 395, uid: 88, cpu: 1, path: "/x/WindowServer")), "sudo kill -TERM 395   # WindowServer")
     }
 }

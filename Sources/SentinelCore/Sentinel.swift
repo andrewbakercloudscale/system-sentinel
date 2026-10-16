@@ -16,6 +16,7 @@ public final class Sentinel {
     public let policies: PolicyStore
     public let history: History
     public let limiter: RateLimiter
+    public let cpuHistory: CPUHistory
     public private(set) var latest: [ProcessSample] = []
 
     private let sampler: () throws -> [ProcessSample]
@@ -26,6 +27,7 @@ public final class Sentinel {
         policies: PolicyStore,
         history: History,
         limiter: RateLimiter = RateLimiter(),
+        cpuHistory: CPUHistory = CPUHistory(),
         sampler: @escaping () throws -> [ProcessSample] = ProcessSampler.sample,
         killer: @escaping (ProcessSample) -> KillOutcome = { Killer.kill($0) }
     ) {
@@ -33,6 +35,7 @@ public final class Sentinel {
         self.policies = policies
         self.history = history
         self.limiter = limiter
+        self.cpuHistory = cpuHistory
         self.sampler = sampler
         self.killer = killer
     }
@@ -48,6 +51,7 @@ public final class Sentinel {
     @discardableResult
     public func tick(at now: Date = Date()) throws -> [SentinelEvent] {
         latest = try sampler()
+        cpuHistory.record(latest, at: now)
         var events: [SentinelEvent] = []
         for actor in detector.update(latest, at: now) {
             let s = actor.sample
