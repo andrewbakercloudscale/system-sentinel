@@ -8,6 +8,8 @@ import UserNotifications
 @MainActor
 final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate {
     @Published var top: [ProcessSample] = []
+    @Published var insights: [Insight] = []
+    @Published var thermal: ProcessInfo.ThermalState = .nominal
     @Published var totalCPU: Double = 0
     @Published var flagged: Set<Int32> = []
     @Published var lastError: String?
@@ -27,11 +29,20 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
         .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         .appendingPathComponent("CPUSentinel", isDirectory: true)
 
+    /// Set by `--snapshot`: render screens to PNG without writing any of the owner's data.
+    static let snapshotDir: String? = {
+        let args = CommandLine.arguments
+        guard let i = args.firstIndex(of: "--snapshot"), args.indices.contains(i + 1) else { return nil }
+        return args[i + 1]
+    }()
+
     override init() {
         sentinel = Sentinel(
             policies: PolicyStore(fileURL: Model.supportDir.appendingPathComponent("policies.json")),
-            history: History(fileURL: Model.supportDir.appendingPathComponent("history.jsonl")),
-            dailyUsage: DailyUsage(fileURL: Model.supportDir.appendingPathComponent("usage-24h.json")))
+            history: History(fileURL: Model.snapshotDir == nil ? Model.supportDir.appendingPathComponent("history.jsonl") : nil,
+                             seed: Model.snapshotDir == nil ? nil : Model.supportDir.appendingPathComponent("history.jsonl")),
+            dailyUsage: DailyUsage(fileURL: Model.supportDir.appendingPathComponent("usage-24h.json"),
+                                   readOnly: Model.snapshotDir != nil))
         super.init()
         sentinel.detector.threshold = threshold
         sentinel.detector.window = windowSeconds
@@ -39,6 +50,9 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
         tick()
         timer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.tick() }
+        }
+        if let dir = Model.snapshotDir {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 22) { Snapshot.run(self, into: dir) }
         }
     }
 
@@ -55,7 +69,7 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
     func tick() {
         do {
             let events = try sentinel.tick()
-            top = sentinel.top(10)
+            top = sentinel.top(30)
             totalCPU = sentinel.totalCPU
             let live = Set(sentinel.latest.map(\.pid))
             flagged.formIntersection(live)
@@ -64,9 +78,96 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
             flagged = flagged.filter { sentinel.detector.hotDuration(of: $0, at: Date()) != nil }
             lastError = nil
             for e in events { handle(e) }
+            thermal = ProcessInfo.processInfo.thermalState
+            insights = Insights.generate(insightInput())
         } catch {
             lastError = "Could not read processes: \(error)"
         }
+    }
+
+    // MARK: Explain
+
+    /// Opens ChatGPT with a prompt describing this process and this Mac, asking why it is
+    /// busy and how to bring it down. Nothing is sent until the owner presses Enter there.
+    func explain(_ s: ProcessSample) {
+        guard var c = URLComponents(string: "https://chatgpt.com/") else { return }
+        c.queryItems = [URLQueryItem(name: "q", value: explainPrompt(s))]
+        if let url = c.url { NSWorkspace.shared.open(url) }
+        lastAction = "Opened ChatGPT about \(s.displayName)"
+    }
+
+    func explainPrompt(_ s: ProcessSample) -> String {
+        let os = ProcessInfo.processInfo.operatingSystemVersionString
+        var hw = [CChar](repeating: 0, count: 64)
+        var size = hw.count
+        sysctlbyname("hw.model", &hw, &size, nil, 0)
+        let displays = NSScreen.screens.map { screen -> String in
+            let px = screen.convertRectToBacking(screen.frame).size
+            return "\(Int(px.width))x\(Int(px.height)) @ \(screen.maximumFramesPerSecond) Hz"
+        }
+        let others = sentinel.latest.filter { $0.pid != s.pid && $0.cpu >= 3 }.sorted { $0.cpu > $1.cpu }.prefix(10)
+            .map { "\($0.name) \(Int($0.cpu))%" }.joined(separator: ", ")
+        let note = ProcessGuide.note(for: s.name).map { "\nWhat I know: \($0.headline). \($0.detail)" } ?? ""
+        return """
+        On my Mac the process "\(s.name)" is using a lot of CPU. Explain what it does, the most likely reasons it is this busy on my machine, and step by step how to bring its CPU use down. Tell me whether it is safe to quit or kill, and what I would lose.
+
+        Process: \(s.name)
+        Path: \(s.path)
+        Runs as: \(s.isRoot ? "root" : "my user")
+        CPU now: \(Int(s.cpu))% (100% = one core)
+        Average CPU: 1 min \(Int(average(s, 60)))%, 15 min \(Int(average(s, 900)))%, 1 hour \(Int(average(s, 3600)))%
+        Memory: \(Fmt.memory(s.rssKB))
+        \(started(s) ?? "")\(note)
+
+        Mac: \(String(cString: hw)), \(Int(cores)) cores, macOS \(os)
+        Thermal state: \(["nominal", "fair", "serious", "critical"][min(ProcessInfo.processInfo.thermalState.rawValue, 3)])
+        Displays: \(displays.joined(separator: "; "))
+        Other busy processes right now: \(others.isEmpty ? "none" : others)
+        """
+    }
+
+    // MARK: Figures for the screens
+
+    /// Machine load (100 = every core) averaged over `window` seconds.
+    func machineAverage(_ window: TimeInterval) -> Double {
+        sentinel.cpuHistory.totalAverage(over: window, at: Date()) / max(cores, 1)
+    }
+
+    func average(_ s: ProcessSample, _ window: TimeInterval) -> Double {
+        sentinel.cpuHistory.average(s.pid, over: window, at: Date())
+    }
+
+    func sparkline(_ s: ProcessSample, minutes: Double = 15, buckets: Int = 30) -> [Double] {
+        sentinel.cpuHistory.sparkline(s.pid, over: minutes * 60, buckets: buckets, at: Date())
+    }
+
+    var recordedMinutes: Double { sentinel.cpuHistory.recorded(at: Date()) / 60 }
+
+    static func appKey(_ path: String) -> String { AppIdentity.groupKey(of: path) }
+
+    static func appName(_ key: String) -> String {
+        if key.contains("Google Chrome Helper (Renderer)") { return "Chrome tabs" }
+        return AppIdentity.bundlePath(of: key) != nil ? AppIdentity.appName(of: key) : (key as NSString).lastPathComponent
+    }
+
+    private func insightInput() -> InsightInput {
+        let now = Date()
+        let hist = sentinel.cpuHistory
+        let usage = sentinel.dailyUsage
+        var avg15: [Int32: Double] = [:]
+        for s in sentinel.latest where s.cpu >= 20 { avg15[s.pid] = hist.average(s.pid, over: 900, at: now) }
+        return InsightInput(
+            cores: cores, samples: sentinel.latest,
+            total1m: hist.totalAverage(over: 60, at: now), total15m: hist.totalAverage(over: 900, at: now),
+            total60m: hist.totalAverage(over: 3600, at: now), avg15m: avg15,
+            recordedMinutes: hist.recorded(at: now) / 60,
+            daily: usage.summaries(at: now, group: Model.appKey, name: Model.appName),
+            dailySampled: usage.sampled(at: now),
+            totalHourly: usage.totalHourly(at: now),
+            hourStarts: DailyUsage.hourStarts(at: now, hours: 24).map { Date(timeIntervalSince1970: Double($0)) },
+            events: sentinel.history.entries,
+            thermal: ProcessInfo.processInfo.thermalState.rawValue,
+            lowPower: ProcessInfo.processInfo.isLowPowerModeEnabled)
     }
 
     func hotFor(_ s: ProcessSample) -> String? {
@@ -86,6 +187,14 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
         let ago = Date().timeIntervalSince(t)
         let age = ago >= 86_400 ? "\(Int(ago / 86_400))d \(Int(ago.truncatingRemainder(dividingBy: 86_400) / 3600))h" : Self.duration(ago)
         return "started \(when) (\(age) ago)"
+    }
+
+    /// "up 22d 2h", short enough for a row subtitle.
+    func uptime(_ s: ProcessSample) -> String? {
+        if startTimes[s.pid] == nil { startTimes[s.pid] = ProcessSampler.startTime(of: s.pid) }
+        guard let t = startTimes[s.pid] else { return nil }
+        let ago = Date().timeIntervalSince(t)
+        return ago >= 86_400 ? "up \(Int(ago / 86_400))d \(Int(ago.truncatingRemainder(dividingBy: 86_400) / 3600))h" : "up \(Self.duration(ago))"
     }
 
     static func duration(_ d: TimeInterval) -> String {

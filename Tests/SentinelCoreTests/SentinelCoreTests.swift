@@ -316,6 +316,42 @@ final class DailyUsageTests: XCTestCase {
     }
 }
 
+final class InsightsTests: XCTestCase {
+    func input(_ samples: [ProcessSample], total1m: Double = 100, total60m: Double = 100, thermal: Int = 0,
+               events: [HistoryEntry] = []) -> InsightInput {
+        InsightInput(cores: 10, samples: samples, total1m: total1m, total15m: total60m, total60m: total60m,
+                     avg15m: [:], recordedMinutes: 30, daily: [], dailySampled: 0, totalHourly: [], hourStarts: [],
+                     events: events, thermal: thermal, lowPower: false)
+    }
+
+    func testWindowServerBlamesScreenCapture() {
+        let out = Insights.generate(input([ProcessSample(pid: 395, uid: 88, cpu: 42, path: "/x/WindowServer"),
+                                           ProcessSample(pid: 7, uid: 501, cpu: 8, path: "/x/SkyComputerUseService")]))
+        let ws = out.first { $0.id == "ws-capture" }
+        XCTAssertNotNil(ws)
+        XCTAssertTrue(ws!.detail.contains("SkyComputerUseService"))
+    }
+
+    func testHeatComesFirstAndQuietIsGood() {
+        let out = Insights.generate(input([], total1m: 50, thermal: 2))
+        XCTAssertEqual(out.first?.id, "thermal")
+        XCTAssertTrue(out.contains { $0.id == "quiet" && $0.tone == .good })
+    }
+
+    func testUnfamiliarDaemonIsExplainedAndCopiesAddUp() {
+        let samples = [ProcessSample(pid: 1, uid: 501, cpu: 90, path: "/x/mediaanalysisd")]
+            + (2...5).map { ProcessSample(pid: Int32($0), uid: 501, cpu: 6, path: "/x/claude") }
+        let out = Insights.generate(input(samples))
+        XCTAssertTrue(out.contains { $0.id == "why-mediaanalysisd" })
+        XCTAssertTrue(out.contains { $0.id == "many-claude" && $0.title.hasPrefix("4 claude") })
+    }
+
+    func testRepeatOffender() {
+        let e = (0..<3).map { _ in HistoryEntry(date: Date(), kind: .flagged, pid: 1, name: "knowledgeconstructiond", path: "/k", cpu: 95, detail: "") }
+        XCTAssertTrue(Insights.generate(input([], events: e)).contains { $0.id == "repeat-knowledgeconstructiond" })
+    }
+}
+
 final class AppIdentityTests: XCTestCase {
     func testOutermostBundle() {
         let r = "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/1/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)"

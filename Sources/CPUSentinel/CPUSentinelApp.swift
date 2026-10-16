@@ -50,123 +50,106 @@ struct CPUSentinelApp: App {
 
 struct MenuView: View {
     @ObservedObject var model: Model
-    @State private var tab = 0
+    @State var tab: Tab = .overview
+    /// Snapshots render the whole page instead of a scrolling window.
+    var fullLength = false
+    /// Shown in the movable window rather than under the menu bar icon.
+    var inWindow = false
+
+    static let width: CGFloat = 660
+    /// Fixed, so switching tabs never resizes the window (a resize made the menu jump).
+    static let contentHeight: CGFloat = 560
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("CPU Sentinel").font(.headline)
-                Spacer()
-                Text("\(Int(model.machineLoad))% of \(Int(model.cores)) cores")
-                    .font(.caption).foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 10) {
+            header
+            TabBar(selection: $tab, badges: [.events: model.flagged.count])
+            if fullLength {
+                page
+            } else {
+                ScrollView(.vertical) { page.padding(.trailing, 2) }
+                    .frame(height: Self.contentHeight)
             }
-            Picker("", selection: $tab) {
-                Text("Processes").tag(0)
-                Text("24 h").tag(4)
-                Text("Rules").tag(1)
-                Text("History").tag(2)
-                Text("Settings").tag(3)
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-
-            switch tab {
-            case 0: ProcessList(model: model)
-            case 1: RulesView(model: model)
-            case 2: HistoryView(model: model)
-            case 4: DailyView(model: model)
-            default: SettingsView(model: model)
-            }
-
-            if let msg = model.lastAction {
-                Text(msg).font(.caption).foregroundStyle(.secondary).lineLimit(2)
-            }
-            if let err = model.lastError {
-                Text(err).font(.caption).foregroundStyle(.red).lineLimit(3)
-            }
-            Divider()
-            HStack {
-                Spacer()
-                Button {
-                    model.sentinel.dailyUsage.save()
-                    NSApplication.shared.terminate(nil)
-                } label: {
-                    Label("Quit", systemImage: "power")
-                }
-                .buttonStyle(.bordered)
-                .tint(.secondary)
-            }
+            footer
         }
-        .padding(12)
-        .frame(width: 580)
+        .padding(14)
+        .frame(width: Self.width)
     }
-}
 
-struct ProcessList: View {
-    @ObservedObject var model: Model
-
-    var body: some View {
-        VStack(spacing: 4) {
-            ForEach(model.top, id: \.pid) { s in
-                HStack(spacing: 8) {
-                    Circle()
-                        .fill(model.flagged.contains(s.pid) ? .red : (s.cpu >= model.threshold ? .orange : .clear))
-                        .frame(width: 7, height: 7)
-                    VStack(alignment: .leading, spacing: 0) {
-                        Text(s.displayName).lineLimit(1).truncationMode(.middle)
-                        HStack(spacing: 6) {
-                            Text("pid \(s.pid)")
-                            if let started = model.started(s) { Text(started) }
-                            if s.isRoot { Text("root") }
-                            if let hot = model.hotFor(s) { Text("hot \(hot)") }
-                            policyBadge(model.policy(for: s))
-                        }
-                        .font(.caption2).foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    Text(String(format: "%.0f%%", s.cpu))
-                        .monospacedDigit()
-                        .foregroundStyle(s.cpu >= model.threshold ? .red : .primary)
-                    Menu {
-                        policyButtons(for: s)
-                    } label: {
-                        Image(systemName: "slider.horizontal.3")
-                    }
-                    .menuStyle(.borderlessButton)
-                    .tint(.blue)
-                    .foregroundStyle(.blue)
-                    .frame(width: 22)
-                    .help("Rule for this process")
-                    if Safety.canKillManually(s) {
-                        KillButton(isRoot: s.isRoot) { model.kill(s) }
-                    } else {
-                        SudoButton(model: model, sample: s)
-                    }
-                }
+    private var header: some View {
+        HStack(spacing: 10) {
+            SymbolTile(symbol: "cpu", color: Color(hex: "#dc2626"), size: 28)
+            VStack(alignment: .leading, spacing: 0) {
+                Text("CPU Sentinel").font(.headline)
+                Text("\(Int(model.cores)) cores  ·  sampled every 5 s").font(.caption2).foregroundStyle(.secondary)
             }
+            Spacer()
+            let load = model.machineLoad
+            HStack(spacing: 6) {
+                Circle().fill(Theme.machineHeat(load)).frame(width: 8, height: 8)
+                Text("\(Int(load))% of Mac").font(.callout.weight(.semibold)).monospacedDigit()
+            }
+            .padding(.horizontal, 10).padding(.vertical, 5)
+            .background(Capsule().fill(Theme.machineHeat(load).opacity(0.13)))
+            .help("Share of all \(Int(model.cores)) cores in use right now")
         }
     }
 
     @ViewBuilder
-    func policyButtons(for s: ProcessSample) -> some View {
-        Button("Alert me (default)") { model.setPolicy(.alert, for: s) }
-        Button("Auto-kill") { model.setPolicy(.autoKill, for: s) }
-            .disabled(!Safety.canAutoKill(s))
-        Button("Ignore for 1 hour") { model.setPolicy(.ignore(until: Date().addingTimeInterval(3600)), for: s) }
-        Button("Always ignore") { model.setPolicy(.ignore(until: nil), for: s) }
-        if !Safety.canAutoKill(s) {
-            Text(s.isRoot ? "Auto-kill is off for root processes" : "Auto-kill is off for protected processes")
+    private var page: some View {
+        switch tab {
+        case .overview: OverviewView(model: model)
+        case .processes: ProcessesView(model: model)
+        case .trends: TrendsView(model: model)
+        case .events: EventsView(model: model)
+        case .rules: RulesView(model: model)
+        case .settings: SettingsView(model: model)
+        }
+    }
+
+    private var footer: some View {
+        HStack(spacing: 8) {
+            if let err = model.lastError {
+                Label(err, systemImage: "exclamationmark.circle.fill").font(.caption).foregroundStyle(Theme.heat(100)).lineLimit(2)
+            } else if let msg = model.lastAction {
+                Label(msg, systemImage: "checkmark.circle.fill").font(.caption).foregroundStyle(.secondary).lineLimit(2)
+            }
+            Spacer()
+            if !inWindow {
+                FooterButton(title: "Pop out", symbol: "macwindow.on.rectangle", color: Tab.trends.color) {
+                    PopOut.show(model)
+                }
+                .help("Open in a window you can move around and keep open")
+            }
+            FooterButton(title: "Activity Monitor", symbol: "waveform.path.ecg", color: Tab.processes.color) {
+                NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/Utilities/Activity Monitor.app"))
+            }
+            FooterButton(title: "Quit", symbol: "power", color: Tab.settings.color) {
+                model.sentinel.dailyUsage.save()
+                NSApplication.shared.terminate(nil)
+            }
         }
     }
 }
 
-@ViewBuilder
-func policyBadge(_ p: Policy) -> some View {
-    switch p {
-    case .alert: EmptyView()
-    case .autoKill: Text("auto-kill").foregroundStyle(.red)
-    case .ignore(let until?): Text("ignored until \(until.formatted(date: .omitted, time: .shortened))")
-    case .ignore(nil): Text("ignored")
+struct FooterButton: View {
+    let title: String
+    let symbol: String
+    let color: Color
+    let action: () -> Void
+    @State private var hover = false
+
+    var body: some View {
+        Button(action: action) {
+            Label(title, systemImage: symbol)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(color)
+                .padding(.horizontal, 10).padding(.vertical, 5)
+                .background(Capsule().fill(color.opacity(hover ? 0.2 : 0.1)))
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .onHover { hover = $0 }
     }
 }
 
@@ -175,224 +158,171 @@ struct RulesView: View {
 
     var body: some View {
         let rules = model.sentinel.policies.policies.sorted { $0.key < $1.key }
-        VStack(alignment: .leading, spacing: 6) {
-            if rules.isEmpty {
-                Text("No rules yet. Every process alerts by default; set a rule from the Processes tab or a notification.")
-                    .font(.caption).foregroundStyle(.secondary)
+        let autoKill = rules.filter { if case .autoKill = $0.value { return true }; return false }.count
+        let ignored = rules.filter { if case .ignore = $0.value { return true }; return false }.count
+        VStack(spacing: 10) {
+            HStack(spacing: 8) {
+                StatTile(symbol: "bolt.fill", color: Theme.heat(100), value: "\(autoKill)", label: "auto-kill")
+                StatTile(symbol: "moon.fill", color: Tab.rules.color, value: "\(ignored)", label: "ignored")
+                StatTile(symbol: "bell.fill", color: Tab.events.color, value: "Alert", label: "everything else")
             }
-            ForEach(rules, id: \.key) { path, policy in
-                HStack {
-                    VStack(alignment: .leading, spacing: 0) {
-                        Text((path as NSString).lastPathComponent).lineLimit(1)
-                        policyBadge(policy).font(.caption2)
+            Card(title: "Rules", symbol: "slider.horizontal.3", tint: Tab.rules.color) {
+                if rules.isEmpty {
+                    Text("No rules yet. Every process alerts by default. Right-click a process on the Processes tab, or use a notification's buttons, to set one.")
+                        .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }
+                ForEach(rules, id: \.key) { path, policy in
+                    HStack(spacing: 10) {
+                        IconView(icon: IconCache.shared.icon(for: ProcessSample(pid: 0, uid: 501, cpu: 0, path: path)), size: 26)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text((path as NSString).lastPathComponent).font(.callout.weight(.medium)).lineLimit(1)
+                            Text(path).font(.caption2).foregroundStyle(.tertiary).lineLimit(1).truncationMode(.middle)
+                        }
+                        Spacer()
+                        rulePill(policy)
+                        FooterButton(title: "Remove", symbol: "trash", color: Theme.heat(100)) {
+                            model.sentinel.policies.set(.alert, for: path)
+                            model.objectWillChange.send()
+                        }
                     }
-                    Spacer()
-                    Button("Remove") {
-                        model.sentinel.policies.set(.alert, for: path)
-                        model.objectWillChange.send()
-                    }
-                    .buttonStyle(.bordered)
-                    .tint(.red)
+                    .padding(.vertical, 2)
                 }
             }
         }
     }
-}
 
-struct HistoryView: View {
-    @ObservedObject var model: Model
-
-    var body: some View {
-        let entries = model.sentinel.history.entries.suffix(15).reversed()
-        VStack(alignment: .leading, spacing: 4) {
-            if entries.isEmpty {
-                Text("Nothing flagged or killed yet.").font(.caption).foregroundStyle(.secondary)
-            }
-            ForEach(Array(entries.enumerated()), id: \.offset) { _, e in
-                HStack(alignment: .top) {
-                    Text(e.date.formatted(date: .omitted, time: .shortened)).monospacedDigit().frame(width: 52, alignment: .leading)
-                    VStack(alignment: .leading, spacing: 0) {
-                        Text("\(e.kind.rawValue): \(e.name) (\(Int(e.cpu))%)").lineLimit(1)
-                        if !e.detail.isEmpty { Text(e.detail).foregroundStyle(.secondary).lineLimit(1) }
-                    }
-                }
-                .font(.caption)
-            }
+    @ViewBuilder
+    private func rulePill(_ p: Policy) -> some View {
+        switch p {
+        case .alert: Pill(text: "alert", symbol: "bell.fill", color: Tab.events.color)
+        case .autoKill: Pill(text: "auto-kill", symbol: "bolt.fill", color: Theme.heat(100))
+        case .ignore(let until?): Pill(text: "ignored until \(Fmt.time(until))", symbol: "moon.fill", color: Tab.rules.color)
+        case .ignore(nil): Pill(text: "always ignored", symbol: "moon.fill", color: Tab.rules.color)
         }
     }
 }
 
+/// Edits are a draft until Save, so dragging a slider past the value you wanted does not
+/// change detection halfway through.
 struct SettingsView: View {
     @ObservedObject var model: Model
+    @State private var threshold: Double?
+    @State private var window: Double?
+    @State private var login: Bool?
+
+    private var t: Double { threshold ?? model.threshold }
+    private var w: Double { window ?? model.windowSeconds }
+    private var l: Bool { login ?? model.launchAtLogin }
+    private var dirty: Bool { t != model.threshold || w != model.windowSeconds || l != model.launchAtLogin }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            VStack(alignment: .leading) {
-                Text("Bad actor: over \(Int(model.threshold))% CPU")
-                Slider(value: $model.threshold, in: 30...400, step: 10)
-                Text("100% is one full core; a process can use several.").font(.caption2).foregroundStyle(.secondary)
-            }
-            VStack(alignment: .leading) {
-                Text("for \(Model.duration(model.windowSeconds)) without a break")
-                Slider(value: $model.windowSeconds, in: 30...900, step: 30)
-            }
-            Toggle("Launch at login", isOn: Binding(get: { model.launchAtLogin }, set: { model.launchAtLogin = $0 }))
-            Text("Protected and never killable: WindowServer, kernel_task, launchd, loginwindow, Finder, Dock and other core macOS processes. Root processes can be killed by hand (asks for your password), never automatically. Auto-kill stops after 3 kills of the same app in an hour.")
-                .font(.caption2).foregroundStyle(.secondary)
-        }
-    }
-}
-
-/// Red for a normal kill, orange for a root kill (asks for the password).
-struct KillButton: View {
-    let isRoot: Bool
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Label("Kill", systemImage: isRoot ? "lock.fill" : "xmark.octagon.fill")
-                .font(.callout.weight(.semibold))
-        }
-        .buttonStyle(.borderedProminent)
-        .tint(isRoot ? .orange : .red)
-        .frame(width: 72, alignment: .trailing)
-        .help(isRoot ? "Runs as root: asks for your password" : "Stop politely, force after 5 s")
-    }
-}
-
-/// A protected process: a red-outlined sudo button that says what killing it will do,
-/// then offers a Terminal sudo shell, the admin password prompt, or the command to copy.
-struct SudoButton: View {
-    @ObservedObject var model: Model
-    let sample: ProcessSample
-
-    var body: some View {
-        Button(action: confirm) {
-            Label("sudo", systemImage: "terminal.fill").font(.callout.weight(.semibold))
-        }
-        .buttonStyle(.bordered)
-        .tint(.red)
-        .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.red, lineWidth: 1))
-        .frame(width: 72, alignment: .trailing)
-        .help("Protected macOS process: kill it as admin")
-    }
-
-    private func confirm() {
-        let alert = NSAlert()
-        alert.alertStyle = .critical
-        alert.messageText = "Kill \(sample.name) (pid \(sample.pid)) as admin?"
-        alert.informativeText = Self.consequence(of: sample.name)
-            + "\n\nCommand:\n\(Killer.sudoCommand(for: sample))"
-        alert.addButton(withTitle: "Open sudo shell")
-        alert.addButton(withTitle: "Kill with password")
-        alert.addButton(withTitle: "Copy command")
-        alert.addButton(withTitle: "Cancel")
-        alert.buttons[1].hasDestructiveAction = true
-        NSApp.activate(ignoringOtherApps: true)
-        switch alert.runModal() {
-        case .alertFirstButtonReturn: model.openSudoShell(sample)
-        case .alertSecondButtonReturn: model.killProtected(sample)
-        case .alertThirdButtonReturn:
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(Killer.sudoCommand(for: sample), forType: .string)
-            model.lastAction = "Copied: \(Killer.sudoCommand(for: sample))"
-        default: break
-        }
-    }
-
-    static func consequence(of name: String) -> String {
-        switch name {
-        case "WindowServer": return "WindowServer draws the whole screen. Killing it logs you out immediately and every unsaved document is lost."
-        case "loginwindow": return "Killing loginwindow logs you out immediately."
-        case "kernel_task": return "kernel_task is the kernel. It cannot be killed; high CPU here is macOS throttling for heat."
-        case "Finder", "Dock", "SystemUIServer": return "\(name) restarts by itself within seconds. Usually harmless."
-        case "coreaudiod": return "Sound stops briefly while coreaudiod restarts."
-        default: return "\(name) is a core macOS process. launchd normally restarts it, but the Mac may misbehave until it does."
-        }
-    }
-}
-
-/// Heat colour for a CPU percentage: green, yellow, orange, red.
-func heat(_ cpu: Double) -> Color {
-    cpu < 10 ? .green : cpu < 40 ? .yellow : cpu < 80 ? .orange : .red
-}
-
-/// The heaviest CPU users over the last 24 hours, from `DailyUsage`.
-struct DailyView: View {
-    @ObservedObject var model: Model
-    @AppStorage("dailyByApp") private var byApp = true
-
-    var body: some View {
-        let now = Date()
-        let usage = model.sentinel.dailyUsage
-        let rows = Array(usage.summaries(
-            at: now,
-            group: byApp ? { AppIdentity.groupKey(of: $0) } : nil,
-            name: byApp ? { key in
-                AppIdentity.bundlePath(of: key) != nil ? AppIdentity.appName(of: key) : (key as NSString).lastPathComponent
-            } : nil).prefix(12))
-        let maxSeconds = rows.first?.coreSeconds ?? 1
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text("Top CPU, last 24 hours").font(.subheadline.weight(.semibold))
-                Spacer()
-                Toggle("By app", isOn: $byApp).toggleStyle(.switch).controlSize(.mini)
-            }
-            HourBars(values: usage.totalHourly(at: now), height: 28)
-            Text("\(Model.duration(usage.sampled(at: now))) recorded. Average is over the time CPU Sentinel was running.")
-                .font(.caption2).foregroundStyle(.secondary)
-            if rows.isEmpty {
-                Text("Nothing recorded yet. Usage builds up while CPU Sentinel runs.")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-            HStack {
-                Text("Process").frame(maxWidth: .infinity, alignment: .leading)
-                Text("by hour").frame(width: 96)
-                Text("avg").frame(width: 44, alignment: .trailing)
-                Text("peak").frame(width: 44, alignment: .trailing)
-                Text("CPU time").frame(width: 64, alignment: .trailing)
-            }
-            .font(.caption2).foregroundStyle(.secondary)
-            ForEach(Array(rows.enumerated()), id: \.element.key) { i, r in
-                HStack(spacing: 8) {
-                    Text("\(i + 1)").font(.caption.monospacedDigit()).foregroundStyle(.secondary).frame(width: 16)
-                    IconView(icon: IconCache.shared.icon(for: ProcessSample(pid: 0, uid: 501, cpu: 0, path: r.key)), size: 22)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(r.name).lineLimit(1).truncationMode(.middle)
-                        GeometryReader { g in
-                            Capsule().fill(heat(r.average).gradient)
-                                .frame(width: max(3, g.size.width * r.coreSeconds / maxSeconds))
-                        }
-                        .frame(height: 4)
+        VStack(spacing: 10) {
+            Card(title: "When is a process a bad actor?", symbol: "flame.fill", tint: Theme.heat(100)) {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Text("Over")
+                        Text("\(Int(t))% CPU").font(.body.weight(.bold)).foregroundStyle(Theme.heat(t))
+                        Spacer()
+                        Text(Insights.fmtCores(t)).font(.caption).foregroundStyle(.secondary)
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    HourBars(values: r.hourly, height: 18).frame(width: 96)
-                    Text(String(format: "%.1f%%", r.average)).foregroundStyle(heat(r.average)).frame(width: 44, alignment: .trailing)
-                    Text(String(format: "%.0f%%", r.peak)).foregroundStyle(heat(r.peak)).frame(width: 44, alignment: .trailing)
-                    Text(Model.duration(r.coreSeconds)).frame(width: 64, alignment: .trailing)
-                        .help("Core time: 100% for one minute is 1m")
+                    Slider(value: Binding(get: { t }, set: { threshold = $0 }), in: 30...400, step: 10).tint(Theme.heat(t))
+                    Text("100% is one full core; a process can use several.").font(.caption2).foregroundStyle(.secondary)
                 }
-                .font(.callout.monospacedDigit())
+                Divider()
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Text("for")
+                        Text(Model.duration(w)).font(.body.weight(.bold)).foregroundStyle(Tab.events.color)
+                        Text("without a break")
+                    }
+                    Slider(value: Binding(get: { w }, set: { window = $0 }), in: 30...900, step: 30).tint(Tab.events.color)
+                    Text("Short bursts never count; only a process that stays over the line the whole time.")
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
+            }
+            Card(title: "Startup", symbol: "power", tint: Tab.processes.color) {
+                Toggle("Launch CPU Sentinel at login", isOn: Binding(get: { l }, set: { login = $0 }))
+                    .toggleStyle(.switch)
+                Text("Trends and insights only cover the time CPU Sentinel is running.")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+            HStack(spacing: 8) {
+                if dirty {
+                    Label("Unsaved changes", systemImage: "pencil.circle.fill").font(.caption.weight(.semibold)).foregroundStyle(Tab.events.color)
+                }
+                Spacer()
+                Button("Revert") { threshold = nil; window = nil; login = nil }
+                    .disabled(!dirty)
+                Button {
+                    model.threshold = t
+                    model.windowSeconds = w
+                    if l != model.launchAtLogin { model.launchAtLogin = l }
+                    threshold = nil; window = nil; login = nil
+                    model.lastAction = "Settings saved"
+                } label: {
+                    Label("Save", systemImage: "checkmark").frame(minWidth: 60)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(Tab.rules.color)
+                .keyboardShortcut(.defaultAction)
+                .disabled(!dirty)
+            }
+            Card(title: "Safety", symbol: "shield.lefthalf.filled", tint: Tab.settings.color) {
+                Text("Protected and never killed automatically: WindowServer, kernel_task, launchd, loginwindow, Finder, Dock and other core macOS processes; these get a sudo button instead. Root processes can be killed by hand (asks for your password), never automatically. Auto-kill stops after 3 kills of the same app in an hour.")
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
         }
     }
 }
 
-/// 24 hourly bars, oldest on the left, each coloured by its heat.
-struct HourBars: View {
-    let values: [Double]
-    let height: CGFloat
-
-    var body: some View {
-        let top = max(values.max() ?? 0, 1)
-        HStack(alignment: .bottom, spacing: 1) {
-            ForEach(Array(values.enumerated()), id: \.offset) { _, v in
-                RoundedRectangle(cornerRadius: 1)
-                    .fill(v > 0 ? heat(v) : Color.gray.opacity(0.2))
-                    .frame(height: max(1, height * v / top))
-                    .frame(maxWidth: .infinity)
+/// `--snapshot <dir>`: renders every tab, light and dark, to PNG files and quits. Used to
+/// check the design without clicking through the menu.
+@MainActor
+enum Snapshot {
+    static func run(_ model: Model, into dir: String) {
+        try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        for appearance in [NSAppearance.Name.aqua, .darkAqua] {
+            for tab in Tab.allCases {
+                let view = MenuView(model: model, tab: tab, fullLength: true)
+                    .background(Color(nsColor: .windowBackgroundColor))
+                let host = NSHostingView(rootView: view)
+                host.appearance = NSAppearance(named: appearance)
+                let win = NSWindow(contentRect: NSRect(x: 0, y: 0, width: MenuView.width, height: 400),
+                                   styleMask: [.borderless], backing: .buffered, defer: false)
+                win.appearance = NSAppearance(named: appearance)
+                win.contentView = host
+                let size = host.fittingSize
+                win.setContentSize(size)
+                host.frame = NSRect(origin: .zero, size: size)
+                host.layoutSubtreeIfNeeded()
+                guard let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { continue }
+                host.cacheDisplay(in: host.bounds, to: rep)
+                let name = "\(tab.rawValue)-\(tab.title.lowercased())-\(appearance == .aqua ? "light" : "dark").png"
+                try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: dir).appendingPathComponent(name))
             }
         }
-        .frame(height: height, alignment: .bottom)
+        exit(0)
+    }
+}
+
+/// The same screens in an ordinary window, which can be dragged anywhere and stays open;
+/// a menu bar panel is pinned under its icon and closes when you click away.
+@MainActor
+enum PopOut {
+    private static var window: NSWindow?
+
+    static func show(_ model: Model) {
+        if window == nil {
+            let host = NSHostingController(rootView: MenuView(model: model, inWindow: true))
+            let w = NSWindow(contentViewController: host)
+            w.title = "CPU Sentinel"
+            w.styleMask = [.titled, .closable, .miniaturizable]
+            w.isReleasedWhenClosed = false
+            w.setFrameAutosaveName("CPUSentinelWindow")
+            if !w.setFrameUsingName("CPUSentinelWindow") { w.center() }
+            window = w
+        }
+        NSApp.activate(ignoringOtherApps: true)
+        window?.makeKeyAndOrderFront(nil)
     }
 }

@@ -15,6 +15,7 @@ public final class CPUHistory {
     public let floor: Double
 
     private var series: [Int32: [(Date, Double)]] = [:]
+    private var paths: [Int32: String] = [:]
     private var totals: [(Date, Double)] = []
     private var started: Date?
 
@@ -34,6 +35,7 @@ public final class CPUHistory {
             total += s.cpu
             guard s.cpu >= floor else { continue }
             series[s.pid, default: []].append((now, s.cpu))
+            paths[s.pid] = s.path
         }
         totals.append((now, total))
         totals.removeAll { $0.0 < cutoff }
@@ -42,6 +44,7 @@ public final class CPUHistory {
             // A dead pid is dropped, so a reused pid does not inherit its history.
             series[pid] = (kept.isEmpty || !live.contains(pid)) ? nil : kept
         }
+        paths = paths.filter { series[$0.key] != nil }
     }
 
     /// Mean CPU of `pid` over the last `window` seconds, treating unrecorded samples as 0.
@@ -73,6 +76,24 @@ public final class CPUHistory {
             sums[i] += v
         }
         return sums.map { $0 / perBucket }
+    }
+
+    /// Per-bucket CPU over `window`, summed per `key(path)`, for a stacked chart. Processes
+    /// that have exited are gone from here; the caller shows the rest of `sparkline(nil)`
+    /// as "Other".
+    public func stacked(over window: TimeInterval, buckets: Int, at now: Date, key: (String) -> String) -> [String: [Double]] {
+        var out: [String: [Double]] = [:]
+        for pid in series.keys {
+            guard let path = paths[pid] else { continue }
+            let line = sparkline(pid, over: window, buckets: buckets, at: now)
+            let k = key(path)
+            if let existing = out[k] {
+                out[k] = zip(existing, line).map { $0 + $1 }
+            } else {
+                out[k] = line
+            }
+        }
+        return out
     }
 
     /// How much history there is, so the UI can say "15 min (4 min so far)".

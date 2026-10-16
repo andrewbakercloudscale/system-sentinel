@@ -1,7 +1,7 @@
 import Foundation
 
 public struct HistoryEntry: Codable, Equatable, Sendable {
-    public enum Kind: String, Codable, Sendable { case flagged, killed, autoKilled, killFailed, rateLimited }
+    public enum Kind: String, Codable, Sendable, CaseIterable { case flagged, killed, autoKilled, killFailed, rateLimited }
     public let date: Date
     public let kind: Kind
     public let pid: Int32
@@ -17,10 +17,11 @@ public final class History {
     private let fileURL: URL?
     private let keep: Int
 
-    public init(fileURL: URL?, keep: Int = 200) {
+    /// `seed` reads entries from a file without ever writing to it (snapshots, previews).
+    public init(fileURL: URL?, keep: Int = 200, seed: URL? = nil) {
         self.fileURL = fileURL
         self.keep = keep
-        if let url = fileURL, let text = try? String(contentsOf: url, encoding: .utf8) {
+        if let url = fileURL ?? seed, let text = try? String(contentsOf: url, encoding: .utf8) {
             let decoder = JSONDecoder()
             entries = text.split(separator: "\n").suffix(keep).compactMap {
                 try? decoder.decode(HistoryEntry.self, from: Data($0.utf8))
