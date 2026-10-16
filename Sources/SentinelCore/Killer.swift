@@ -43,8 +43,10 @@ public enum Killer {
     }
 
     /// The command the owner can paste into Terminal instead.
+    /// No trailing "# name" comment: interactive zsh does not treat # as a comment by
+    /// default, so it reached kill as a pid ("kill: illegal process id: #").
     public static func sudoCommand(for s: ProcessSample) -> String {
-        "sudo kill -TERM \(s.pid)   # \(s.name)"
+        "sudo kill -TERM \(s.pid)"
     }
 
     /// Root and other users' processes: the standard macOS admin prompt via osascript.

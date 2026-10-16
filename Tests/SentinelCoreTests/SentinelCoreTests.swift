@@ -330,6 +330,6 @@ final class AppIdentityTests: XCTestCase {
     func testProtectedOverrideStillRefusesLaunchdAndSelf() {
         XCTAssertEqual(Killer.killProtectedAsAdmin(ProcessSample(pid: 1, uid: 0, cpu: 1, path: "/sbin/launchd")), .refused("launchd cannot be killed"))
         XCTAssertEqual(Killer.killProtectedAsAdmin(ProcessSample(pid: getpid(), uid: getuid(), cpu: 1, path: "/me")), .refused("me cannot be killed"))
-        XCTAssertEqual(Killer.sudoCommand(for: ProcessSample(pid: 395, uid: 88, cpu: 1, path: "/x/WindowServer")), "sudo kill -TERM 395   # WindowServer")
+        XCTAssertEqual(Killer.sudoCommand(for: ProcessSample(pid: 395, uid: 88, cpu: 1, path: "/x/WindowServer")), "sudo kill -TERM 395")
     }
 }
