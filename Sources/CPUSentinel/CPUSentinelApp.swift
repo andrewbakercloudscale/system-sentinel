@@ -17,28 +17,33 @@ struct CPUSentinelApp: App {
         .menuBarExtraStyle(.window)
     }
 
-    private var icon: String {
-        switch model.level {
-        case .normal: return "gauge.with.dots.needle.33percent"
-        case .busy: return "gauge.with.dots.needle.67percent"
-        case .alert: return "exclamationmark.triangle.fill"
-        }
+    /// Always red, so it stands out in the menu bar; the glyph carries the state.
+    private let color = NSColor(srgbRed: 0.86, green: 0.15, blue: 0.15, alpha: 1)
+
+    private var glyphName: String {
+        model.level == .alert ? "exclamationmark.triangle.fill" : "cpu"
     }
 
-    private var color: NSColor {
-        switch model.level {
-        case .normal: return .systemGreen
-        case .busy: return .systemOrange
-        case .alert: return .systemRed
-        }
-    }
-
+    /// A solid coloured badge with a white chip glyph: readable on light and dark menu bars,
+    /// which a thin coloured outline symbol was not.
     private var menuIcon: NSImage {
-        let config = NSImage.SymbolConfiguration(pointSize: 15, weight: .semibold)
-            .applying(NSImage.SymbolConfiguration(paletteColors: [color]))
-        let img = NSImage(systemSymbolName: icon, accessibilityDescription: "CPU Sentinel")?
-            .withSymbolConfiguration(config) ?? NSImage()
+        let size = NSSize(width: 24, height: 18)
+        let fill = color
+        let glyph = NSImage(systemSymbolName: glyphName, accessibilityDescription: "CPU Sentinel")?
+            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 13, weight: .bold)
+                .applying(NSImage.SymbolConfiguration(paletteColors: [.white])))
+        let img = NSImage(size: size, flipped: false) { rect in
+            fill.setFill()
+            NSBezierPath(roundedRect: rect.insetBy(dx: 0.5, dy: 0.5), xRadius: 5, yRadius: 5).fill()
+            if let g = glyph {
+                let r = NSRect(x: (rect.width - g.size.width) / 2, y: (rect.height - g.size.height) / 2,
+                               width: g.size.width, height: g.size.height)
+                g.draw(in: r)
+            }
+            return true
+        }
         img.isTemplate = false
+        img.accessibilityDescription = "CPU Sentinel"
         return img
     }
 }
