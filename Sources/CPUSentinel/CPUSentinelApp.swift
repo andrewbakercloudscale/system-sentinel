@@ -81,7 +81,7 @@ struct MenuView: View {
             SymbolTile(symbol: "cpu", color: Color(hex: "#dc2626"), size: 28)
             VStack(alignment: .leading, spacing: 0) {
                 Text("CPU Sentinel").font(.headline)
-                Text("\(Int(model.cores)) cores  ·  sampled every 5 s").font(.caption2).foregroundStyle(.secondary)
+                Text("v\(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev")  ·  \(Int(model.cores)) cores  ·  sampled every 5 s").font(.caption2).foregroundStyle(.secondary)
             }
             Spacer()
             let load = model.machineLoad
