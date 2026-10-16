@@ -33,5 +33,5 @@ echo "== installed: $DEST"
 
 if [[ "${1:-}" != "--no-open" ]]; then
     open "$DEST"
-    echo "== launched; look for the gauge icon in the menu bar"
+    echo "== launched; look for the red chip icon in the menu bar"
 fi
