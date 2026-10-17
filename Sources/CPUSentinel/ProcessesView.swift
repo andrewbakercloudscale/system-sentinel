@@ -7,6 +7,9 @@ struct ProcessesView: View {
     @ObservedObject var model: Model
     @AppStorage("processSort") private var sortRaw = Sort.now.rawValue
     @State private var search = ""
+    /// The list as it stood when Pause was pressed. Sampling, alerts and history carry on;
+    /// only what this list shows holds still, so a row does not move away mid-read.
+    @State private var frozen: (rows: [ProcessSample], at: Date)?
 
     enum Sort: String, CaseIterable {
         case now = "Now", m15 = "15 min", h1 = "1 hour", h6 = "6 hours", memory = "Memory"
@@ -26,7 +29,7 @@ struct ProcessesView: View {
         let sort = Sort(rawValue: sortRaw) ?? .now
         // Ranked across every process, not just the 30 busiest right now: the heaviest over
         // 6 hours may be idle at this moment.
-        let all = model.top.isEmpty ? [] : model.sentinel.latest
+        let all = frozen?.rows ?? (model.top.isEmpty ? [] : model.sentinel.latest)
         let rows = Array(sorted(all.filter { search.isEmpty || $0.displayName.localizedCaseInsensitiveContains(search) }, by: sort).prefix(30))
         let window = sort.window ?? 900
         VStack(spacing: 8) {
@@ -38,6 +41,7 @@ struct ProcessesView: View {
                 .padding(.horizontal, 8).padding(.vertical, 5)
                 .background(RoundedRectangle(cornerRadius: 7).fill(Color.primary.opacity(0.06)))
                 .frame(width: 170)
+                pauseButton
                 Spacer()
                 Text("Sort").font(.caption).foregroundStyle(.secondary)
                 ChipPicker(options: Sort.allCases.map(\.rawValue), selection: $sortRaw, color: Tab.processes.color)
@@ -59,6 +63,23 @@ struct ProcessesView: View {
             Text("100% is one full core; a busy process can use several. Averages count idle time, so they show what has been chewing the CPU, not how hot it runs when it does.")
                 .font(.caption2).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+
+    private var pauseButton: some View {
+        let on = frozen != nil
+        return Button {
+            frozen = on ? nil : (model.sentinel.latest, Date())
+        } label: {
+            Label(on ? "Paused \(frozen!.at.formatted(date: .omitted, time: .shortened))" : "Pause",
+                  systemImage: on ? "play.fill" : "pause.fill")
+                .font(.caption.weight(on ? .semibold : .regular))
+                .foregroundStyle(on ? Color.white : Color.primary.opacity(0.75))
+                .padding(.horizontal, 9).padding(.vertical, 4)
+                .background(Capsule().fill(on ? Tab.processes.color : Color.primary.opacity(0.06)))
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .help(on ? "Resume live updates" : "Hold the list still to read it. Sampling and alerts carry on.")
     }
 
     private func sorted(_ list: [ProcessSample], by sort: Sort) -> [ProcessSample] {

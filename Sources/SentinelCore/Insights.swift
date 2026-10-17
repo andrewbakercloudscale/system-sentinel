@@ -161,6 +161,7 @@ public enum ProcessGuide {
             "suggestd": Note(headline: "Siri Suggestions", detail: "Scans mail and messages for contacts and events to suggest. Settles on its own.", verdict: .wait),
             "tccd": Note(headline: "Privacy permissions", detail: "Answers apps asking for camera, screen, files and automation access. A busy tccd means some app is asking very often.", verdict: .wait),
             "logd": Note(headline: "System logging", detail: "Busy when some process logs heavily. Find the noisy process rather than logd.", verdict: .avoid),
+            "lsd": Note(headline: "Launch Services", detail: "Keeps the list of which app opens which file type and link. It works after you install, update or move apps, and when an app asks it to open files often. Settles on its own; killing it just restarts it.", verdict: .wait),
             "cfprefsd": Note(headline: "Preferences", detail: "Reads and writes app settings. A busy cfprefsd means an app is writing settings in a loop.", verdict: .avoid),
             "ZscalerService": Note(headline: "Zscaler network security", detail: "Your company's security agent inspects network traffic. Heavy browsing or downloads raise it. Managed by IT.", verdict: .avoid),
         ]
