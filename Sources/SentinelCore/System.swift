@@ -108,6 +108,14 @@ public struct MemoryStatus: Equatable, Sendable {
         }
         return r == 0 ? info.ri_phys_footprint : nil
     }
+
+    /// The part of a process's memory that is in RAM right now. Footprint minus this is what
+    /// macOS has compressed or written to swap.
+    public static func resident(_ pid: Int32) -> UInt64? {
+        var ti = proc_taskinfo()
+        let n = proc_pidinfo(pid, PROC_PIDTASKINFO, 0, &ti, Int32(MemoryLayout<proc_taskinfo>.size))
+        return n > 0 ? ti.pti_resident_size : nil
+    }
 }
 
 // MARK: Graphics

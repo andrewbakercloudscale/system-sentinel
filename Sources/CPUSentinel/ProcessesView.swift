@@ -48,7 +48,7 @@ struct ProcessesView: View {
                 Text("now").frame(width: 62, alignment: .trailing)
                 Text(window == 900 ? "15 min" : window == 3600 ? "1 hour" : "6 hours").frame(width: 44, alignment: .trailing)
                 Text("memory").frame(width: 54, alignment: .trailing)
-                Text("").frame(width: 128)
+                Text("").frame(width: 172)
             }
             .font(.caption2.weight(.medium)).foregroundStyle(.secondary)
             VStack(spacing: 2) {
@@ -158,7 +158,7 @@ private struct ProcessRow: View {
                     SudoButton(model: model, sample: s)
                 }
             }
-            .frame(width: 128, alignment: .trailing)
+            .frame(width: 172, alignment: .trailing)
         }
         .padding(.horizontal, 6).padding(.vertical, 5)
         .background(
@@ -340,7 +340,28 @@ struct KillButton: View {
     private var isRoot: Bool { sample.isRoot }
     private var busy: Bool { model.killing.contains(sample.pid) }
 
+    /// Off where the row already has a Force kill of its own.
+    var withForce = true
+
     var body: some View {
+        HStack(spacing: 5) {
+            if withForce, !busy {
+                Button { ForceKillButton.confirm(model, sample) } label: {
+                    Image(systemName: "bolt.fill")
+                        .font(.caption.weight(.bold)).foregroundStyle(Color(hex: "#dc2626"))
+                        .padding(.horizontal, 8).padding(.vertical, 5)
+                        .background(Capsule().strokeBorder(Color(hex: "#dc2626"), lineWidth: 1.2))
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .fixedSize()
+                .help("Force kill (kill -9): stops it at once, with no chance to save. Asks first.")
+            }
+            kill
+        }
+    }
+
+    private var kill: some View {
         Button { model.kill(sample) } label: {
             HStack(spacing: 4) {
                 if busy {
@@ -361,7 +382,7 @@ struct KillButton: View {
         .buttonStyle(.plain)
         .disabled(busy)
         .opacity(busy ? 0.75 : 1)
-        .frame(width: 96, alignment: .trailing)
+        .fixedSize()
         .help(isRoot ? "Runs as root: asks for your password" : "Stop politely, force after 5 s")
     }
 }

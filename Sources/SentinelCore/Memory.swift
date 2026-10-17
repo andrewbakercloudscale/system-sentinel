@@ -7,11 +7,15 @@ public final class MemoryHistory {
         public var key: String
         public var name: String
         public var bytes: UInt64
+        /// Of `bytes`, what is not in RAM: compressed, or written out to swap. macOS does not
+        /// split the two per app. Optional so older timelines still load.
+        public var outOfRAM: UInt64?
 
-        public init(key: String, name: String, bytes: UInt64) {
+        public init(key: String, name: String, bytes: UInt64, outOfRAM: UInt64? = nil) {
             self.key = key
             self.name = name
             self.bytes = bytes
+            self.outOfRAM = outOfRAM
         }
     }
 
@@ -215,8 +219,9 @@ public enum MemoryAnalysis {
         return count.max { $0.value < $1.value }?.key
     }
 
+    /// `apps`: every app now, with what each holds outside RAM.
     public static func insights(points: [MemoryHistory.Point], current m: MemoryStatus, uptime: TimeInterval?,
-                                at now: Date) -> [Insight] {
+                                apps: [MemoryHistory.App] = [], at now: Date) -> [Insight] {
         var out: [Insight] = []
         let gb = ReportDocument.bytes
         let mbs: (Double) -> String = { String(format: "%.1f MB/s", $0 / 1_048_576) }
@@ -275,7 +280,7 @@ public enum MemoryAnalysis {
 
         // Swap left over: big, but idle.
         let last30 = traffic(points, seconds: 1800, at: now)
-        if m.swapUsed >= 1 << 30, m.pressure == .normal, last30.minutes >= 10, last30.outOf < 512 * 1024, out.isEmpty {
+        if m.swapUsed >= 1 << 30, m.pressure == .normal, last30.minutes >= 10, last30.outOf < 512 * 1024, !out.contains(where: { $0.tone >= .warning }) {
             var x = Insight(id: "mem-swapidle", tone: .info, symbol: "externaldrive.fill",
                             title: "\(gb(m.swapUsed)) in swap, but it is idle",
                             detail: "Memory pressure is normal and nothing has been read back from swap in the last 30 minutes. It takes disk space, not speed.")
@@ -290,6 +295,24 @@ public enum MemoryAnalysis {
                             title: "Up \(Int(up / 86_400)) days with \(gb(m.swapUsed)) in swap",
                             detail: "Swap only empties when the Mac restarts.")
             x.steps = ["Restart when convenient: it clears swap and memory that apps have leaked."]
+            out.append(x)
+        }
+
+        // Whose memory is in swap: macOS gives no per-app swap figure, but each app's memory
+        // outside RAM (compressed or swapped) names who the swap belongs to.
+        if m.swapUsed >= 1 << 30, let top = apps.max(by: { ($0.outOfRAM ?? 0) < ($1.outOfRAM ?? 0) }),
+           let away = top.outOfRAM, away >= 1 << 30 {
+            let others = apps.filter { $0.key != top.key && ($0.outOfRAM ?? 0) >= 256 << 20 }
+                .sorted { ($0.outOfRAM ?? 0) > ($1.outOfRAM ?? 0) }.prefix(2)
+            var x = Insight(id: "mem-swapowner", tone: m.pressure >= .warning ? .warning : .info, symbol: "person.crop.circle.badge.questionmark",
+                            title: "\(top.name) holds \(gb(away)) outside RAM",
+                            detail: "Of its \(gb(top.bytes)), only \(gb(top.bytes > away ? top.bytes - away : 0)) is in RAM; the rest is compressed or in swap. It is the largest share of the Mac's \(gb(m.swapUsed)) of swap.")
+            if !others.isEmpty {
+                x.detail += " Next: " + others.map { "\($0.name) \(gb($0.outOfRAM ?? 0))" }.joined(separator: ", ") + "."
+            }
+            x.why = "macOS reports swap for the whole Mac, not per app. What it does report per app is how much of its memory is not in RAM, which is memory macOS compressed or wrote to swap because the app was not using it. Quitting the app frees all of it, swap included."
+            x.steps = ["If you are not using \(top.name), quit it: its swap is freed at once.",
+                       "If you are, nothing is wrong: macOS swapped out the parts it was not touching."]
             out.append(x)
         }
 

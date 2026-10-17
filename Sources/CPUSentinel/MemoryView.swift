@@ -15,6 +15,7 @@ struct MemoryView: View {
                             title: "Memory insights")
                 MemoryTimeline(model: model)
                 LargestApps(model: model)
+                CleanUp(model: model, memory: m)
                 Breakdown(memory: m, model: model)
                 MemoryGuide()
             } else {
@@ -218,56 +219,198 @@ private struct MemoryTimeline: View {
 private struct LargestApps: View {
     @ObservedObject var model: Model
 
+    @AppStorage("memorySort") private var sort = "Total"
+
     var body: some View {
-        let apps = Array(model.memoryApps.prefix(10))
+        let all = sort == "Total" ? model.memoryApps : model.memoryApps.sorted { $0.outOfRAM > $1.outOfRAM }
+        let apps = Array(all.prefix(8))
         let total = model.memory?.total ?? 1
         let hourAgo = Self.bytesAgo(model.memoryHistory.points, seconds: 3600)
-        Card(title: "Largest apps", symbol: "square.stack.3d.up.fill", tint: Tab.memory.color) {
+        Card(title: "Memory by app", symbol: "square.stack.3d.up.fill", tint: Tab.memory.color,
+             trailing: AnyView(ChipPicker(options: ["Total", "Compressed or in swap"], selection: $sort, color: Tab.memory.color))) {
+            HStack(spacing: 12) {
+                legend(Tab.memory.color, "In RAM")
+                legend(Color(hex: "#d97706"), "Compressed or in swap")
+            }
             if apps.isEmpty {
                 Text("Reading…").font(.caption).foregroundStyle(.secondary)
             }
             ForEach(apps) { a in
-                HStack(spacing: 10) {
-                    IconView(icon: IconCache.shared.icon(for: a.sample), size: 24)
-                    VStack(alignment: .leading, spacing: 3) {
-                        HStack(spacing: 6) {
-                            Text(a.name).font(.callout.weight(.medium)).lineLimit(1).truncationMode(.middle)
-                            if a.pids.count > 1 {
-                                Text("\(a.pids.count) processes").font(.caption).foregroundStyle(.secondary).lineLimit(1).fixedSize()
-                            }
-                            if let before = hourAgo[a.key], a.bytes > before, a.bytes - before >= 256 << 20 {
-                                Pill(text: "+\(gb(a.bytes - before)) in 1 h", symbol: "arrow.up.right", color: Color(hex: "#d97706"))
-                            }
-                            Spacer(minLength: 4)
-                            Text(gb(a.bytes)).font(.callout.weight(.semibold)).monospacedDigit()
-                        }
-                        ShareBar(share: Double(a.bytes) / Double(max(total, 1)), color: Tab.memory.color)
-                    }
-                    if a.sample.pid != getpid(), Safety.canKillManually(a.sample) {
-                        Button { model.perform(.quit(pids: a.pids, name: a.name)) } label: {
-                            Label("Quit", systemImage: "xmark.circle.fill")
-                                .font(.caption.weight(.semibold)).foregroundStyle(.white)
-                                .padding(.horizontal, 9).padding(.vertical, 4)
-                                .background(Capsule().fill(Theme.heat(100).gradient))
-                                .contentShape(Capsule())
-                        }
-                        .buttonStyle(.plain)
-                        .help("Quit \(a.name) properly, so it can save, and give its \(gb(a.bytes)) back")
-                    } else {
-                        Color.clear.frame(width: 62, height: 1)
-                    }
-                }
+                row(a, total: total, before: hourAgo[a.key])
             }
-            Text("Memory as Activity Monitor counts it, added up across each app's processes. Bars are a share of the Mac's \(gb(total)). Apps of other users (system services) may show their resident size instead.")
+            Text("Memory as Activity Monitor counts it, added up across each app's processes; bars are a share of the Mac's \(gb(total)). macOS reports swap for the whole Mac only, so each app's compressed and swapped memory is shown together. System services may show less than they hold.")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
     }
+
+    @ViewBuilder
+    private func row(_ a: Model.MemoryApp, total: UInt64, before: UInt64?) -> some View {
+        let inRAM = a.bytes > a.outOfRAM ? a.bytes - a.outOfRAM : 0
+        let vm = Model.isVM(a.key)
+        let host = vm ? model.vmHost() : nil
+        HStack(alignment: .top, spacing: 10) {
+            IconView(icon: IconCache.shared.icon(for: host?.sample ?? a.sample), size: 26)
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    Text(a.name).font(.callout.weight(.semibold)).lineLimit(1).truncationMode(.middle)
+                    if a.pids.count > 1 {
+                        Text("\(a.pids.count) processes").font(.caption).foregroundStyle(.secondary).lineLimit(1).fixedSize()
+                    }
+                    if let before, a.bytes > before, a.bytes - before >= 256 << 20 {
+                        Pill(text: "+\(gb(a.bytes - before)) in 1 h", symbol: "arrow.up.right", color: Color(hex: "#d97706"))
+                    }
+                    Spacer(minLength: 4)
+                    Text(gb(a.bytes)).font(.callout.weight(.bold)).monospacedDigit()
+                }
+                GeometryReader { g in
+                    let w = g.size.width
+                    HStack(spacing: 0) {
+                        Rectangle().fill(Tab.memory.color.gradient).frame(width: w * Double(inRAM) / Double(max(total, 1)))
+                        Rectangle().fill(Color(hex: "#d97706").gradient).frame(width: w * Double(a.outOfRAM) / Double(max(total, 1)))
+                        Spacer(minLength: 0)
+                    }
+                    .frame(width: w)
+                    .background(Color.primary.opacity(0.07))
+                    .clipShape(Capsule())
+                }
+                .frame(height: 6)
+                HStack(spacing: 10) {
+                    Label("\(gb(inRAM)) in RAM", systemImage: "memorychip").foregroundStyle(Tab.memory.color)
+                    Label("\(gb(a.outOfRAM)) compressed or in swap", systemImage: "externaldrive.fill").foregroundStyle(Color(hex: "#d97706"))
+                    if let t = model.started(a.pids) {
+                        Label("running \(Self.age(t))", systemImage: "clock").foregroundStyle(.secondary)
+                    }
+                }
+                .font(.caption.weight(.medium))
+                Text(model.memoryAbout(a)).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+            quitButton(a, host: host)
+        }
+        .padding(8)
+        .background(RoundedRectangle(cornerRadius: 9).fill(Color.primary.opacity(0.03)))
+    }
+
+    @State private var forceTarget: Model.MemoryApp?
+
+    @ViewBuilder
+    private func quitButton(_ a: Model.MemoryApp, host: Model.MemoryApp?) -> some View {
+        // A virtual machine is quit through the app that runs it, which shuts it down cleanly.
+        let target = host ?? a
+        let canQuit = target.sample.pid != getpid() && Safety.canKillManually(target.sample)
+        let canForce = a.sample.pid != getpid() && a.sample.pid > 1 && (canQuit || Model.isVM(a.key))
+        VStack(alignment: .trailing, spacing: 5) {
+            if canQuit {
+                pill("Quit", symbol: "xmark.circle.fill", fill: Theme.heat(100)) {
+                    model.perform(.quit(pids: target.pids, name: target.name))
+                }
+                .help("Ask \(target.name) to quit, so it can save first, and give its memory back")
+            }
+            if canForce {
+                Button { forceTarget = a } label: {
+                    Label("Force Quit", systemImage: "bolt.circle.fill")
+                        .font(.caption.weight(.semibold)).foregroundStyle(Theme.heat(100))
+                        .padding(.horizontal, 9).padding(.vertical, 3)
+                        .overlay(Capsule().strokeBorder(Theme.heat(100), lineWidth: 1.2))
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .fixedSize()
+                .help("Stop all \(a.pids.count) of its processes at once, without saving")
+            }
+            if !canQuit, !canForce {
+                Text("part of macOS").font(.caption).foregroundStyle(.secondary).fixedSize()
+                    .help("Not offered for quitting: the Mac depends on it")
+            }
+        }
+        .confirmationDialog(forceTarget.map { "Force quit \($0.name)?" } ?? "", isPresented: Binding(
+            get: { forceTarget?.id == a.id }, set: { if !$0 { forceTarget = nil } }), titleVisibility: .visible) {
+            Button("Force Quit", role: .destructive) {
+                model.forceQuit(pids: a.pids, name: a.name)
+                forceTarget = nil
+            }
+        } message: {
+            Text(Model.isVM(a.key)
+                 ? "The virtual machine stops at once, like pulling its plug: containers and anything unsaved inside it are lost, and \(host?.name ?? "the app that runs it") may show an error. Frees about \(gb(a.bytes))."
+                 : "All \(a.pids.count) of its processes stop at once. Anything unsaved is lost. Frees about \(gb(a.bytes)).")
+        }
+    }
+
+    private func pill(_ title: String, symbol: String, fill: Color, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: symbol)
+                .font(.caption.weight(.semibold)).foregroundStyle(.white).lineLimit(1)
+                .padding(.horizontal, 9).padding(.vertical, 4)
+                .background(Capsule().fill(fill.gradient))
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .fixedSize()
+    }
+
+    private func legend(_ c: Color, _ t: String) -> some View {
+        HStack(spacing: 4) {
+            RoundedRectangle(cornerRadius: 2).fill(c).frame(width: 10, height: 10)
+            Text(t).font(.caption).foregroundStyle(.secondary)
+        }
+    }
+
+    static func age(_ start: Date) -> String { MemoryLargestAge.age(start) }
 
     /// Each app's memory about `seconds` ago, from the timeline's top apps.
     static func bytesAgo(_ points: [MemoryHistory.Point], seconds: TimeInterval) -> [String: UInt64] {
         let t = Int(Date().timeIntervalSince1970 - seconds)
         guard let p = points.last(where: { $0.t <= t }), t - p.t <= 600 else { return [:] }
         return Dictionary(p.apps.map { ($0.key, $0.bytes) }, uniquingKeysWith: { a, _ in a })
+    }
+}
+
+// MARK: Clean up
+
+/// What can actually be done about memory from here, and what each one really frees.
+private struct CleanUp: View {
+    @ObservedObject var model: Model
+    let memory: MemoryStatus
+
+    var body: some View {
+        let m = memory
+        let up = MemoryStatus.uptime()
+        Card(title: "Free up memory", symbol: "wand.and.stars", tint: Tab.memory.color) {
+            action(symbol: "xmark.app.fill", title: "Quit what you are not using",
+                   text: "The only thing that frees app memory and swap while the Mac runs. Use the Quit buttons above, largest first.",
+                   button: nil)
+            action(symbol: "doc.on.doc.fill", title: "Free cached files (purge)",
+                   text: "Drops \(gb(m.cached)) of cached files from memory. Asks for your password. It does not touch apps or swap, and macOS refills the cache as you work, so it rarely makes the Mac faster.",
+                   button: AnyView(button(model.purging ? "Purging…" : "Purge", symbol: "arrow.3.trianglepath", color: Color(hex: "#d97706")) { model.purgeCaches() }
+                    .disabled(model.purging)))
+            action(symbol: "restart.circle.fill", title: "Restart to clear swap",
+                   text: "Swap only empties on a restart. \(up.map { "This Mac has been up \(Int($0 / 86_400)) days with \(gb(m.swapUsed)) in swap." } ?? "")",
+                   button: AnyView(button("Restart…", symbol: "restart", color: Tab.processes.color) { model.askToRestart() }
+                    .help("Opens macOS's own Restart dialog: nothing restarts until you confirm")))
+        }
+    }
+
+    private func action(symbol: String, title: String, text: String, button: AnyView?) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            SymbolTile(symbol: symbol, color: Tab.memory.color, size: 24)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.callout.weight(.semibold))
+                Text(text).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 6)
+            if let button { button }
+        }
+    }
+
+    private func button(_ title: String, symbol: String, color: Color, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: symbol)
+                .font(.caption.weight(.semibold)).foregroundStyle(.white)
+                .padding(.horizontal, 9).padding(.vertical, 4)
+                .background(Capsule().fill(color.gradient))
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .fixedSize()
     }
 }
 
@@ -349,5 +492,13 @@ private struct MemoryGuide: View {
                 Text(text).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
         }
+    }
+}
+
+enum MemoryLargestAge {
+    static func age(_ start: Date) -> String {
+        let d = Date().timeIntervalSince(start)
+        if d >= 86_400 { return "\(Int(d / 86_400))d \(Int(d.truncatingRemainder(dividingBy: 86_400) / 3600))h" }
+        return Insights.duration(d)
     }
 }

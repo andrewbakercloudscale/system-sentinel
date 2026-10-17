@@ -72,6 +72,24 @@ final class MemoryTests: XCTestCase {
         XCTAssertTrue(i.contains { $0.id == "mem-swapgrow" })
     }
 
+    func testSwapOwnerNamesWhoHoldsMemoryOutsideRAM() {
+        let pts = timeline(40, end: now) { _ in point(swap: 6 * GB) }
+        let apps = [MemoryHistory.App(key: "chrome", name: "Google Chrome", bytes: 5 * GB, outOfRAM: 2 * GB),
+                    MemoryHistory.App(key: "vm", name: "Virtual machine", bytes: 6 * GB, outOfRAM: 6 * GB - 400 << 20),
+                    MemoryHistory.App(key: "notes", name: "Notes", bytes: GB / 4, outOfRAM: 0)]
+        let i = MemoryAnalysis.insights(points: pts, current: status(swap: 6 * GB), uptime: nil, apps: apps, at: now)
+        let owner = i.first { $0.id == "mem-swapowner" }
+        XCTAssertEqual(owner?.title.hasPrefix("Virtual machine holds"), true)
+        XCTAssertEqual(owner?.tone, .info)
+        XCTAssertEqual(owner?.detail.contains("Google Chrome"), true)
+        XCTAssertEqual(owner?.detail.contains("Notes"), false)
+        // Idle swap still gets its reassurance: the owner note is only info.
+        XCTAssertTrue(i.contains { $0.id == "mem-swapidle" })
+        // Small amounts outside RAM are not worth a note.
+        let small = apps.map { MemoryHistory.App(key: $0.key, name: $0.name, bytes: $0.bytes, outOfRAM: 200 << 20) }
+        XCTAssertFalse(MemoryAnalysis.insights(points: pts, current: status(swap: 6 * GB), uptime: nil, apps: small, at: now).contains { $0.id == "mem-swapowner" })
+    }
+
     func testIdleSwapIsReassuringAndMentionsRestart() {
         let pts = timeline(40, end: now) { _ in point(swap: 6 * GB) }
         let i = MemoryAnalysis.insights(points: pts, current: status(swap: 6 * GB), uptime: 9 * 86_400, at: now)

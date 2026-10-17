@@ -43,6 +43,8 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
         let key: String
         let name: String
         let bytes: UInt64
+        /// Compressed or in swap: footprint minus what is in RAM.
+        let outOfRAM: UInt64
         let pids: [Int32]
         /// The largest process, for the icon and the Quit button.
         let sample: ProcessSample
@@ -177,8 +179,9 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
             checkKills()
             readPower()
             thermal = ProcessInfo.processInfo.thermalState
-            insights = Insights.generate(insightInput())
-                + memoryInsights.filter { $0.id == "mem-thrash" || $0.id.hasPrefix("mem-grow-") }
+            insights = (Insights.generate(insightInput())
+                + memoryInsights.filter { $0.id == "mem-thrash" || $0.id.hasPrefix("mem-grow-") })
+                .map { $0.id == "memory" ? explainQuit($0) : $0 }
         } catch {
             lastError = "Could not read processes: \(error)"
         }
@@ -246,35 +249,48 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
     /// Memory by app (footprints where macOS gives them), the timeline and its findings.
     private func readMemory(_ now: Date) {
         guard let m = memory else { return }
-        var groups: [String: (bytes: UInt64, pids: [Int32], top: ProcessSample, topBytes: UInt64)] = [:]
-        for s in sentinel.latest where s.rssKB >= 10_240 {
-            let b = MemoryStatus.footprint(s.pid) ?? UInt64(s.rssKB) * 1024
+        var groups: [String: (bytes: UInt64, away: UInt64, pids: [Int32], top: ProcessSample, topBytes: UInt64)] = [:]
+        for s in sentinel.latest {
+            let fp = MemoryStatus.footprint(s.pid)
+            let b = fp ?? UInt64(s.rssKB) * 1024
+            guard b >= 10 << 20 else { continue }
+            // Resident counts shared libraries too, so this is a floor, never an overstatement.
+            let inRAM = MemoryStatus.resident(s.pid) ?? b
+            let away = fp != nil && b > inRAM ? b - inRAM : 0
             let k = Model.appKey(s.path)
             if var g = groups[k] {
                 g.bytes += b
+                g.away += away
                 g.pids.append(s.pid)
                 if b > g.topBytes { g.top = s; g.topBytes = b }
                 groups[k] = g
             } else {
-                groups[k] = (b, [s.pid], s, b)
+                groups[k] = (b, away, [s.pid], s, b)
             }
         }
-        memoryApps = groups.map { MemoryApp(key: $0.key, name: Model.appName($0.key), bytes: $0.value.bytes, pids: $0.value.pids, sample: $0.value.top) }
+        memoryApps = groups.map { MemoryApp(key: $0.key, name: Model.memoryName($0.key), bytes: $0.value.bytes, outOfRAM: $0.value.away,
+                                            pids: $0.value.pids, sample: $0.value.top) }
             .sorted { $0.bytes > $1.bytes }
-        memoryHistory.record(m, apps: memoryApps.prefix(MemoryHistory.appsKept).map { .init(key: $0.key, name: $0.name, bytes: $0.bytes) }, at: now)
+        // Name the VM after the app running it, when one is.
+        if let host = vmHost(), let i = memoryApps.firstIndex(where: { Model.isVM($0.key) }) {
+            let v = memoryApps[i]
+            memoryApps[i] = MemoryApp(key: v.key, name: "Virtual machine (\(host.name))", bytes: v.bytes, outOfRAM: v.outOfRAM, pids: v.pids, sample: v.sample)
+        }
+        let apps = memoryApps.map { MemoryHistory.App(key: $0.key, name: $0.name, bytes: $0.bytes, outOfRAM: $0.outOfRAM) }
+        memoryHistory.record(m, apps: Array(apps.prefix(MemoryHistory.appsKept)), at: now)
         var found = MemoryAnalysis.insights(points: memoryHistory.since(now.addingTimeInterval(-86_400)), current: m,
-                                            uptime: MemoryStatus.uptime(at: now), at: now)
+                                            uptime: MemoryStatus.uptime(at: now), apps: apps, at: now)
         // Growing apps get a Quit button for the app that is climbing.
-        for i in found.indices where found[i].id.hasPrefix("mem-grow-") {
-            let key = String(found[i].id.dropFirst("mem-grow-".count))
-            if let a = memoryApps.first(where: { $0.key == key }), a.sample.pid != getpid(), Safety.canKillManually(a.sample) {
-                found[i].fixes = [.quit(pids: a.pids, name: a.name)]
+        for i in found.indices where found[i].id.hasPrefix("mem-grow-") || found[i].id == "mem-swapowner" {
+            let key = found[i].id == "mem-swapowner" ? (memoryApps.max { $0.outOfRAM < $1.outOfRAM }?.key ?? "")
+                                                     : String(found[i].id.dropFirst("mem-grow-".count))
+            if let m = memoryApps.first(where: { $0.key == key }) {
+                let a = Model.isVM(m.key) ? (vmHost() ?? m) : m
+                if a.sample.pid != getpid(), Safety.canKillManually(a.sample) { found[i].fixes = [.quit(pids: a.pids, name: a.name)] }
             }
         }
-        if let a = memoryApps.first(where: { $0.sample.pid != getpid() && Safety.canKillManually($0.sample) }) {
-            for i in found.indices where ["mem-thrash", "mem-swapgrow", "mem-pressure24"].contains(found[i].id) {
-                found[i].fixes = [.quit(pids: a.pids, name: a.name)]
-            }
+        for i in found.indices where ["mem-thrash", "mem-swapgrow", "mem-pressure24"].contains(found[i].id) {
+            found[i] = explainQuit(found[i])
         }
         memoryInsights = found
     }
@@ -441,7 +457,13 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
         var seen = Set<pid_t>()
         for app in apps where seen.insert(app.processIdentifier).inserted { app.terminate() }
         for s in loose { kill(s) }
-        showToast(Toast(ok: true, title: "Asked \(name) to quit", detail: "The result, in power and CPU, follows in a minute."))
+        // A quit nothing can receive (a VM's process, a system service) should say so, not claim success.
+        let refused = loose.filter { !Safety.canKillManually($0) }
+        if apps.isEmpty, !loose.isEmpty, refused.count == loose.count {
+            showToast(Toast(ok: false, title: "\(name) cannot be asked to quit", detail: "Use Force Quit, or quit the app that started it."))
+            return
+        }
+        showToast(Toast(ok: true, title: "Asked \(name) to quit", detail: "The result, in power and CPU, follows in a minute. If it is still here, use Force Quit."))
     }
 
     /// Notes the draw and CPU now, and a minute later says what changed.
@@ -596,6 +618,12 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
 
     static func appKey(_ path: String) -> String { AppIdentity.groupKey(of: path) }
 
+    /// App names for the Memory tab, where a bare Virtualization process needs explaining.
+    static func memoryName(_ key: String) -> String {
+        key.hasSuffix("com.apple.Virtualization.VirtualMachine") || key.contains("com.apple.Virtualization.VirtualMachine.xpc")
+            ? "Virtual machine (Docker, Rancher, UTM…)" : appName(key)
+    }
+
     static func appName(_ key: String) -> String {
         if key.contains("Google Chrome Helper (Renderer)") { return "Chrome tabs" }
         return AppIdentity.bundlePath(of: key) != nil ? AppIdentity.appName(of: key) : (key as NSString).lastPathComponent
@@ -680,6 +708,102 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
     }
 
     /// "up 22d 2h", short enough for a row subtitle.
+    @Published var purging = false
+
+    /// `purge`: drops cached files from memory (admin password). It does not touch app memory
+    /// or swap, so the toast reports what it actually changed.
+    func purgeCaches() {
+        guard !purging else { return }
+        purging = true
+        let before = MemoryStatus.read()
+        Task.detached {
+            let task = Process()
+            task.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+            task.arguments = ["-e", "do shell script \"/usr/sbin/purge\" with administrator privileges"]
+            task.standardError = FileHandle.nullDevice
+            let ok = (try? task.run()) != nil && { task.waitUntilExit(); return task.terminationStatus == 0 }()
+            let after = MemoryStatus.read()
+            await MainActor.run {
+                self.purging = false
+                if ok, let b = before, let a = after {
+                    let freed = a.free > b.free ? a.free - b.free : 0
+                    self.showToast(Toast(ok: true, title: "Freed \(ReportDocument.bytes(freed)) of cached files",
+                                         detail: "Free memory went from \(ReportDocument.bytes(b.free)) to \(ReportDocument.bytes(a.free)). Swap is \(ReportDocument.bytes(a.swapUsed)); only quitting apps or restarting lowers it."))
+                } else {
+                    self.showToast(Toast(ok: false, title: "Nothing was purged", detail: "The password prompt was cancelled or refused."))
+                }
+                self.tick()
+            }
+        }
+    }
+
+    /// macOS's own Restart dialog, which asks first and lets apps save.
+    func askToRestart() {
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        task.arguments = ["-e", "tell application \"loginwindow\" to «event aevtrrst»"]
+        try? task.run()
+    }
+
+    /// The largest app that can be quit: what quitting it gives back, why it is that big, and
+    /// a Quit for all of its processes rather than one.
+    func explainQuit(_ insight: Insight) -> Insight {
+        var x = insight
+        let quittable = memoryApps.filter { a in
+            let t = Model.isVM(a.key) ? (vmHost() ?? a) : a
+            return t.sample.pid != getpid() && Safety.canKillManually(t.sample)
+        }
+        x.related = memoryApps.prefix(4).map { a in
+            let inRAM = a.bytes > a.outOfRAM ? a.bytes - a.outOfRAM : 0
+            return Insight.Related(sample: a.sample, about: "\(gb(a.bytes)) in all (\(gb(inRAM)) in RAM, \(gb(a.outOfRAM)) compressed or in swap)", parent: nil)
+        }
+        guard let a = quittable.first else { return x }
+        let target = Model.isVM(a.key) ? (vmHost() ?? a) : a
+        let inRAM = a.bytes > a.outOfRAM ? a.bytes - a.outOfRAM : 0
+        let procs = a.pids.count > 1 ? " across \(a.pids.count) processes" : ""
+        let running = started(a.pids).map { ", running \(MemoryLargestAge.age($0))" } ?? ""
+        x.detail += " Quitting \(target.name) gives back about \(gb(a.bytes))\(procs): \(gb(inRAM)) of RAM and \(gb(a.outOfRAM)) that is compressed or in swap\(running)."
+        x.about = "Why \(a.name) is so big: " + memoryAbout(a)
+        x.fixes = [.quit(pids: target.pids, name: target.name)]
+        return x
+    }
+
+    private func gb(_ b: UInt64) -> String { ReportDocument.bytes(b) }
+
+    /// When the oldest of these processes started.
+    func started(_ pids: [Int32]) -> Date? {
+        pids.compactMap { pid -> Date? in
+            if startTimes[pid] == nil { startTimes[pid] = ProcessSampler.startTime(of: pid) }
+            return startTimes[pid]
+        }.min()
+    }
+
+    static let vmHosts = ["Rancher Desktop", "Docker", "Docker Desktop", "OrbStack", "UTM", "Parallels Desktop", "VMware Fusion", "Podman Desktop", "Lima", "colima", "limactl"]
+
+    static func isVM(_ key: String) -> Bool { key.contains("com.apple.Virtualization.VirtualMachine") }
+
+    /// The running app that owns a virtual machine, so the VM row can name it and quit it.
+    func vmHost() -> MemoryApp? {
+        memoryApps.first { a in !Model.isVM(a.key) && Model.vmHosts.contains { a.name.localizedCaseInsensitiveContains($0) } }
+    }
+
+    /// What an app on the Memory tab is and what quitting it does, before anyone quits it.
+    func memoryAbout(_ a: MemoryApp) -> String {
+        if Model.isVM(a.key) {
+            let host = vmHost().map { "It belongs to \($0.name): Quit here quits \($0.name), which shuts the VM down cleanly. " } ?? ""
+            return "A Linux virtual machine, as used by Docker, Rancher Desktop, OrbStack, UTM or Parallels. \(host)It holds memory for everything inside it (containers, a guest system) and rarely hands it back while it runs. Quitting the app that runs it frees all of it, but stops its containers."
+        }
+        let browsers = ["Google Chrome", "Chrome tabs", "Safari", "Firefox", "Microsoft Edge", "Brave Browser", "Arc", "Opera"]
+        if browsers.contains(a.name) {
+            return "Your web browser. Every tab, extension and video is its own process, so memory grows with open tabs. Closing tabs you do not need frees memory without quitting; quitting closes every window."
+        }
+        if AppIdentity.bundlePath(of: a.sample.path) != nil, !a.sample.path.hasPrefix("/System/") {
+            let helpers = a.pids.count > 1 ? " with \(a.pids.count - 1) helper processes" : ""
+            return "The \(a.name) app\(helpers). Quitting it closes its windows; it asks to save anything unsaved."
+        }
+        return ProcessGuide.about(name: a.sample.name, path: a.sample.path)
+    }
+
     func uptime(_ s: ProcessSample) -> String? {
         if startTimes[s.pid] == nil { startTimes[s.pid] = ProcessSampler.startTime(of: s.pid) }
         guard let t = startTimes[s.pid] else { return nil }
@@ -722,6 +846,35 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
                 self.sentinel.history.record(ok ? .killed : .killFailed, s, detail: "force: \(outcome)")
                 self.flagged.remove(s.pid)
                 self.finishKill(s, ok: ok, outcome: outcome)
+            }
+        }
+    }
+
+    /// Force Quit for a whole app: SIGKILL to every process at once, no chance to save. One
+    /// toast for the lot, saying how much memory came back.
+    func forceQuit(pids: [Int32], name: String) {
+        let targets = pids.compactMap(sample(pid:)).filter { $0.pid != getpid() }
+        guard !targets.isEmpty else { return }
+        let before = MemoryStatus.read()
+        startImpact(name, pids: pids)
+        for t in targets { killing.insert(t.pid) }
+        Task.detached {
+            let outcomes: [KillOutcome] = targets.map { Killer.forceKill($0) }
+            let gone: Int = outcomes.filter { $0 == .forceKilled || $0 == .alreadyGone }.count
+            let after = MemoryStatus.read()
+            await MainActor.run {
+                for t in targets {
+                    self.killing.remove(t.pid)
+                    self.sentinel.history.record(Killer.isAlive(t.pid) ? .killFailed : .killed, t, detail: "force quit \(name)")
+                }
+                var detail: String?
+                if let b = before, let a = after, b.used > a.used {
+                    detail = "About \(ReportDocument.bytes(b.used - a.used)) of memory came back so far."
+                }
+                let ok = gone == targets.count
+                let title = ok ? "Force quit \(name)" : "\(name): \(gone) of \(targets.count) processes stopped"
+                self.showToast(Toast(ok: ok, title: title, detail: detail))
+                self.tick()
             }
         }
     }

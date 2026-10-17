@@ -194,6 +194,12 @@ public struct Insight: Equatable, Sendable, Identifiable {
         public let about: String?
         public let parent: String?
         public var id: Int32 { sample.pid }
+
+        public init(sample: ProcessSample, about: String?, parent: String?) {
+            self.sample = sample
+            self.about = about
+            self.parent = parent
+        }
     }
 
     /// One-click fixes, shown as buttons.
