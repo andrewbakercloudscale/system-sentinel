@@ -395,3 +395,26 @@ final class EnergyGlitchTests: XCTestCase {
         XCTAssertNotNil(u.entries["/bin/app"])
     }
 }
+
+final class BatteryETATests: XCTestCase {
+    func testLastHourPaceLeadsWhenThereIsOne() {
+        // 88% now, falling about 10% an hour: 8 to 9 hours left, whatever macOS says.
+        let hour = (0..<60).map { PowerHistory.Point(t: $0 * 60, watts: 9, onBattery: true, percent: 99 - $0 * 11 / 60, n: 1) }
+        let b = BatteryStatus(onBattery: true, percent: 88, watts: 13, minutesToEmpty: 880, maxCapacity: 5000, designCapacity: 5000, voltage: 12)
+        let eta = BatteryETA.of(b, lastHour: hour)
+        XCTAssertEqual(eta?.basis, .recentPace)
+        XCTAssertEqual(Double(eta?.minutes ?? 0), 519, accuracy: 5)
+        XCTAssertEqual(eta?.macOS, 880)
+        XCTAssertEqual(eta?.currentDraw, Int(5000.0 * 0.88 * 12 / 1000 / 13 * 60))
+    }
+
+    func testFallsBackToMacOSThenCurrentDrawAndNothingWhenPluggedIn() {
+        let b = BatteryStatus(onBattery: true, percent: 50, watts: 10, minutesToEmpty: 200, maxCapacity: 5000, designCapacity: 5000, voltage: 12)
+        XCTAssertEqual(BatteryETA.of(b, lastHour: [])?.basis, .macOS)
+        var c = b
+        c.minutesToEmpty = nil
+        XCTAssertEqual(BatteryETA.of(c, lastHour: [])?.basis, .currentDraw)
+        c.onBattery = false
+        XCTAssertNil(BatteryETA.of(c, lastHour: []))
+    }
+}

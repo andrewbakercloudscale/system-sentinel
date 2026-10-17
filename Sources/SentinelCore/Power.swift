@@ -424,6 +424,37 @@ public final class PowerHistory {
     }
 }
 
+/// When the battery runs out, three ways: macOS's own estimate, the draw right now, and the
+/// pace of the last hour. The headline is the last hour's pace when there is one, since the
+/// draw swings from second to second and macOS's figure is often hours off after a busy spell.
+public struct BatteryETA: Equatable, Sendable {
+    public enum Basis: String, Sendable { case recentPace, currentDraw, macOS }
+    public let minutes: Int
+    public let basis: Basis
+    public let macOS: Int?
+    public let currentDraw: Int?
+    public let recentPace: Int?
+
+    public static func of(_ b: BatteryStatus, lastHour: [PowerHistory.Point]) -> BatteryETA? {
+        guard b.onBattery, b.percent > 0 else { return nil }
+        let current: Int? = {
+            guard let e = b.energyLeft, let w = b.watts, w > 0.5 else { return nil }
+            return Int(e / w * 60)
+        }()
+        // Needs 20 minutes on battery and a real drop, or a quiet spell reads as days.
+        let recent: Int? = {
+            let s = BatterySummary.from(lastHour)
+            guard s.batteryMinutes >= 20, let d = s.drainPerHour, d >= 1 else { return nil }
+            return Int(Double(b.percent) / d * 60)
+        }()
+        let mac = b.minutesToEmpty
+        if let r = recent { return BatteryETA(minutes: r, basis: .recentPace, macOS: mac, currentDraw: current, recentPace: r) }
+        if let m = mac { return BatteryETA(minutes: m, basis: .macOS, macOS: m, currentDraw: current, recentPace: nil) }
+        if let c = current { return BatteryETA(minutes: c, basis: .currentDraw, macOS: nil, currentDraw: c, recentPace: nil) }
+        return nil
+    }
+}
+
 /// Usage on battery over a period: how long, how hard, and how fast the charge went.
 public struct BatterySummary: Equatable, Sendable {
     /// Minutes with a reading, and of those, on battery.

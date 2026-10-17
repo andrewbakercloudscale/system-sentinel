@@ -11,7 +11,7 @@ struct BatteryView: View {
     var body: some View {
         VStack(spacing: 10) {
             if let b = model.battery, b.present {
-                BatteryHero(battery: b)
+                BatteryHero(battery: b, eta: model.batteryETA())
                 PowerChart(model: model)
             } else {
                 Card(title: "No battery", symbol: "powerplug.fill", tint: Tab.battery.color) {
@@ -37,6 +37,7 @@ struct BatteryView: View {
 
 private struct BatteryHero: View {
     let battery: BatteryStatus
+    let eta: BatteryETA?
 
     var body: some View {
         let b = battery
@@ -75,7 +76,7 @@ private struct BatteryHero: View {
     private var headline: String {
         let b = battery
         if b.onBattery {
-            return b.minutesLeft.map { "\(Insights.duration(Double($0) * 60)) left" } ?? "On battery"
+            return eta.map { "Empty in \(Insights.duration(Double($0.minutes) * 60))" } ?? "On battery"
         }
         if b.charging { return b.minutesToFull.map { "Full in \(Insights.duration(Double($0) * 60))" } ?? "Charging" }
         return b.fullyCharged || b.percent >= 100 ? "Charged, on power" : "On power, not charging"
@@ -83,7 +84,8 @@ private struct BatteryHero: View {
 
     private var subline: String {
         let b = battery
-        if b.onBattery { return b.minutesToEmpty == nil && b.minutesLeft != nil ? "Estimated from the current draw" : "Running on battery" }
+        if b.onBattery, let e = eta { return "Around \(BatteryETABanner.clock(e.minutes)), \(BatteryETABanner.basis(e))" }
+        if b.onBattery { return "Running on battery" }
         if !b.charging && b.percent < 100 { return "macOS is holding the charge to protect the battery" }
         return "Plugged in"
     }
@@ -119,6 +121,7 @@ struct PowerChart: View {
         let summary = BatterySummary.from(points)
         Card(title: "Power draw", symbol: "bolt.fill", tint: Tab.battery.color,
              trailing: AnyView(ChipPicker(options: Self.ranges.map(\.0), selection: $range, color: Tab.battery.color))) {
+            BatteryETABanner(model: model)
             HStack(spacing: 8) {
                 StatTile(symbol: "bolt.fill", color: Tab.battery.color, value: summary.averageWatts.map { String(format: "%.1f W", $0) } ?? "–", label: "average")
                 StatTile(symbol: "arrow.up.to.line", color: Theme.heat(80), value: summary.peakWatts.map { String(format: "%.0f W", $0) } ?? "–", label: "peak")
@@ -166,6 +169,70 @@ struct PowerChart: View {
             out.append(Bar(start: Date(timeIntervalSince1970: Double(start)), watts: watts, onBattery: battery))
         }
         return out.sorted { $0.start < $1.start }
+    }
+}
+
+// MARK: Time left
+
+/// When the battery runs out, big, with how it was worked out and the other estimates.
+struct BatteryETABanner: View {
+    @ObservedObject var model: Model
+
+    var body: some View {
+        if let b = model.battery, b.present {
+            if let e = model.batteryETA() {
+                let urgent = e.minutes < 60
+                let color = urgent ? Theme.heat(100) : e.minutes < 180 ? Color(hex: "#d97706") : Tab.battery.color
+                HStack(alignment: .center, spacing: 12) {
+                    SymbolTile(symbol: urgent ? "battery.0percent" : "battery.75percent", color: color, size: 40)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Battery empty in \(Insights.duration(Double(e.minutes) * 60))")
+                            .font(.title2.weight(.bold)).foregroundStyle(color)
+                        Text("Around \(Self.clock(e.minutes)) · \(b.percent)% left · \(Self.basis(e))")
+                            .font(.callout.weight(.medium)).foregroundStyle(.secondary)
+                        Text(others(e)).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .padding(12)
+                .background(RoundedRectangle(cornerRadius: 10).fill(color.opacity(0.1)))
+            } else if b.onBattery {
+                Text("On battery: the time left appears once there is a reading.").font(.callout).foregroundStyle(.secondary)
+            } else {
+                HStack(spacing: 10) {
+                    SymbolTile(symbol: b.charging ? "battery.100percent.bolt" : "powerplug.fill", color: Tab.battery.color, size: 32)
+                    Text(b.charging ? (b.minutesToFull.map { "Plugged in: full in \(Insights.duration(Double($0) * 60))" } ?? "Plugged in, charging")
+                                    : "Plugged in at \(b.percent)%: no battery countdown while on power")
+                        .font(.headline)
+                    Spacer(minLength: 0)
+                }
+                .padding(10)
+                .background(RoundedRectangle(cornerRadius: 10).fill(Tab.battery.color.opacity(0.08)))
+            }
+        }
+    }
+
+    static func clock(_ minutes: Int) -> String {
+        let t = Date().addingTimeInterval(Double(minutes) * 60)
+        let f = DateFormatter()
+        f.dateFormat = Calendar.current.isDateInToday(t) ? "HH:mm" : Calendar.current.isDateInTomorrow(t) ? "'tomorrow' HH:mm" : "EEE HH:mm"
+        return f.string(from: t)
+    }
+
+    static func basis(_ e: BatteryETA) -> String {
+        switch e.basis {
+        case .recentPace: return "at your last hour's pace"
+        case .macOS: return "macOS's estimate"
+        case .currentDraw: return "at the current draw"
+        }
+    }
+
+    private func others(_ e: BatteryETA) -> String {
+        var parts: [String] = []
+        if e.basis != .currentDraw, let c = e.currentDraw { parts.append("at this moment's draw \(Insights.duration(Double(c) * 60))") }
+        if e.basis != .macOS, let m = e.macOS { parts.append("macOS says \(Insights.duration(Double(m) * 60))") }
+        let tail = parts.isEmpty ? "" : "Other estimates: " + parts.joined(separator: ", ") + ". "
+        return tail + "The last hour's pace is steadiest: the draw changes every second, and macOS's figure lags after busy spells."
     }
 }
 

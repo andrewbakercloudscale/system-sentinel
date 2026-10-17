@@ -813,6 +813,10 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
         if seconds > 0 { clusterApps = (list(e), list(p)) }
     }
 
+    func batteryETA() -> BatteryETA? {
+        battery.flatMap { BatteryETA.of($0, lastHour: powerHistory.since(Date().addingTimeInterval(-3600))) }
+    }
+
     /// When the oldest of these processes started.
     func started(_ pids: [Int32]) -> Date? {
         pids.compactMap { pid -> Date? in
