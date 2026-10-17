@@ -69,6 +69,9 @@ The answer to "is my Mac busy, and why?" in one screen:
 - **Last hour, by app.** A stacked chart of the top apps over the last hour, as a share of
   the whole Mac. Colours stay with each app across every chart in the app, so Chrome is
   always the same colour.
+- **Click either chart** to open a larger, live version in its own window. The larger
+  Right now chart lists more apps with cores used; the larger Last hour chart shows the
+  values at any moment when you hover over it.
 - **Insights.** See below.
 
 ---
@@ -181,6 +184,7 @@ What used the CPU over time, kept across restarts.
 - **Tiles:** how long was recorded, total CPU time used, the average load and the top app.
 - **CPU by hour:** stacked bars as a share of the whole Mac. The top six apps have their
   own colours and the rest are grey. Hours with no recording are left blank.
+  **Hide everything else** drops the grey bars, so the named apps fill the chart.
 - **Heaviest users:** share of all CPU time (the bar), the average over the recorded time,
   the peak hour and when it was, and total CPU time. Hover a row to see what the process is.
 

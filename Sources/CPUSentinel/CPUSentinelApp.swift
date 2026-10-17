@@ -318,6 +318,27 @@ enum Snapshot {
                 try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: dir).appendingPathComponent(name))
             }
         }
+        // The zoomed chart windows too.
+        for appearance in [NSAppearance.Name.aqua, .darkAqua] {
+            let zooms: [(String, AnyView, NSSize)] = [
+                ("zoom-now", AnyView(NowDonut(model: model, zoomed: true)), NSSize(width: 760, height: 440)),
+                ("zoom-lasthour", AnyView(LastHourChart(model: model, zoomed: true)), NSSize(width: 960, height: 600)),
+            ]
+            for (name, view, size) in zooms {
+                let host = NSHostingView(rootView: view.padding(14).frame(width: size.width, height: size.height)
+                    .background(Color(nsColor: .windowBackgroundColor)))
+                host.appearance = NSAppearance(named: appearance)
+                let win = NSWindow(contentRect: NSRect(origin: .zero, size: size), styleMask: [.borderless], backing: .buffered, defer: false)
+                win.appearance = NSAppearance(named: appearance)
+                win.contentView = host
+                host.frame = NSRect(origin: .zero, size: size)
+                host.layoutSubtreeIfNeeded()
+                guard let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { continue }
+                host.cacheDisplay(in: host.bounds, to: rep)
+                try? rep.representation(using: .png, properties: [:])?
+                    .write(to: URL(fileURLWithPath: dir).appendingPathComponent("\(name)-\(appearance == .aqua ? "light" : "dark").png"))
+            }
+        }
         exit(0)
     }
 }

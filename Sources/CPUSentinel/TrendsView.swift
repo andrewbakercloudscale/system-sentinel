@@ -219,16 +219,32 @@ private struct TrendStats: View {
 private struct TrendChart: View {
     let d: TrendsView.Data
     let byApp: Bool
+    /// Drop the grey "Everything else" bars, so the named apps fill the scale.
+    @AppStorage("trendsHideOther") private var hideOther = false
+
+    private var bars: [TrendsView.Bar] { hideOther ? d.bars.filter { $0.key != "other" } : d.bars }
+    private var domain: [String] { hideOther ? d.domain.filter { $0 != "other" } : d.domain }
 
     var body: some View {
         Card(title: d.range.barTitle, symbol: "chart.bar.fill", tint: Tab.trends.color,
-             trailing: AnyView(Text("% of whole Mac, stacked by \(byApp ? "app" : "process")").font(.caption2).foregroundStyle(.secondary))) {
+             trailing: AnyView(HStack(spacing: 10) {
+                 Text("% of whole Mac, stacked by \(byApp ? "app" : "process")").font(.caption2).foregroundStyle(.secondary)
+                 Button { hideOther.toggle() } label: {
+                     Label(hideOther ? "Show everything else" : "Hide everything else",
+                           systemImage: hideOther ? "eye" : "eye.slash")
+                         .font(.caption2.weight(.medium))
+                         .padding(.horizontal, 7).padding(.vertical, 3)
+                         .background(Capsule().fill(hideOther ? Tab.trends.color.opacity(0.15) : Color.primary.opacity(0.06)))
+                 }
+                 .buttonStyle(.plain)
+                 .help("Leave out the grey bar of all the smaller processes, so the named apps fill the chart")
+             })) {
             if d.bars.isEmpty {
                 Text("Nothing recorded yet. This fills in while CPU Sentinel runs.")
                     .font(.caption).foregroundStyle(.secondary).frame(height: 140)
             } else {
                 chart.frame(height: 150)
-                Legend(items: d.domain.map { (d.name($0), d.colors[$0] ?? Theme.other) })
+                Legend(items: domain.map { (d.name($0), d.colors[$0] ?? Theme.other) })
             }
         }
     }
@@ -238,12 +254,12 @@ private struct TrendChart: View {
         // have no calendar unit for .ratio to measure against.
         let slots = max(d.end.timeIntervalSince(d.start) / d.barSeconds, 1)
         let width = max(2, 560 / slots * 0.78)
-        return Chart(d.bars) { b in
+        return Chart(bars) { b in
             BarMark(x: .value("Time", b.start.addingTimeInterval(d.barSeconds / 2)), y: .value("CPU", b.value), width: .fixed(width))
                 .foregroundStyle(by: .value("App", b.key))
                 .cornerRadius(2)
         }
-        .chartForegroundStyleScale(domain: d.domain, range: d.domain.map { d.colors[$0] ?? Theme.other })
+        .chartForegroundStyleScale(domain: domain, range: domain.map { d.colors[$0] ?? Theme.other })
         .chartLegend(.hidden)
         // End padding, so the last time label is not clipped at the edge.
         .chartXScale(domain: d.start...d.end, range: .plotDimension(endPadding: 14))

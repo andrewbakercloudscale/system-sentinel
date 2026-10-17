@@ -10,10 +10,14 @@ struct OverviewView: View {
     var body: some View {
         VStack(spacing: 10) {
             Hero(model: model)
+            // Same height side by side; each opens a larger, live version when clicked.
             HStack(alignment: .top, spacing: 10) {
                 NowDonut(model: model).frame(width: 290)
+                    .modifier(ZoomOnClick(kind: .now, model: model))
                 LastHourChart(model: model)
+                    .modifier(ZoomOnClick(kind: .lastHour, model: model))
             }
+            .fixedSize(horizontal: false, vertical: true)
             InsightList(model: model)
         }
     }
@@ -113,8 +117,10 @@ private struct ThermalChip: View {
 }
 
 /// Who is using the CPU right now, by app, as a share of what is in use.
-private struct NowDonut: View {
+struct NowDonut: View {
     @ObservedObject var model: Model
+    /// The larger version in its own window: more apps, a bigger ring, cores per app.
+    var zoomed = false
 
     struct Slice: Identifiable {
         let key: String
@@ -124,53 +130,75 @@ private struct NowDonut: View {
     }
 
     var body: some View {
-        let slices = Self.slices(model.sentinel.latest)
+        let slices = Self.slices(model.sentinel.latest, top: zoomed ? 7 : 5)
         let colors = ColorBook.shared.colors(for: slices.map(\.key).filter { $0 != "other" })
         let total = slices.reduce(0) { $0 + $1.cpu }
-        Card(title: "Right now", symbol: "chart.pie.fill", tint: Tab.overview.color) {
-            HStack(alignment: .center, spacing: 10) {
+        let ring: CGFloat = zoomed ? 260 : 92
+        Card(title: "Right now", symbol: "chart.pie.fill", tint: Tab.overview.color,
+             trailing: zoomed ? AnyView(Text("share of CPU in use").font(.caption).foregroundStyle(.secondary)) : AnyView(ZoomHint()),
+             fill: true) {
+            HStack(alignment: .center, spacing: zoomed ? 28 : 10) {
                 Chart(slices) { s in
-                    SectorMark(angle: .value("CPU", s.cpu), innerRadius: .ratio(0.62), angularInset: 1.2)
-                        .cornerRadius(3)
+                    SectorMark(angle: .value("CPU", s.cpu), innerRadius: .ratio(0.62), angularInset: zoomed ? 2 : 1.2)
+                        .cornerRadius(zoomed ? 5 : 3)
                         .foregroundStyle(colors[s.key] ?? Theme.other)
                 }
                 .chartLegend(.hidden)
-                .frame(width: 92, height: 92)
+                .frame(width: ring, height: ring)
                 .overlay {
                     VStack(spacing: 0) {
-                        Text(String(format: "%.1f", total / 100)).font(.system(size: 16, weight: .bold, design: .rounded))
-                        Text("cores").font(.system(size: 9)).foregroundStyle(.secondary)
+                        Text(String(format: "%.1f", total / 100)).font(.system(size: zoomed ? 40 : 16, weight: .bold, design: .rounded))
+                        Text("cores").font(.system(size: zoomed ? 14 : 9)).foregroundStyle(.secondary)
                     }
                 }
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: zoomed ? 9 : 4) {
                     ForEach(slices) { s in
-                        HStack(spacing: 5) {
-                            RoundedRectangle(cornerRadius: 2).fill(colors[s.key] ?? Theme.other).frame(width: 8, height: 8)
+                        HStack(spacing: zoomed ? 8 : 5) {
+                            RoundedRectangle(cornerRadius: 2).fill(colors[s.key] ?? Theme.other)
+                                .frame(width: zoomed ? 12 : 8, height: zoomed ? 12 : 8)
                             Text(s.name).lineLimit(1).truncationMode(.tail)
                             Spacer(minLength: 2)
+                            if zoomed {
+                                Text(String(format: "%.2f cores", s.cpu / 100)).foregroundStyle(.secondary).monospacedDigit()
+                                    .frame(width: 90, alignment: .trailing)
+                            }
                             Text(Fmt.pct(total > 0 ? s.cpu / total * 100 : 0)).foregroundStyle(.secondary).monospacedDigit()
+                                .frame(width: zoomed ? 56 : nil, alignment: .trailing)
                         }
-                        .font(.caption2)
+                        .font(zoomed ? .body : .caption2)
                     }
                 }
             }
+            .frame(maxHeight: .infinity)
         }
     }
 
-    static func slices(_ samples: [ProcessSample]) -> [Slice] {
+    static func slices(_ samples: [ProcessSample], top: Int = 5) -> [Slice] {
         var byApp: [String: Double] = [:]
         for s in samples where s.cpu > 0 { byApp[Model.appKey(s.path), default: 0] += s.cpu }
         let sorted = byApp.sorted { $0.value > $1.value }
-        var out = sorted.prefix(5).map { Slice(key: $0.key, name: Model.appName($0.key), cpu: $0.value) }
-        let rest = sorted.dropFirst(5).reduce(0) { $0 + $1.value }
+        var out = sorted.prefix(top).map { Slice(key: $0.key, name: Model.appName($0.key), cpu: $0.value) }
+        let rest = sorted.dropFirst(top).reduce(0) { $0 + $1.value }
         if rest > 0 { out.append(Slice(key: "other", name: "Everything else", cpu: rest)) }
         return out
     }
 }
 
+/// "Click to zoom", in the corner of a chart card.
+struct ZoomHint: View {
+    var body: some View {
+        Image(systemName: "arrow.up.left.and.arrow.down.right")
+            .font(.caption2.weight(.bold)).foregroundStyle(.secondary)
+            .help("Click to open a larger version")
+    }
+}
+
 /// The last hour, stacked by the apps that used most of it.
-private struct LastHourChart: View {
+struct LastHourChart: View {
     @ObservedObject var model: Model
+    /// The larger version in its own window: more apps, finer buckets, hover for values.
+    var zoomed = false
+    @State private var selected: Date?
 
     struct Point: Identifiable {
         let time: Date
@@ -182,13 +210,13 @@ private struct LastHourChart: View {
 
     var body: some View {
         let now = Date()
-        let buckets = 60
+        let buckets = zoomed ? 120 : 60
         let window: TimeInterval = 3600
         let hist = model.sentinel.cpuHistory
         let cores = max(model.cores, 1)
         let stacked = hist.stacked(over: window, buckets: buckets, at: now, key: Model.appKey)
         let totals = hist.sparkline(nil, over: window, buckets: buckets, at: now)
-        let topKeys = stacked.sorted { $0.value.reduce(0, +) > $1.value.reduce(0, +) }.prefix(5).map(\.key)
+        let topKeys = stacked.sorted { $0.value.reduce(0, +) > $1.value.reduce(0, +) }.prefix(zoomed ? 7 : 5).map(\.key)
         let colors = ColorBook.shared.colors(for: topKeys)
         let width = window / Double(buckets)
         let start = now.addingTimeInterval(-window)
@@ -206,35 +234,146 @@ private struct LastHourChart: View {
             return row
         }
         let domain = topKeys + ["other"]
+        // The hovered moment: the nearest bucket's values, for the tooltip.
+        let hovered: [Point] = selected.flatMap { sel in
+            points.min { abs($0.time.timeIntervalSince(sel)) < abs($1.time.timeIntervalSince(sel)) }
+                .map { near in points.filter { $0.time == near.time } }
+        } ?? []
         Card(title: "Last hour, by app", symbol: "chart.xyaxis.line", tint: Tab.overview.color,
-             trailing: AnyView(Text("% of whole Mac").font(.caption2).foregroundStyle(.secondary))) {
+             trailing: AnyView(HStack(spacing: 8) {
+                 Text(zoomed ? "% of whole Mac · hover for values" : "% of whole Mac").font(zoomed ? .caption : .caption2).foregroundStyle(.secondary)
+                 if !zoomed { ZoomHint() }
+             }), fill: true) {
             if points.isEmpty {
                 Text("Collecting. The chart fills in over the next few minutes.")
-                    .font(.caption).foregroundStyle(.secondary).frame(height: 120)
+                    .font(.caption).foregroundStyle(.secondary).frame(height: zoomed ? 400 : 120)
             } else {
-                Chart(points) { p in
-                    AreaMark(x: .value("Time", p.time), y: .value("CPU", p.value), stacking: .standard)
-                        .foregroundStyle(by: .value("App", p.key))
-                        .interpolationMethod(.monotone)
+                Chart {
+                    ForEach(points) { p in
+                        AreaMark(x: .value("Time", p.time), y: .value("CPU", p.value), stacking: .standard)
+                            .foregroundStyle(by: .value("App", p.key))
+                            .interpolationMethod(.monotone)
+                    }
+                    if let t = hovered.first?.time {
+                        RuleMark(x: .value("Time", t))
+                            .foregroundStyle(Color.primary.opacity(0.35))
+                            .lineStyle(StrokeStyle(lineWidth: 1))
+                            .annotation(position: t > now.addingTimeInterval(-window / 2) ? .leading : .trailing, alignment: .top) {
+                                HoverCard(time: t, rows: hovered.reversed().map { ($0.key == "other" ? "Other" : $0.name, colors[$0.key] ?? Theme.other, $0.value) })
+                            }
+                    }
                 }
                 .chartForegroundStyleScale(domain: domain, range: domain.map { colors[$0] ?? Theme.other })
                 .chartLegend(.hidden)
-                .chartXScale(domain: start...now)
+                .chartXScale(domain: start...now, range: .plotDimension(endPadding: zoomed ? 18 : 10))
+                .chartOverlay { proxy in
+                    // Hover, not click: the small card's click opens the zoomed window.
+                    if zoomed {
+                        GeometryReader { geo in
+                            Rectangle().fill(.clear).contentShape(Rectangle())
+                                .onContinuousHover { phase in
+                                    switch phase {
+                                    case .active(let at):
+                                        guard let frame = proxy.plotFrame else { return }
+                                        selected = proxy.value(atX: at.x - geo[frame].origin.x, as: Date.self)
+                                    case .ended: selected = nil
+                                    }
+                                }
+                        }
+                    }
+                }
                 .chartYAxis {
-                    AxisMarks(position: .leading, values: .automatic(desiredCount: 3)) { v in
+                    AxisMarks(position: .leading, values: .automatic(desiredCount: zoomed ? 6 : 3)) { v in
                         AxisGridLine().foregroundStyle(Color.primary.opacity(0.08))
-                        AxisValueLabel { if let d = v.as(Double.self) { Text("\(Int(d))%").font(.system(size: 9)) } }
+                        AxisValueLabel { if let d = v.as(Double.self) { Text("\(Int(d))%").font(.system(size: zoomed ? 11 : 9)) } }
                     }
                 }
                 .chartXAxis {
-                    AxisMarks(values: .stride(by: .minute, count: 15)) { _ in
-                        AxisValueLabel(format: .dateTime.hour().minute()).font(.system(size: 9))
+                    AxisMarks(values: .stride(by: .minute, count: zoomed ? 5 : 15)) { _ in
+                        if zoomed { AxisGridLine().foregroundStyle(Color.primary.opacity(0.05)) }
+                        AxisValueLabel(format: .dateTime.hour().minute()).font(.system(size: zoomed ? 11 : 9))
                     }
                 }
-                .frame(height: 104)
+                .frame(height: zoomed ? nil : 104)
+                .frame(maxHeight: zoomed ? .infinity : nil)
                 Legend(items: domain.map { ($0 == "other" ? "Other" : Model.appName($0), colors[$0] ?? Theme.other) })
             }
         }
+    }
+}
+
+/// The values at the hovered moment, top series first.
+private struct HoverCard: View {
+    let time: Date
+    let rows: [(String, Color, Double)]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(time.formatted(date: .omitted, time: .shortened)).font(.caption.weight(.semibold))
+            ForEach(Array(rows.enumerated()), id: \.offset) { _, r in
+                HStack(spacing: 5) {
+                    RoundedRectangle(cornerRadius: 2).fill(r.1).frame(width: 8, height: 8)
+                    Text(r.0).lineLimit(1)
+                    Spacer(minLength: 8)
+                    Text(String(format: "%.1f%%", r.2)).monospacedDigit()
+                }
+                .font(.caption2)
+            }
+            Divider()
+            HStack {
+                Text("Total").font(.caption2.weight(.semibold))
+                Spacer()
+                Text(String(format: "%.1f%%", rows.reduce(0) { $0 + $1.2 })).font(.caption2.weight(.semibold)).monospacedDigit()
+            }
+        }
+        .padding(8)
+        .frame(width: 210)
+        .background(RoundedRectangle(cornerRadius: 8).fill(.regularMaterial))
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.primary.opacity(0.1)))
+    }
+}
+
+/// A chart from the Overview in its own resizable window, kept live.
+@MainActor
+enum ChartZoom {
+    enum Kind: String { case now = "Right now", lastHour = "Last hour, by app" }
+    private static var windows: [Kind: NSWindow] = [:]
+
+    static func show(_ kind: Kind, model: Model) {
+        if windows[kind] == nil {
+            let root = Group {
+                switch kind {
+                case .now: NowDonut(model: model, zoomed: true)
+                case .lastHour: LastHourChart(model: model, zoomed: true)
+                }
+            }
+            .padding(14)
+            .frame(minWidth: 640, minHeight: 420)
+            let w = NSWindow(contentViewController: NSHostingController(rootView: root))
+            w.title = "CPU Sentinel: \(kind.rawValue)"
+            w.styleMask = [.titled, .closable, .miniaturizable, .resizable]
+            w.isReleasedWhenClosed = false
+            w.setContentSize(kind == .now ? NSSize(width: 760, height: 440) : NSSize(width: 960, height: 600))
+            w.setFrameAutosaveName("CPUSentinelZoom-\(kind)")
+            if !w.setFrameUsingName("CPUSentinelZoom-\(kind)") { w.center() }
+            windows[kind] = w
+        }
+        NSApp.activate(ignoringOtherApps: true)
+        windows[kind]?.makeKeyAndOrderFront(nil)
+    }
+}
+
+/// Makes a card a button that opens its zoomed window, with a pointing hand on hover.
+struct ZoomOnClick: ViewModifier {
+    let kind: ChartZoom.Kind
+    let model: Model
+
+    func body(content: Content) -> some View {
+        content
+            .contentShape(Rectangle())
+            .onTapGesture { ChartZoom.show(kind, model: model) }
+            .onHover { inside in if inside { NSCursor.pointingHand.push() } else { NSCursor.pop() } }
+            .help("Click to open a larger version")
     }
 }
 

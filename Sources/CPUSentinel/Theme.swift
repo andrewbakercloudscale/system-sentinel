@@ -86,6 +86,8 @@ struct Card<Content: View>: View {
     var symbol: String?
     var tint: Color = Theme.accent
     var trailing: AnyView?
+    /// Stretch to the height offered, so cards side by side line up.
+    var fill = false
     @ViewBuilder var content: Content
 
     var body: some View {
@@ -103,7 +105,7 @@ struct Card<Content: View>: View {
             content
         }
         .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, maxHeight: fill ? .infinity : nil, alignment: .topLeading)
         .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Theme.cardFill))
         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Theme.cardStroke))
     }
