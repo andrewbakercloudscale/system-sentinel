@@ -119,7 +119,7 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
 
     static let supportDir: URL = FileManager.default
         .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        .appendingPathComponent("CPUSentinel", isDirectory: true)
+        .appendingPathComponent("SystemSentinel", isDirectory: true)
 
     /// Set by `--snapshot`: render screens to PNG without writing any of the owner's data.
     static let snapshotDir: String? = argument("--snapshot")
@@ -1009,7 +1009,7 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
         if let error {
             let code = error[NSAppleScript.errorNumber] as? Int
             lastError = code == -1743
-                ? "Allow CPU Sentinel to control Terminal in System Settings > Privacy & Security > Automation."
+                ? "Allow System Sentinel to control Terminal in System Settings > Privacy & Security > Automation."
                 : "Could not open Terminal: \(error[NSAppleScript.errorMessage] ?? error)"
         } else {
             lastAction = "Terminal: \(command)"

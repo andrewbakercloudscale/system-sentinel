@@ -1,8 +1,10 @@
-# CPU Sentinel
+# System Sentinel
 
-**Find out what is using your Mac's CPU and battery, why, and what to do about it.**
+**Find out what is using your Mac's CPU, memory and battery, why, and what to do about it.**
 
-CPU Sentinel lives in the menu bar. It samples every process every 5 seconds and shows the
+_Formerly CPU Sentinel: installing 0.7.0 replaces it and keeps your settings and history._
+
+System Sentinel lives in the menu bar. It samples every process every 5 seconds and shows the
 load on a gauge, as charts and as plain-English insights. It records which apps used the
 most CPU over the last day and week, and explains what each macOS process is for. The
 Energy tab shows the Mac's power draw, which apps cost the most battery, what keeps the Mac
@@ -18,18 +20,18 @@ Paste this into Terminal. It downloads the latest release, installs it to Applic
 clears the quarantine flag (the app is not notarised by Apple) and launches it:
 
 ```bash
-cat > ~/install-cpu-sentinel.sh <<'EOF'
+cat > ~/install-system-sentinel.sh <<'EOF'
 #!/bin/bash
-# Installs (or updates to) the latest CPU Sentinel release in /Applications.
+# Installs (or updates to) the latest System Sentinel release in /Applications.
 set -euo pipefail
 REPO="andrewbakercloudscale/cpu-sentinel"
-APP="${CPU_SENTINEL_APP:-/Applications/CPU Sentinel.app}"
+APP="${SYSTEM_SENTINEL_APP:-/Applications/System Sentinel.app}"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
 echo "== Downloading the latest release"
 if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
-  gh release download --repo "$REPO" --pattern 'CPU-Sentinel-*.zip' --dir "$TMP"
+  gh release download --repo "$REPO" --pattern '*Sentinel-*.zip' --dir "$TMP"
 else
   URL="$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" \
     | grep -o '"browser_download_url": *"[^"]*\.zip"' | head -1 | cut -d'"' -f4 || true)"
@@ -38,27 +40,29 @@ else
     echo "(brew install gh), run: gh auth login, then run this script again."
     exit 1
   fi
-  curl -fL --progress-bar -o "$TMP/CPU-Sentinel.zip" "$URL"
+  curl -fL --progress-bar -o "$TMP/System-Sentinel.zip" "$URL"
 fi
 ZIP="$(ls "$TMP"/*.zip | head -1)"
 
 echo "== Installing to $APP"
-pkill -x CPUSentinel 2>/dev/null || true
+pkill -x SystemSentinel 2>/dev/null || true
+pkill -x CPUSentinel 2>/dev/null || true        # its name before 0.7.0
+rm -rf "/Applications/CPU Sentinel.app"
 ditto -x -k "$ZIP" "$TMP/unzipped"
 rm -rf "$APP"
-ditto "$TMP/unzipped/CPU Sentinel.app" "$APP"
+ditto "$(ls -d "$TMP"/unzipped/*.app | head -1)" "$APP"
 xattr -cr "$APP"
 
-if [ -z "${CPU_SENTINEL_NO_OPEN:-}" ]; then
+if [ -z "${SYSTEM_SENTINEL_NO_OPEN:-}" ]; then
   echo "== Launching"
   open "$APP"
 fi
 echo "Done: $(defaults read "$APP/Contents/Info" CFBundleShortVersionString). Look for the red chip in the menu bar."
 EOF
-chmod +x ~/install-cpu-sentinel.sh && ~/install-cpu-sentinel.sh
+chmod +x ~/install-system-sentinel.sh && ~/install-system-sentinel.sh
 ```
 
-Run `~/install-cpu-sentinel.sh` again any time to update. You need macOS 14 or later.
+Run `~/install-system-sentinel.sh` again any time to update. You need macOS 14 or later.
 Look for the red chip ![menu bar icon](docs/images/menubar-normal.png) in the menu bar.
 
 **Build from source instead** (needs Xcode or its command line tools, `xcode-select --install`):
@@ -79,7 +83,7 @@ On a Mac that feels slow, Activity Monitor gives you a list of numbers. It doesn
 - **which app used the most CPU** over the last day or week;
 - **what is draining the battery,** or keeping the Mac awake with the lid open.
 
-CPU Sentinel answers each of those. It was built after a macOS energy logger
+System Sentinel answers each of those. It was built after a macOS energy logger
 (`PerfPowerServices`) used one and a half cores for 37 hours and nothing said so.
 
 ## Highlights
@@ -151,7 +155,7 @@ Every screen has its own dark design.
 
 ## Privacy
 
-Everything stays on your Mac. CPU Sentinel sends nothing anywhere. The only time data
+Everything stays on your Mac. System Sentinel sends nothing anywhere. The only time data
 leaves is when you click **Explain**. That opens ChatGPT in your browser with a prompt
 describing the process and your Mac. [What's in it](docs/guide.md#explain-with-chatgpt).
 
@@ -168,11 +172,11 @@ bash scripts/release.sh        # zip for a GitHub release in dist/; signs and no
 To render every tab, in light and dark, to PNG files without touching your data:
 
 ```bash
-"build/CPU Sentinel.app/Contents/MacOS/CPUSentinel" --snapshot /tmp/shots --after 600 --expand 2
+"build/System Sentinel.app/Contents/MacOS/SystemSentinel" --snapshot /tmp/shots --after 600 --expand 2
 ```
 
 `--after` sets how many seconds to sample before rendering (default 22). `--expand` opens
 only the first n insights (default all). The README screenshots are made this way.
 
 The code is split into `SentinelCore` (sampling, detection, history, insights; tested) and
-`CPUSentinel` (the SwiftUI app).
+`SystemSentinel` (the SwiftUI app).

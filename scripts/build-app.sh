@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds CPU Sentinel.app and installs it to ~/Applications.
+# Builds System Sentinel.app and installs it to ~/Applications.
 #
 #   bash scripts/build-app.sh            # test, build, bundle, install, launch
 #   bash scripts/build-app.sh --no-open  # same, without launching
@@ -14,20 +14,23 @@ swift test >/dev/null 2>&1 || { echo "tests failed, not building"; exit 1; }
 
 echo "== build"
 swift build -c release
-BIN="$(swift build -c release --show-bin-path)/CPUSentinel"
+BIN="$(swift build -c release --show-bin-path)/SystemSentinel"
 
-APP="build/CPU Sentinel.app"
+APP="build/System Sentinel.app"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp "$BIN" "$APP/Contents/MacOS/CPUSentinel"
+cp "$BIN" "$APP/Contents/MacOS/SystemSentinel"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 codesign --force --sign - "$APP"
 codesign --verify "$APP"
 
-DEST="$HOME/Applications/CPU Sentinel.app"
+DEST="$HOME/Applications/System Sentinel.app"
 mkdir -p "$HOME/Applications"
+pkill -x SystemSentinel 2>/dev/null || true
+# Before 0.7.0 the app was CPU Sentinel; leave only one copy.
 pkill -x CPUSentinel 2>/dev/null || true
+rm -rf "$HOME/Applications/CPU Sentinel.app"
 rm -rf "$DEST"
 cp -R "$APP" "$DEST"
 echo "== installed: $DEST"

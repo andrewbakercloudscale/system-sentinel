@@ -82,7 +82,7 @@ struct TrendsView: View {
             TrendStats(d: d)
             TrendChart(d: d, byApp: byApp)
             HeaviestCard(d: d, byApp: byApp)
-            Text("Averages count only the time CPU Sentinel was running, so a day it was quit for does not read as idle. 100% in the table is one core; the chart is the whole Mac.")
+            Text("Averages count only the time System Sentinel was running, so a day it was quit for does not read as idle. 100% in the table is one core; the chart is the whole Mac.")
                 .font(.caption2).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
         }
     }
@@ -240,7 +240,7 @@ private struct TrendChart: View {
                  .help("Leave out the grey bar of all the smaller processes, so the named apps fill the chart")
              })) {
             if d.bars.isEmpty {
-                Text("Nothing recorded yet. This fills in while CPU Sentinel runs.")
+                Text("Nothing recorded yet. This fills in while System Sentinel runs.")
                     .font(.caption).foregroundStyle(.secondary).frame(height: 140)
             } else {
                 chart.frame(height: 150)

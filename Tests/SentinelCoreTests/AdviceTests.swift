@@ -313,7 +313,7 @@ final class UsageAdviceTests: XCTestCase {
                                        at: now)
         XCTAssertEqual(doc.sections.map(\.heading), ["The week", "Heaviest apps", "Today", "Battery", "Sleep, last 24 hours", "Memory"])
         let md = doc.markdown
-        XCTAssertTrue(md.hasPrefix("# CPU Sentinel report\n"))
+        XCTAssertTrue(md.hasPrefix("# System Sentinel report\n"))
         XCTAssertTrue(md.contains("1. Chrome: 12.5 core-hours, 40% of all CPU\n"), "numbered list, no bullet")
         XCTAssertTrue(md.contains("- Holds 90% of its original capacity after 132 cycles."))
         XCTAssertTrue(md.contains("- Lost 1.0% of charge an hour while asleep on battery."))

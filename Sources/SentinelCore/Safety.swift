@@ -7,7 +7,7 @@ public enum Safety {
     /// Never killed and never offered a Kill button.
     public static let protectedNames: Set<String> = [
         "kernel_task", "launchd", "WindowServer", "loginwindow", "Finder", "Dock",
-        "SystemUIServer", "coreaudiod", "CPUSentinel", "opendirectoryd", "securityd",
+        "SystemUIServer", "coreaudiod", "SystemSentinel", "CPUSentinel", "opendirectoryd", "securityd",
         "logind", "UserEventAgent", "mds", "configd", "powerd", "syslogd", "notifyd",
     ]
 

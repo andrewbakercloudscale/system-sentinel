@@ -98,10 +98,10 @@ enum ChromeTabs {
         if let error {
             let code = error[NSAppleScript.errorNumber] as? Int ?? 0
             if code == -1743 {
-                return .failure(.message("Allow CPU Sentinel to control \(app) in System Settings > Privacy & Security > Automation."))
+                return .failure(.message("Allow System Sentinel to control \(app) in System Settings > Privacy & Security > Automation."))
             }
             if code == -1719 || code == -25211 {
-                return .failure(.message("Allow CPU Sentinel in System Settings > Privacy & Security > Accessibility to open Chrome's Task Manager."))
+                return .failure(.message("Allow System Sentinel in System Settings > Privacy & Security > Accessibility to open Chrome's Task Manager."))
             }
             return .failure(.message(error[NSAppleScript.errorMessage] as? String ?? "AppleScript error \(code)"))
         }

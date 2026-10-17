@@ -382,12 +382,12 @@ enum ChartZoom {
             .padding(14)
             .frame(minWidth: 640, minHeight: 420)
             let w = NSWindow(contentViewController: NSHostingController(rootView: root))
-            w.title = "CPU Sentinel: \(kind.rawValue)"
+            w.title = "System Sentinel: \(kind.rawValue)"
             w.styleMask = [.titled, .closable, .miniaturizable, .resizable]
             w.isReleasedWhenClosed = false
             w.setContentSize(kind == .now ? NSSize(width: 760, height: 440) : NSSize(width: 960, height: 600))
-            w.setFrameAutosaveName("CPUSentinelZoom-\(kind)")
-            if !w.setFrameUsingName("CPUSentinelZoom-\(kind)") { w.center() }
+            w.setFrameAutosaveName("SystemSentinelZoom-\(kind)")
+            if !w.setFrameUsingName("SystemSentinelZoom-\(kind)") { w.center() }
             windows[kind] = w
         }
         NSApp.activate(ignoringOtherApps: true)
@@ -471,7 +471,7 @@ struct InsightList: View {
     var body: some View {
         Card(title: title, symbol: "sparkles", tint: Tab.trends.color) {
             if items.isEmpty {
-                Text("Nothing to report yet. Insights appear as CPU Sentinel learns this Mac's patterns.")
+                Text("Nothing to report yet. Insights appear as System Sentinel learns this Mac's patterns.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             VStack(spacing: 8) {

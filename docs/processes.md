@@ -3,7 +3,7 @@
 [Back to README](../README.md) · [User guide](guide.md)
 
 What the processes you're likely to see near the top of the list are, why they get busy,
-and what to do. CPU Sentinel shows the same notes in the ⓘ popover, in insights and in the
+and what to do. System Sentinel shows the same notes in the ⓘ popover, in insights and in the
 Explain prompt. For anything not listed, use ✨ **Explain**.
 
 **Verdicts**

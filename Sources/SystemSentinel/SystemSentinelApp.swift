@@ -1,11 +1,17 @@
 import AppKit
 import SentinelCore
+import ServiceManagement
 import SwiftUI
 
 @main
-struct CPUSentinelApp: App {
+struct SystemSentinelApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     @StateObject private var model = Model()
+
+    init() {
+        // Before Model reads any settings.
+        Migration.fromCPUSentinel()
+    }
 
     var body: some Scene {
         MenuBarExtra {
@@ -39,7 +45,7 @@ struct CPUSentinelApp: App {
     static func menuIcon(alert: Bool, rag: LoadRAG? = nil) -> NSImage {
         let size = NSSize(width: 24, height: 18)
         let fill = color(rag ?? (alert ? .red : .green))
-        let glyph = NSImage(systemSymbolName: alert ? "exclamationmark.triangle.fill" : "cpu", accessibilityDescription: "CPU Sentinel")?
+        let glyph = NSImage(systemSymbolName: alert ? "exclamationmark.triangle.fill" : "cpu", accessibilityDescription: "System Sentinel")?
             .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 13, weight: .bold)
                 .applying(NSImage.SymbolConfiguration(paletteColors: [.white])))
         let img = NSImage(size: size, flipped: false) { rect in
@@ -53,7 +59,7 @@ struct CPUSentinelApp: App {
             return true
         }
         img.isTemplate = false
-        img.accessibilityDescription = "CPU Sentinel"
+        img.accessibilityDescription = "System Sentinel"
         return img
     }
 }
@@ -96,7 +102,7 @@ struct MenuView: View {
         HStack(spacing: 10) {
             SymbolTile(symbol: "cpu", color: Color(hex: "#dc2626"), size: 28)
             VStack(alignment: .leading, spacing: 0) {
-                Text("CPU Sentinel").font(.headline)
+                Text("System Sentinel").font(.headline)
                 Text("v\(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev")  ·  \(Int(model.cores)) cores  ·  sampled every 5 s").font(.caption2).foregroundStyle(.secondary)
             }
             Spacer()
@@ -290,9 +296,9 @@ struct SettingsView: View {
                 }
             }
             Card(title: "Startup", symbol: "power", tint: Tab.processes.color) {
-                Toggle("Launch CPU Sentinel at login", isOn: draft.login)
+                Toggle("Launch System Sentinel at login", isOn: draft.login)
                     .toggleStyle(.switch)
-                Text("Trends and insights only cover the time CPU Sentinel is running.")
+                Text("Trends and insights only cover the time System Sentinel is running.")
                     .font(.caption2).foregroundStyle(.secondary)
             }
             MenuBarSettingsCard(model: model, draft: draft)
@@ -339,7 +345,7 @@ enum Snapshot {
         try? doc.markdown.write(to: URL(fileURLWithPath: dir).appendingPathComponent("report.md"), atomically: true, encoding: .utf8)
         try? ReportPDF.write(doc, to: URL(fileURLWithPath: dir).appendingPathComponent("report.pdf"))
         for alert in [false, true] {
-            let icon = CPUSentinelApp.menuIcon(alert: alert)
+            let icon = SystemSentinelApp.menuIcon(alert: alert)
             let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 96, pixelsHigh: 72, bitsPerSample: 8,
                                        samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,
                                        bytesPerRow: 0, bitsPerPixel: 0)!
@@ -431,11 +437,11 @@ enum PopOut {
         if window == nil {
             let host = NSHostingController(rootView: MenuView(model: model, inWindow: true))
             let w = NSWindow(contentViewController: host)
-            w.title = "CPU Sentinel"
+            w.title = "System Sentinel"
             w.styleMask = [.titled, .closable, .miniaturizable]
             w.isReleasedWhenClosed = false
-            w.setFrameAutosaveName("CPUSentinelWindow")
-            if !w.setFrameUsingName("CPUSentinelWindow") { w.center() }
+            w.setFrameAutosaveName("SystemSentinelWindow")
+            if !w.setFrameUsingName("SystemSentinelWindow") { w.center() }
             window = w
         }
         NSApp.activate(ignoringOtherApps: true)
@@ -470,5 +476,35 @@ struct ToastView: View {
         .overlay(RoundedRectangle(cornerRadius: 12).stroke(color.opacity(0.6), lineWidth: 1.5))
         .shadow(color: .black.opacity(0.18), radius: 10, y: 4)
         .transition(.move(edge: .top).combined(with: .opacity))
+    }
+}
+
+/// The app was CPU Sentinel until 0.7.0. Brings its settings, history and login item across
+/// once, so the rename loses nothing.
+enum Migration {
+    static let oldDomain = "consulting.cloudscale.cpusentinel"
+    static let flag = "migratedFromCPUSentinel"
+
+    static func fromCPUSentinel() {
+        guard !CommandLine.arguments.contains("--snapshot") else { return }
+        let d = UserDefaults.standard
+        guard !d.bool(forKey: flag) else { return }
+        d.set(true, forKey: flag)
+        let old = UserDefaults.standard.persistentDomain(forName: oldDomain) ?? [:]
+        for (k, v) in old where d.object(forKey: k) == nil && !k.hasPrefix("NS") && !k.hasPrefix("Apple") {
+            d.set(v, forKey: k)
+        }
+        let fm = FileManager.default
+        let base = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        let oldDir = base.appendingPathComponent("CPUSentinel", isDirectory: true)
+        let newDir = base.appendingPathComponent("SystemSentinel", isDirectory: true)
+        if fm.fileExists(atPath: oldDir.path), !fm.fileExists(atPath: newDir.path) {
+            try? fm.moveItem(at: oldDir, to: newDir)
+        }
+        // macOS ties the login item to the app, so the old one cannot carry over: re-add it
+        // for anyone who used CPU Sentinel. Settings turns it off.
+        if !old.isEmpty, SMAppService.mainApp.status != .enabled {
+            try? SMAppService.mainApp.register()
+        }
     }
 }

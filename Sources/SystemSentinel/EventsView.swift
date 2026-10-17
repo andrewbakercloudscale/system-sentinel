@@ -2,7 +2,7 @@ import Charts
 import SentinelCore
 import SwiftUI
 
-/// Everything CPU Sentinel flagged or killed: counts, a week at a glance, then the log.
+/// Everything System Sentinel flagged or killed: counts, a week at a glance, then the log.
 struct EventsView: View {
     @ObservedObject var model: Model
 

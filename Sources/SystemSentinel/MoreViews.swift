@@ -416,7 +416,7 @@ struct ExportCard: View {
         let doc = model.reportDocument()
         let panel = NSSavePanel()
         panel.allowedContentTypes = [pdf ? .pdf : UTType(filenameExtension: "md") ?? .plainText]
-        panel.nameFieldStringValue = "CPU Sentinel report \(Date().formatted(.iso8601.year().month().day())).\(pdf ? "pdf" : "md")"
+        panel.nameFieldStringValue = "System Sentinel report \(Date().formatted(.iso8601.year().month().day())).\(pdf ? "pdf" : "md")"
         NSApp.activate(ignoringOtherApps: true)
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {

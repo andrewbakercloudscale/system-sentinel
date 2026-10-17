@@ -1,8 +1,8 @@
-# Handover: CPU Sentinel UI redesign (2026-10-16)
+# Handover: System Sentinel UI redesign (2026-10-16)
 
 ## State
 
-- v0.1 is installed in `~/Applications/CPU Sentinel.app` and works (live-tested: a `yes`
+- v0.1 is installed in `~/Applications/System Sentinel.app` and works (live-tested: a `yes`
   burner was flagged). Rebuild and reinstall with `bash scripts/build-app.sh`.
 - This commit is **work in progress** on the redesign. The tree builds and `swift test`
   passes (23 tests), but the new UI is **not wired in yet**: the app still shows the v0.1 list.
@@ -49,13 +49,13 @@ no icons, no colour, 440 px wide.
 
 ## Next steps
 
-1. **Info.plist**: add `NSAppleEventsUsageDescription` ("CPU Sentinel lists and closes
+1. **Info.plist**: add `NSAppleEventsUsageDescription` ("System Sentinel lists and closes
    Chrome tabs you choose."), or the Chrome calls fail silently.
 2. **Model** (`Model.swift`): on each tick build rows for every process with history or
    cpu > 0: sample, now, 1m, 15m, 60m, sparkline (15 min, ~20 buckets), memory. Sort key
    enum (now / 1m / 15m / 60m / memory), default now. Optional group-by-app mode summing
    rows per `AppIdentity.groupKey`, expandable to its processes. Search filter.
-3. **Views** (rewrite `CPUSentinelApp.swift`, about 720 px wide):
+3. **Views** (rewrite `SystemSentinelApp.swift`, about 720 px wide):
    - Header card: gradient (indigo to purple), big machine-load %, cores, total sparkline,
      1/15/60 min totals.
    - Column header row, clickable to sort, active column highlighted.

@@ -121,7 +121,7 @@ private struct MemoryTimeline: View {
                          value: Insights.duration(Double(s.warningMinutes + s.criticalMinutes) * 60), label: "under pressure")
             }
             if buckets.count < 2 {
-                Text("Collecting: the timeline fills in as CPU Sentinel runs. Readings are kept for 7 days.")
+                Text("Collecting: the timeline fills in as System Sentinel runs. Readings are kept for 7 days.")
                     .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, minHeight: 60)
             } else {
                 let unit: Calendar.Component = bucket >= 3600 ? .hour : .minute

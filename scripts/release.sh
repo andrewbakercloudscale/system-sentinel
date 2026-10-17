@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds a zip of CPU Sentinel.app for a GitHub release, in dist/.
+# Builds a zip of System Sentinel.app for a GitHub release, in dist/.
 #
 #   bash scripts/release.sh
 #
@@ -7,28 +7,28 @@
 # any Mac without warnings:
 #
 #   DEVELOPER_ID="Developer ID Application: Name (TEAMID)" \
-#   NOTARY_PROFILE=cpu-sentinel bash scripts/release.sh
+#   NOTARY_PROFILE=system-sentinel bash scripts/release.sh
 #
 # NOTARY_PROFILE is a keychain profile made once with
-#   xcrun notarytool store-credentials cpu-sentinel --apple-id you@example.com --team-id TEAMID
+#   xcrun notarytool store-credentials system-sentinel --apple-id you@example.com --team-id TEAMID
 #
 # Without them the app is ad-hoc signed: users must run `xattr -cr` on it (see the README).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" Resources/Info.plist)
-APP="build/CPU Sentinel.app"
-ZIP="dist/CPU-Sentinel-$VERSION.zip"
+APP="build/System Sentinel.app"
+ZIP="dist/System-Sentinel-$VERSION.zip"
 
 echo "== tests"
 swift test >/dev/null 2>&1 || { echo "tests failed, not releasing"; exit 1; }
 
 echo "== build $VERSION"
 swift build -c release
-BIN="$(swift build -c release --show-bin-path)/CPUSentinel"
+BIN="$(swift build -c release --show-bin-path)/SystemSentinel"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" dist
-cp "$BIN" "$APP/Contents/MacOS/CPUSentinel"
+cp "$BIN" "$APP/Contents/MacOS/SystemSentinel"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 

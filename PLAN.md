@@ -1,4 +1,4 @@
-# CPU Sentinel: plan
+# System Sentinel: plan
 
 A macOS menu bar app that watches every process, alerts on the ones burning CPU, and kills
 them on request or automatically, per process.

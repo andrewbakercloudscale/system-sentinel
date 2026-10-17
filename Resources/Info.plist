@@ -3,17 +3,17 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleDisplayName</key>
-	<string>CPU Sentinel</string>
+	<string>System Sentinel</string>
 	<key>CFBundleExecutable</key>
-	<string>CPUSentinel</string>
+	<string>SystemSentinel</string>
 	<key>CFBundleIconFile</key>
 	<string>AppIcon</string>
 	<key>CFBundleIconName</key>
 	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
-	<string>consulting.cloudscale.cpusentinel</string>
+	<string>consulting.cloudscale.systemsentinel</string>
 	<key>CFBundleName</key>
-	<string>CPU Sentinel</string>
+	<string>System Sentinel</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -25,7 +25,7 @@
 	<key>LSUIElement</key>
 	<true/>
 	<key>NSAppleEventsUsageDescription</key>
-	<string>CPU Sentinel opens a Terminal sudo shell and lists and closes Chrome tabs you choose.</string>
+	<string>System Sentinel opens a Terminal sudo shell and lists and closes Chrome tabs you choose.</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>CloudScale Consulting</string>
 </dict>

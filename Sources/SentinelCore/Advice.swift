@@ -379,7 +379,7 @@ public struct ReportDocument: Equatable, Sendable {
                 "\(m.pressure.label): \(bytes(m.used)) of \(bytes(m.total)) used, \(bytes(m.swapUsed)) in swap.",
             ]))
         }
-        return ReportDocument(title: "CPU Sentinel report",
+        return ReportDocument(title: "System Sentinel report",
                               subtitle: "\(machine) · \(now.formatted(date: .long, time: .shortened))", sections: s)
     }
 

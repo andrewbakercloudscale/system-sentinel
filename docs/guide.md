@@ -1,4 +1,4 @@
-# CPU Sentinel user guide
+# System Sentinel user guide
 
 [Back to README](../README.md) · [Process guide](processes.md)
 
@@ -23,7 +23,7 @@
 
 ## The basics: what the percentages mean
 
-macOS counts CPU per core, and CPU Sentinel uses two scales:
+macOS counts CPU per core, and System Sentinel uses two scales:
 
 | Where | Scale | Example on a 10-core Mac |
 |---|---|---|
@@ -33,12 +33,12 @@ macOS counts CPU per core, and CPU Sentinel uses two scales:
 So a single process can show more than 100%, and the whole Mac is busy only when the gauge
 approaches 100%.
 
-**Averages** cover the time CPU Sentinel was running. If it was quit or the Mac was asleep,
+**Averages** cover the time System Sentinel was running. If it was quit or the Mac was asleep,
 those hours count as unknown, not idle, so an evening with the Mac closed doesn't pull the
 average down.
 
-**Sampling.** CPU Sentinel reads the process table every 5 seconds with `ps`, the same
-source Activity Monitor uses. CPU Sentinel itself uses well under 1% of one core.
+**Sampling.** System Sentinel reads the process table every 5 seconds with `ps`, the same
+source Activity Monitor uses. System Sentinel itself uses well under 1% of one core.
 
 ---
 
@@ -88,7 +88,7 @@ The answer to "is my Mac busy, and why?" in one screen:
 
 ## Insights
 
-Insights are short findings worked out from what CPU Sentinel has seen. The most urgent
+Insights are short findings worked out from what System Sentinel has seen. The most urgent
 ones come first. Each has a coloured edge: red is urgent, amber is worth a look, blue is
 for your information and green means all is well.
 
@@ -271,7 +271,7 @@ What the Mac draws and what is costing battery:
 **Your week** at the top: core-hours used, hours watched, time on battery, average power
 draw, the five heaviest apps and the busiest day.
 
-Everything CPU Sentinel did, or decided not to do:
+Everything System Sentinel did, or decided not to do:
 
 | Event | Meaning |
 |---|---|
@@ -320,7 +320,7 @@ path, so a rule for one tab applies to every tab.
 - **Over N% CPU for N minutes without a break** decides when a process is flagged. The
   default is 80% (of one core) for 2 minutes. Builds and other short bursts never count;
   only a process that stays over the line the whole time does.
-- **Launch CPU Sentinel at login.**
+- **Launch System Sentinel at login.**
 - **Weekly report notification** on Monday morning (on by default; applies at once).
 - **Menu bar:** nothing, CPU load, power draw or battery beside the icon.
 - **Heat and power alerts** (on by default): a pop-up when macOS reports the Mac is hot,
@@ -350,7 +350,7 @@ Heat and power alerts carry the same buttons for the likely culprit. If the culp
 an Ignore rule, the alert still comes but does not name it.
 
 Each process alerts once per episode, not every 5 seconds. If notifications don't appear,
-allow them in **System Settings > Notifications > CPU Sentinel**.
+allow them in **System Settings > Notifications > System Sentinel**.
 
 ---
 
@@ -360,7 +360,7 @@ allow them in **System Settings > Notifications > CPU Sentinel**.
 |---|---|---|
 | **Kill** (red) | Your own processes | A polite stop signal (SIGTERM), and a force kill (SIGKILL) 5 seconds later if it is still running. |
 | **Kill** with a lock (orange) | Root processes, e.g. PerfPowerServices | macOS asks for your admin password, then sends SIGTERM. Daemons like this are restarted by launchd, usually without the problem. |
-| **sudo** (outlined) | Core macOS processes: WindowServer, kernel_task, launchd, loginwindow, Finder, Dock, coreaudiod and others | A warning of what will happen, then four choices: **Open sudo shell** (Terminal with `sudo kill -TERM <pid>` typed in), **Kill with password**, **Copy command**, or **Cancel**. pid 0, pid 1 and CPU Sentinel itself are always refused. |
+| **sudo** (outlined) | Core macOS processes: WindowServer, kernel_task, launchd, loginwindow, Finder, Dock, coreaudiod and others | A warning of what will happen, then four choices: **Open sudo shell** (Terminal with `sudo kill -TERM <pid>` typed in), **Kill with password**, **Copy command**, or **Cancel**. pid 0, pid 1 and System Sentinel itself are always refused. |
 
 Things to know:
 
@@ -381,7 +381,7 @@ Things to know:
   quit, so it can save first.
 - Killing a **Chrome tab** renderer shows "Aw, Snap!" in the tabs it served. Reload them to
   bring them back.
-- The first time you use the Terminal option, macOS asks whether CPU Sentinel may control
+- The first time you use the Terminal option, macOS asks whether System Sentinel may control
   Terminal. Allow it, or use **Copy sudo kill command** and paste it yourself.
 
 ---
@@ -429,7 +429,7 @@ Everything stays in `~/Library/Application Support/CPUSentinel/`:
 | `battery-health.json` | One battery reading a day (capacity, design capacity, cycles), kept indefinitely |
 
 Nothing is sent anywhere, except a prompt you choose to send to ChatGPT with ✨ Explain.
-To reset everything, quit CPU Sentinel and delete that folder.
+To reset everything, quit System Sentinel and delete that folder.
 
 ---
 
@@ -438,7 +438,7 @@ To reset everything, quit CPU Sentinel and delete that folder.
 **The menu bar icon is missing.** The menu bar may be full: quit a few menu bar apps or
 hold Cmd and drag icons around. Check it's running with `pgrep -l CPUSentinel`.
 
-**Trends is empty or says "0 min recorded".** It fills in while CPU Sentinel runs. The
+**Trends is empty or says "0 min recorded".** It fills in while System Sentinel runs. The
 last-hour chart needs a few minutes and the daily insights need 30 minutes.
 
 **Kill on a root process does nothing.** The password prompt may have been cancelled. The
@@ -447,12 +447,12 @@ event shows as **Kill failed**.
 **"Kill failed: still running after SIGTERM as admin".** The process ignored the polite
 signal. Core macOS processes often do. See [Killing processes](#killing-processes).
 
-**The sudo kill button doesn't open Terminal, or the error mentions -1743.** CPU Sentinel isn't
+**The sudo kill button doesn't open Terminal, or the error mentions -1743.** System Sentinel isn't
 allowed to control Terminal. Allow it in **System Settings > Privacy & Security >
-Automation > CPU Sentinel > Terminal**.
+Automation > System Sentinel > Terminal**.
 
 **macOS says the app is damaged or can't be opened (downloaded build).** Run
-`xattr -cr "/Applications/CPU Sentinel.app"`. The build isn't notarised by Apple.
+`xattr -cr "/Applications/System Sentinel.app"`. The build isn't notarised by Apple.
 
 **A process shows over 100%.** That's normal: 100% is one core. See
 [the basics](#the-basics-what-the-percentages-mean).

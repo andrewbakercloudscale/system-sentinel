@@ -129,7 +129,7 @@ struct PowerChart: View {
                 StatTile(symbol: "chart.line.downtrend.xyaxis", color: Tab.trends.color, value: summary.drainPerHour.map { String(format: "%.0f%%/h", $0) } ?? "–", label: "drain on battery")
             }
             if bars.isEmpty {
-                Text("Collecting: the chart fills in as CPU Sentinel runs. Readings are kept for 7 days.")
+                Text("Collecting: the chart fills in as System Sentinel runs. Readings are kept for 7 days.")
                     .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, minHeight: 60)
             } else {
                 Chart(bars) { b in
@@ -371,7 +371,7 @@ private struct EnergyCard: View {
         let total = model.energySummaries(hours: hours).reduce(0) { $0 + $1.coreSeconds }
         let drawn = BatteryMath.appEnergy(model.powerHistory.since(Date().addingTimeInterval(-Double(hours) * 3600)))
         if rows.isEmpty {
-            Text("No energy history yet: it builds up as CPU Sentinel runs.").font(.caption).foregroundStyle(.secondary)
+            Text("No energy history yet: it builds up as System Sentinel runs.").font(.caption).foregroundStyle(.secondary)
         }
         ForEach(rows, id: \.key) { r in
             HStack(spacing: 10) {

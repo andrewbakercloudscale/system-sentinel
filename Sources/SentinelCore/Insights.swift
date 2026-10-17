@@ -49,8 +49,8 @@ public enum ProcessGuide {
             return "A background service an installed app added, at \(p). The app that installed it controls it; see the Rules tab's background items."
         }
         return p.isEmpty
-            ? "CPU Sentinel has no notes on \(name) yet. Explain asks for a full answer."
-            : "A program at \(p). CPU Sentinel has no notes on it yet; Explain asks for a full answer."
+            ? "System Sentinel has no notes on \(name) yet. Explain asks for a full answer."
+            : "A program at \(p). System Sentinel has no notes on it yet; Explain asks for a full answer."
     }
 
     static let notes: [String: Note] = {
