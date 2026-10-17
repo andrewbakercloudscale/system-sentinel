@@ -1,6 +1,7 @@
 import Foundation
 
-/// CPU use per executable over the last 7 days, in hourly buckets, saved to disk.
+/// CPU use per executable in time buckets, saved to disk: hourly for the last 7 days, and
+/// a second instance in one-minute buckets for the last 6 hours (the 30 min to 6 hour views).
 ///
 /// Unlike `CPUHistory` (per pid, one hour, memory only) this is keyed by path, so a process
 /// that restarts, or the dozen Chrome renderers that share one binary, add up under one
@@ -12,9 +13,10 @@ import Foundation
 public final class DailyUsage {
     public struct Entry: Codable, Equatable, Sendable {
         public var name: String
-        /// Hour start (seconds since 1970, a multiple of 3600) to core-seconds in that hour.
+        /// Bucket start (seconds since 1970, a multiple of `bucket`) to core-seconds in it.
+        /// Called hours because the first store was hourly; the stored format keeps the name.
         public var hours: [Int: Double]
-        /// Hour start to the highest single sample in that hour, in percent.
+        /// Bucket start to the highest single sample in it, in percent.
         public var peaks: [Int: Double]
     }
 
@@ -26,9 +28,9 @@ public final class DailyUsage {
         /// Mean CPU in percent (100 is one core) over the time sampled.
         public let average: Double
         public let peak: Double
-        /// When the peak was seen (the start of its hour).
+        /// When the peak was seen (the start of its bucket).
         public let peakHour: Date?
-        /// One value per hour of the range, oldest first: mean percent in that hour
+        /// One value per bucket of the range, oldest first: mean percent in that bucket
         /// (0 where nothing was sampled).
         public let hourly: [Double]
     }
@@ -39,7 +41,7 @@ public final class DailyUsage {
     }
 
     public private(set) var entries: [String: Entry] = [:]
-    /// Hour start to seconds actually sampled in that hour.
+    /// Bucket start to seconds actually sampled in it.
     public private(set) var coverage: [Int: Double] = [:]
 
     public let floor: Double
@@ -48,14 +50,21 @@ public final class DailyUsage {
     public let maxStep: TimeInterval
     /// Hours kept on disk.
     public let retainHours: Int
+    /// Seconds per bucket: 3600 for the 7 day store, 60 for the 6 hour one.
+    public let bucket: Int
+    /// How often a running app writes the file.
+    public let saveEvery: TimeInterval
     private let fileURL: URL?
     private let readOnly: Bool
     private var lastTick: Date?
     private var lastSave: Date?
     private var lastPrunedHour: Int?
 
-    public init(fileURL: URL?, floor: Double = 0.1, maxStep: TimeInterval = 15, retainHours: Int = 24 * 7, readOnly: Bool = false) {
+    public init(fileURL: URL?, floor: Double = 0.1, maxStep: TimeInterval = 15, retainHours: Int = 24 * 7,
+                bucket: Int = 3600, saveEvery: TimeInterval = 60, readOnly: Bool = false) {
         self.fileURL = fileURL
+        self.bucket = bucket
+        self.saveEvery = saveEvery
         self.floor = floor
         self.maxStep = maxStep
         self.retainHours = retainHours
@@ -74,13 +83,22 @@ public final class DailyUsage {
         (0..<hours).map { hour(now) - (hours - 1 - $0) * 3600 }
     }
 
+    public func start(_ d: Date) -> Int { Int(d.timeIntervalSince1970) / bucket * bucket }
+
+    /// The starts of the last `count` buckets, oldest first, ending with the current one.
+    public func starts(at now: Date, count: Int) -> [Int] {
+        (0..<count).map { start(now) - (count - 1 - $0) * bucket }
+    }
+
+    private func count(_ hours: Int) -> Int { max(hours * 3600 / bucket, 1) }
+
     /// Adds one tick. The first tick after launch only sets the clock.
     public func record(_ samples: [ProcessSample], at now: Date) {
         defer { lastTick = now }
         guard let last = lastTick else { return }
         let step = min(max(now.timeIntervalSince(last), 0), maxStep)
         guard step > 0 else { return }
-        let h = Self.hour(now)
+        let h = start(now)
         coverage[h, default: 0] += step
         for s in samples where s.cpu >= floor {
             let key = Self.key(for: s)
@@ -93,27 +111,36 @@ public final class DailyUsage {
             prune(now)
             lastPrunedHour = h
         }
-        if lastSave.map({ now.timeIntervalSince($0) >= 60 }) ?? true {
+        if lastSave.map({ now.timeIntervalSince($0) >= saveEvery }) ?? true {
             save()
             lastSave = now
         }
     }
 
     /// Seconds sampled in the last `hours` hours.
-    public func sampled(at now: Date, hours: Int = 24) -> TimeInterval {
-        Self.hourStarts(at: now, hours: hours).reduce(0) { $0 + (coverage[$1] ?? 0) }
+    public func sampled(at now: Date, hours: Int = 24) -> TimeInterval { sampled(at: now, buckets: count(hours)) }
+
+    public func sampled(at now: Date, buckets: Int) -> TimeInterval {
+        starts(at: now, count: buckets).reduce(0) { $0 + (coverage[$1] ?? 0) }
     }
 
     /// Seconds sampled in each of the last `hours` hours, oldest first.
-    public func coverageHourly(at now: Date, hours: Int = 24) -> [Double] {
-        Self.hourStarts(at: now, hours: hours).map { coverage[$0] ?? 0 }
+    public func coverageHourly(at now: Date, hours: Int = 24) -> [Double] { coverage(at: now, buckets: count(hours)) }
+
+    /// Seconds sampled in each of the last `buckets` buckets, oldest first.
+    public func coverage(at now: Date, buckets: Int) -> [Double] {
+        starts(at: now, count: buckets).map { coverage[$0] ?? 0 }
     }
 
     /// Every process seen in the last `hours` hours, heaviest first. `group` folds rows
     /// together, for example by `AppIdentity.groupKey`, naming each group with `name`.
     public func summaries(at now: Date, hours: Int = 24, group: ((String) -> String)? = nil, name: ((String) -> String)? = nil) -> [Summary] {
-        let starts = Self.hourStarts(at: now, hours: hours)
-        let total = sampled(at: now, hours: hours)
+        summaries(at: now, buckets: count(hours), group: group, name: name)
+    }
+
+    public func summaries(at now: Date, buckets: Int, group: ((String) -> String)? = nil, name: ((String) -> String)? = nil) -> [Summary] {
+        let starts = starts(at: now, count: buckets)
+        let total = sampled(at: now, buckets: buckets)
         var folded: [String: (name: String, hours: [Int: Double], peak: Double, peakHour: Int?)] = [:]
         for (key, e) in entries {
             let g = group?(key) ?? key
@@ -140,7 +167,7 @@ public final class DailyUsage {
 
     /// Total CPU per hour across everything, oldest first, in percent of one core.
     public func totalHourly(at now: Date, hours: Int = 24) -> [Double] {
-        Self.hourStarts(at: now, hours: hours).map { h in
+        starts(at: now, count: count(hours)).map { h in
             let c = coverage[h] ?? 0
             guard c > 0 else { return 0 }
             return entries.values.reduce(0) { $0 + ($1.hours[h] ?? 0) } / c * 100
@@ -161,7 +188,7 @@ public final class DailyUsage {
     }
 
     private func prune(_ now: Date) {
-        let since = Self.hour(now) - (retainHours - 1) * 3600
+        let since = start(now) - retainHours * 3600 + bucket
         coverage = coverage.filter { $0.key >= since }
         for (key, var e) in entries {
             e.hours = e.hours.filter { $0.key >= since }

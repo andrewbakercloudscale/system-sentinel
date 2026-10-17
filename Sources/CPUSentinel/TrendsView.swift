@@ -2,18 +2,45 @@ import Charts
 import SentinelCore
 import SwiftUI
 
-/// What has used the CPU over the last day or week: a stacked chart over time, then the
-/// ranking with each one's share, average, peak and when it peaked.
+/// What has used the CPU over the last half hour to the last week: a stacked chart over time,
+/// then the ranking with each one's share, average, peak and when it peaked.
 struct TrendsView: View {
     @ObservedObject var model: Model
     @AppStorage("trendRange") private var range = Range.day.rawValue
     @AppStorage("dailyByApp") private var byApp = true
 
     enum Range: String, CaseIterable {
-        case day = "24 hours", week = "7 days"
-        var hours: Int { self == .day ? 24 : 24 * 7 }
-        /// Hours per bar: hourly for a day, six-hourly for a week.
-        var bucket: Int { self == .day ? 1 : 6 }
+        case halfHour = "30 min", threeHours = "3 hours", sixHours = "6 hours", day = "24 hours", week = "7 days"
+
+        /// Up to 6 hours comes from the one-minute store, longer from the hourly one.
+        var fine: Bool { self == .halfHour || self == .threeHours || self == .sixHours }
+        var span: TimeInterval {
+            switch self {
+            case .halfHour: return 1800
+            case .threeHours: return 3 * 3600
+            case .sixHours: return 6 * 3600
+            case .day: return 24 * 3600
+            case .week: return 7 * 24 * 3600
+            }
+        }
+        /// Store buckets per bar, so every range has 24 to 36 bars.
+        var fold: Int {
+            switch self {
+            case .halfHour, .day: return 1
+            case .threeHours: return 5
+            case .sixHours: return 10
+            case .week: return 6
+            }
+        }
+        var barTitle: String {
+            switch self {
+            case .halfHour: return "CPU per minute"
+            case .threeHours: return "CPU per 5 minutes"
+            case .sixHours: return "CPU per 10 minutes"
+            case .day: return "CPU per hour"
+            case .week: return "CPU per 6 hours"
+            }
+        }
     }
 
     struct Bar: Identifiable {
@@ -34,6 +61,10 @@ struct TrendsView: View {
         let colors: [String: Color]
         let bars: [Bar]
         let domain: [String]
+        /// The chart's time axis, and how wide one bar is in seconds.
+        let start: Date
+        let end: Date
+        let barSeconds: TimeInterval
 
         func name(_ key: String) -> String {
             key == "other" ? "Everything else" : rows.first { $0.key == key }?.name ?? key
@@ -59,47 +90,42 @@ struct TrendsView: View {
     private func data() -> Data {
         let r = Range(rawValue: range) ?? .day
         let now = Date()
-        let usage = model.sentinel.dailyUsage
+        let usage = r.fine ? model.sentinel.recentUsage : model.sentinel.dailyUsage
+        let count = Int(r.span) / usage.bucket
         let cores = max(model.cores, 1)
         let group: ((String) -> String)? = byApp ? { Model.appKey($0) } : nil
         let name: ((String) -> String)? = byApp ? { Model.appName($0) } : nil
-        let rows: [DailyUsage.Summary] = usage.summaries(at: now, hours: r.hours, group: group, name: name)
+        let rows: [DailyUsage.Summary] = usage.summaries(at: now, buckets: count, group: group, name: name)
         let topKeys: [String] = rows.prefix(6).map { $0.key }
         let colors = ColorBook.shared.colors(for: topKeys)
-        let bars = Self.bars(rows: rows, topKeys: topKeys, coverage: usage.coverageHourly(at: now, hours: r.hours),
-                             now: now, range: r, cores: cores)
-        return Data(range: r, now: now, rows: rows, sampled: usage.sampled(at: now, hours: r.hours),
+        let starts = usage.starts(at: now, count: count)
+        let bars = Self.bars(rows: rows, topKeys: topKeys, coverage: usage.coverage(at: now, buckets: count),
+                             starts: starts, fold: r.fold, cores: cores)
+        return Data(range: r, now: now, rows: rows, sampled: usage.sampled(at: now, buckets: count),
                     total: rows.reduce(0) { $0 + $1.coreSeconds }, cores: cores, colors: colors,
-                    bars: bars, domain: topKeys + ["other"])
+                    bars: bars, domain: topKeys + ["other"],
+                    start: Date(timeIntervalSince1970: Double(starts.first ?? 0)),
+                    end: Date(timeIntervalSince1970: Double((starts.last ?? 0) + usage.bucket)),
+                    barSeconds: Double(usage.bucket * r.fold))
     }
 
-    static func start(_ now: Date, _ r: Range) -> Date {
-        Date(timeIntervalSince1970: Double(DailyUsage.hour(now) - (r.hours - 1) * 3600))
-    }
-
-    static func end(_ now: Date, _ r: Range) -> Date {
-        Date(timeIntervalSince1970: Double(DailyUsage.hour(now) + 3600))
-    }
-
-    /// Folds the hourly series into bars of `range.bucket` hours, each the mean over the
-    /// time actually sampled in it, as a share of the whole machine.
-    static func bars(rows: [DailyUsage.Summary], topKeys: [String], coverage: [Double], now: Date, range: Range, cores: Double) -> [Bar] {
-        let hours = range.hours
-        let starts = DailyUsage.hourStarts(at: now, hours: hours)
+    /// Folds the bucket series into bars of `fold` buckets, each the mean over the time
+    /// actually sampled in it, as a share of the whole machine.
+    static func bars(rows: [DailyUsage.Summary], topKeys: [String], coverage: [Double], starts: [Int], fold: Int, cores: Double) -> [Bar] {
+        let count = starts.count
         let top = Set(topKeys)
         var out: [Bar] = []
-        // Group hours into buckets aligned to the end of the range.
-        let size = range.bucket
-        var index = hours % size == 0 ? 0 : hours % size - size
-        while index < hours {
-            let lo = max(index, 0), hi = min(index + size, hours)
-            index += size
+        // Group buckets aligned to the end of the range.
+        var index = count % fold == 0 ? 0 : count % fold - fold
+        while index < count {
+            let lo = max(index, 0), hi = min(index + fold, count)
+            index += fold
             let cov = coverage[lo..<hi].reduce(0, +)
             guard cov > 0 else { continue }
             let start = Date(timeIntervalSince1970: Double(starts[lo]))
             var other = 0.0
             for row in rows {
-                // hourly is percent of one core over each hour's sampled time; weight it back.
+                // hourly is percent of one core over each bucket's sampled time; weight it back.
                 let cs = (lo..<hi).reduce(0.0) { $0 + row.hourly[$1] / 100 * coverage[$1] }
                 let v = cs / cov * 100 / cores
                 if top.contains(row.key) { out.append(Bar(start: start, key: row.key, value: v)) } else { other += v }
@@ -195,7 +221,7 @@ private struct TrendChart: View {
     let byApp: Bool
 
     var body: some View {
-        Card(title: d.range == .day ? "CPU by hour" : "CPU by 6 hours", symbol: "chart.bar.fill", tint: Tab.trends.color,
+        Card(title: d.range.barTitle, symbol: "chart.bar.fill", tint: Tab.trends.color,
              trailing: AnyView(Text("% of whole Mac, stacked by \(byApp ? "app" : "process")").font(.caption2).foregroundStyle(.secondary))) {
             if d.bars.isEmpty {
                 Text("Nothing recorded yet. This fills in while CPU Sentinel runs.")
@@ -208,14 +234,19 @@ private struct TrendChart: View {
     }
 
     private var chart: some View {
-        Chart(d.bars) { b in
-            BarMark(x: .value("Time", b.start, unit: .hour), y: .value("CPU", b.value), width: .ratio(0.78))
+        // Bars sit in the middle of their slot with a fixed width: the 5 and 10 minute bars
+        // have no calendar unit for .ratio to measure against.
+        let slots = max(d.end.timeIntervalSince(d.start) / d.barSeconds, 1)
+        let width = max(2, 560 / slots * 0.78)
+        return Chart(d.bars) { b in
+            BarMark(x: .value("Time", b.start.addingTimeInterval(d.barSeconds / 2)), y: .value("CPU", b.value), width: .fixed(width))
                 .foregroundStyle(by: .value("App", b.key))
                 .cornerRadius(2)
         }
         .chartForegroundStyleScale(domain: d.domain, range: d.domain.map { d.colors[$0] ?? Theme.other })
         .chartLegend(.hidden)
-        .chartXScale(domain: TrendsView.start(d.now, d.range)...TrendsView.end(d.now, d.range))
+        // End padding, so the last time label is not clipped at the edge.
+        .chartXScale(domain: d.start...d.end, range: .plotDimension(endPadding: 14))
         .chartYAxis {
             AxisMarks(position: .leading, values: .automatic(desiredCount: 4)) { v in
                 AxisGridLine().foregroundStyle(Color.primary.opacity(0.08))
@@ -223,14 +254,27 @@ private struct TrendChart: View {
             }
         }
         .chartXAxis {
-            if d.range == .day {
-                AxisMarks(values: .stride(by: .hour, count: 3)) { _ in
-                    AxisValueLabel(format: .dateTime.hour()).font(.system(size: 9))
-                }
-            } else {
+            switch d.range {
+            case .week:
                 AxisMarks(values: .stride(by: .day)) { _ in
                     AxisGridLine().foregroundStyle(Color.primary.opacity(0.06))
                     AxisValueLabel(format: .dateTime.weekday(.abbreviated)).font(.system(size: 9))
+                }
+            case .day:
+                AxisMarks(values: .stride(by: .hour, count: 3)) { _ in
+                    AxisValueLabel(format: .dateTime.hour()).font(.system(size: 9))
+                }
+            case .sixHours:
+                AxisMarks(values: .stride(by: .hour, count: 1)) { _ in
+                    AxisValueLabel(format: .dateTime.hour().minute()).font(.system(size: 9))
+                }
+            case .threeHours:
+                AxisMarks(values: .stride(by: .minute, count: 30)) { _ in
+                    AxisValueLabel(format: .dateTime.hour().minute()).font(.system(size: 9))
+                }
+            case .halfHour:
+                AxisMarks(values: .stride(by: .minute, count: 5)) { _ in
+                    AxisValueLabel(format: .dateTime.hour().minute()).font(.system(size: 9))
                 }
             }
         }

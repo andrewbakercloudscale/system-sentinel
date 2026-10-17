@@ -361,7 +361,7 @@ private struct InsightCard: View {
                 if !i.related.isEmpty {
                     Section(i.related.count == 1 ? "The process" : "The processes involved") {
                         VStack(spacing: 6) {
-                            ForEach(i.related) { r in RelatedRow(model: model, related: r) }
+                            ForEach(i.related) { r in RelatedRow(model: model, related: r, force: i.offersForceKill) }
                         }
                     }
                 }
@@ -409,6 +409,8 @@ private struct InsightCard: View {
 private struct RelatedRow: View {
     @ObservedObject var model: Model
     let related: Insight.Related
+    /// The polite kill already failed: offer Force kill instead.
+    var force = false
 
     var body: some View {
         let s = related.sample
@@ -443,8 +445,10 @@ private struct RelatedRow: View {
             }
             if s.pid == getpid() {
                 EmptyView()
+            } else if force {
+                ForceKillButton(model: model, sample: s)
             } else if Safety.canKillManually(s) {
-                KillButton(isRoot: s.isRoot) { model.kill(s) }
+                KillButton(model: model, sample: s)
             } else {
                 SudoButton(model: model, sample: s)
             }

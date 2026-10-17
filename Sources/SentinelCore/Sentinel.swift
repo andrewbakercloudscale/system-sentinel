@@ -18,6 +18,8 @@ public final class Sentinel {
     public let limiter: RateLimiter
     public let cpuHistory: CPUHistory
     public let dailyUsage: DailyUsage
+    /// The same in one-minute buckets for the last 6 hours, for the short Trends views.
+    public let recentUsage: DailyUsage
     public private(set) var latest: [ProcessSample] = []
 
     private let sampler: () throws -> [ProcessSample]
@@ -30,6 +32,7 @@ public final class Sentinel {
         limiter: RateLimiter = RateLimiter(),
         cpuHistory: CPUHistory = CPUHistory(),
         dailyUsage: DailyUsage = DailyUsage(fileURL: nil),
+        recentUsage: DailyUsage = DailyUsage(fileURL: nil, retainHours: 6, bucket: 60),
         sampler: @escaping () throws -> [ProcessSample] = ProcessSampler.sample,
         killer: @escaping (ProcessSample) -> KillOutcome = { Killer.kill($0) }
     ) {
@@ -39,6 +42,7 @@ public final class Sentinel {
         self.limiter = limiter
         self.cpuHistory = cpuHistory
         self.dailyUsage = dailyUsage
+        self.recentUsage = recentUsage
         self.sampler = sampler
         self.killer = killer
     }
@@ -56,6 +60,7 @@ public final class Sentinel {
         latest = try sampler()
         cpuHistory.record(latest, at: now)
         dailyUsage.record(latest, at: now)
+        recentUsage.record(latest, at: now)
         var events: [SentinelEvent] = []
         for actor in detector.update(latest, at: now) {
             let s = actor.sample

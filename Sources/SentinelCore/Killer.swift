@@ -15,8 +15,43 @@ public enum KillOutcome: Equatable, Sendable {
 public enum Killer {
     public static func isAlive(_ pid: Int32) -> Bool {
         // Signal 0 checks existence. EPERM means it exists but belongs to someone else.
-        Darwin.kill(pid, 0) == 0 || errno == EPERM
+        guard Darwin.kill(pid, 0) == 0 || errno == EPERM else { return false }
+        // A killed process stays in the table as a zombie until its parent collects it, and
+        // signal 0 still succeeds on a zombie. SkyComputerUseService, SIGKILLed while ChatGPT
+        // (its parent) was busy, read as "still running after SIGKILL" though it was dead.
+        return !isZombie(pid)
     }
+
+    static func isZombie(_ pid: Int32) -> Bool {
+        var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, pid]
+        var info = kinfo_proc()
+        var size = MemoryLayout<kinfo_proc>.stride
+        guard sysctl(&mib, 4, &info, &size, nil, 0) == 0, size > 0 else { return false }
+        return info.kp_proc.p_stat == SZOMB
+    }
+
+    /// SIGKILL straight away: cannot be caught or ignored, and the process gets no chance to
+    /// save or clean up. Root and protected processes go through the admin prompt. pid 0 and 1
+    /// and this app stay refused.
+    public static func forceKill(_ s: ProcessSample) -> KillOutcome {
+        guard s.pid > 1, s.pid != getpid() else { return .refused("\(s.name) cannot be killed") }
+        guard isAlive(s.pid) else { return .alreadyGone }
+        if s.uid != getuid() {
+            let task = Process()
+            task.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+            task.arguments = ["-e", "do shell script \"/bin/kill -KILL \(s.pid)\" with administrator privileges"]
+            task.standardError = FileHandle.nullDevice
+            do { try task.run() } catch { return .failed(error.localizedDescription) }
+            task.waitUntilExit()
+            guard task.terminationStatus == 0 else { return .failed("admin prompt cancelled or refused") }
+        } else if Darwin.kill(s.pid, SIGKILL) != 0 {
+            return isAlive(s.pid) ? .failed(String(cString: strerror(errno))) : .forceKilled
+        }
+        return waitForExit(s.pid, timeout: 5) ? .forceKilled : .failed("still running after SIGKILL")
+    }
+
+    /// The force kill command to paste into Terminal.
+    public static func forceSudoCommand(for s: ProcessSample) -> String { "sudo kill -9 \(s.pid)" }
 
     /// Kills a process owned by this user. Blocks for up to `grace` seconds.
     public static func kill(_ s: ProcessSample, grace: TimeInterval = 5) -> KillOutcome {

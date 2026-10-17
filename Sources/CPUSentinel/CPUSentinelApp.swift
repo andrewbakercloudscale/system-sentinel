@@ -62,12 +62,18 @@ struct MenuView: View {
         VStack(alignment: .leading, spacing: 10) {
             header
             TabBar(selection: $tab, badges: [.events: model.flagged.count])
-            if fullLength {
-                page
-            } else {
-                ScrollView(.vertical) { page.padding(.trailing, 2) }
-                    .frame(height: Self.contentHeight)
+            Group {
+                if fullLength {
+                    page
+                } else {
+                    ScrollView(.vertical) { page.padding(.trailing, 2) }
+                        .frame(height: Self.contentHeight)
+                }
             }
+            .overlay(alignment: .top) {
+                if let t = model.toast { ToastView(toast: t) { model.toast = nil }.padding(.top, 6) }
+            }
+            .animation(.spring(duration: 0.3), value: model.toast)
             footer
         }
         .padding(14)
@@ -124,6 +130,7 @@ struct MenuView: View {
             }
             FooterButton(title: "Quit", symbol: "power", color: Tab.settings.color) {
                 model.sentinel.dailyUsage.save()
+                model.sentinel.recentUsage.save()
                 NSApplication.shared.terminate(nil)
             }
         }
@@ -334,5 +341,35 @@ enum PopOut {
         }
         NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(nil)
+    }
+}
+
+/// The result of a kill, over the top of the page where it cannot be missed: green when the
+/// process stopped, red when it did not, with what to do when it was relaunched at once.
+struct ToastView: View {
+    let toast: Model.Toast
+    let close: () -> Void
+
+    var body: some View {
+        let color = toast.ok ? Theme.heat(0) : Theme.heat(100)
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: toast.ok ? "checkmark.circle.fill" : "xmark.octagon.fill")
+                .font(.title3).foregroundStyle(color)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(toast.title).font(.callout.weight(.semibold))
+                if let d = toast.detail {
+                    Text(d).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            Spacer(minLength: 4)
+            Button(action: close) { Image(systemName: "xmark").font(.caption.weight(.bold)).foregroundStyle(.secondary) }
+                .buttonStyle(.plain)
+        }
+        .padding(12)
+        .frame(maxWidth: 520)
+        .background(RoundedRectangle(cornerRadius: 12).fill(.regularMaterial))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(color.opacity(0.6), lineWidth: 1.5))
+        .shadow(color: .black.opacity(0.18), radius: 10, y: 4)
+        .transition(.move(edge: .top).combined(with: .opacity))
     }
 }

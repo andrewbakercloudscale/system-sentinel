@@ -2,28 +2,27 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>CFBundleIdentifier</key>
-    <string>consulting.cloudscale.cpusentinel</string>
-    <key>CFBundleName</key>
-    <string>CPU Sentinel</string>
-    <key>CFBundleDisplayName</key>
-    <string>CPU Sentinel</string>
-    <key>CFBundleExecutable</key>
-    <string>CPUSentinel</string>
-    <key>CFBundlePackageType</key>
-    <string>APPL</string>
-    <key>CFBundleShortVersionString</key>
-    <string>0.2.1</string>
-    <key>CFBundleVersion</key>
-    <string>3</string>
-    <key>LSMinimumSystemVersion</key>
-    <string>14.0</string>
-    <!-- Menu bar only: no Dock icon, no app menu. -->
-    <key>LSUIElement</key>
-    <true/>
-    <key>NSAppleEventsUsageDescription</key>
-    <string>CPU Sentinel opens a Terminal sudo shell and lists and closes Chrome tabs you choose.</string>
-    <key>NSHumanReadableCopyright</key>
-    <string>CloudScale Consulting</string>
+	<key>CFBundleDisplayName</key>
+	<string>CPU Sentinel</string>
+	<key>CFBundleExecutable</key>
+	<string>CPUSentinel</string>
+	<key>CFBundleIdentifier</key>
+	<string>consulting.cloudscale.cpusentinel</string>
+	<key>CFBundleName</key>
+	<string>CPU Sentinel</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.3.0</string>
+	<key>CFBundleVersion</key>
+	<string>4</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>14.0</string>
+	<key>LSUIElement</key>
+	<true/>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>CPU Sentinel opens a Terminal sudo shell and lists and closes Chrome tabs you choose.</string>
+	<key>NSHumanReadableCopyright</key>
+	<string>CloudScale Consulting</string>
 </dict>
 </plist>

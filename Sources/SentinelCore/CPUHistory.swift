@@ -1,6 +1,6 @@
 import Foundation
 
-/// CPU over time per process, for the 1, 15 and 60 minute columns and the sparklines.
+/// CPU over time per process, for the 15 minute, 1 hour and 6 hour columns and the sparklines.
 ///
 /// Averages are energy-like: a process that ran hot for 6 minutes out of 60 shows a tenth
 /// of that in the 60 minute column, so the columns answer "what has been chewing my CPU",
@@ -19,7 +19,7 @@ public final class CPUHistory {
     private var totals: [(Date, Double)] = []
     private var started: Date?
 
-    public init(retention: TimeInterval = 3600, interval: TimeInterval = 5, floor: Double = 0.1) {
+    public init(retention: TimeInterval = 6 * 3600, interval: TimeInterval = 5, floor: Double = 0.1) {
         self.retention = retention
         self.interval = interval
         self.floor = floor
@@ -38,9 +38,12 @@ public final class CPUHistory {
             paths[s.pid] = s.path
         }
         totals.append((now, total))
-        totals.removeAll { $0.0 < cutoff }
+        if let i = totals.firstIndex(where: { $0.0 >= cutoff }), i > 0 { totals.removeFirst(i) }
         for (pid, points) in series {
-            let kept = points.filter { $0.0 >= cutoff }
+            // Points are in time order, so the expired ones are a prefix: cheap to find and
+            // drop, which matters with 6 hours of history.
+            var kept = points
+            if let i = kept.firstIndex(where: { $0.0 >= cutoff }) { if i > 0 { kept.removeFirst(i) } } else { kept = [] }
             // A dead pid is dropped, so a reused pid does not inherit its history.
             series[pid] = (kept.isEmpty || !live.contains(pid)) ? nil : kept
         }

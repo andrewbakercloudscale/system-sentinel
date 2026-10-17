@@ -28,9 +28,9 @@ CPU Sentinel answers each of those. It was built after a macOS energy logger
 |---|---|
 | **Insights in plain English** | "WindowServer is busy because the screen is being captured", "Photos is analysing your library", "3 Chrome tab processes use 40% together". Click **More** to see what is happening, each process involved and who started it, and numbered steps to fix it. |
 | **Explain with ChatGPT** | The sparkles button opens ChatGPT with a ready-made prompt: the process, its CPU history, your Mac model and its busiest processes, asking what it is and how to bring it down. |
-| **A day and a week of history** | Hourly CPU by app for the last 24 hours or 7 days, the heaviest users and when each one peaked. Kept across restarts and sleep. |
+| **History from 30 minutes to a week** | CPU by app over the last 30 minutes, 3, 6 or 24 hours, or 7 days, the heaviest users and when each one peaked. Kept across restarts and sleep. |
 | **Know when a process started** | Every process shows its uptime, so a renderer that has been busy for 13 days is easy to spot. |
-| **Kill anything, carefully** | One-click kill for your own processes, your password for root ones, and a separate sudo button with a warning for core macOS processes. |
+| **Kill anything, carefully** | One-click kill for your own processes, your password for root ones, a separate sudo button with a warning for core macOS processes, and Force kill (kill -9) for anything that ignores a kill. A banner says whether it worked and who relaunched it if it came back. |
 | **Rules that remember** | Per app: alert (the default), ignore, or auto-kill. Auto-kill is limited to 3 kills an hour per app. |
 | **Dark mode, and a window you can move** | Every screen is designed for light and dark. **Pop out** moves the panel into a normal window you can drag. |
 
@@ -105,7 +105,7 @@ describing the process and your Mac. [What's in it](docs/guide.md#explain-with-c
 ## Development
 
 ```bash
-swift test                     # 33 tests, including a real CPU burner that must be flagged and killed
+swift test                     # 37 tests, including a real CPU burner that must be flagged and killed
 swift build                    # debug build
 bash scripts/build-app.sh      # test, build, bundle, install, launch
 ```

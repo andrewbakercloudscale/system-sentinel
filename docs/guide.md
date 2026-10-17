@@ -134,7 +134,9 @@ be capturing.
 
 The 30 busiest processes, refreshed every 5 seconds.
 
-- **Filter** by name. **Sort** by CPU now, the 15 minute or 1 hour average, or memory.
+- **Filter** by name. **Sort** by CPU now, the 15 minute, 1 hour or 6 hour average, or
+  memory. Sorting by an average ranks every process, including ones idle right now, and the
+  average column switches to that window.
 - **pid and uptime:** "up 13d 0h" means the process has been running for 13 days. A busy
   process with a long uptime is a classic stuck process.
 - **Badges:** `root` (runs as the system, needs your password to kill), `hot 1m 20s` (over
@@ -148,7 +150,10 @@ The 30 busiest processes, refreshed every 5 seconds.
   or *Something you started*.
 - **✨ Explain** opens ChatGPT about this process.
 - **Kill** (red) quits it. **Kill** with a lock (orange) is a root process and asks for your
-  password. **sudo** (outlined) is a core macOS process; see [Killing processes](#killing-processes).
+  password. **sudo kill** (outlined) is a core macOS process; see [Killing processes](#killing-processes).
+  While a kill runs the button reads **Killing…**, and a banner over the page then says
+  whether it worked.
+- **restarted** means the process was killed a moment ago and launched again under this pid.
 
 **Right-click** a row for more:
 
@@ -168,7 +173,9 @@ Manager) to match them up.
 
 What used the CPU over time, kept across restarts.
 
-- **24 hours / 7 days.** Hourly bars for a day, 6-hour bars for a week.
+- **30 min / 3 hours / 6 hours / 24 hours / 7 days.** Bars of 1 minute, 5 minutes,
+  10 minutes, 1 hour and 6 hours. Up to 6 hours comes from a one-minute record, longer from
+  the hourly one.
 - **Group by app.** On: helpers count towards their app, so all Chrome tabs count as
   Chrome. Off: each executable on its own line.
 - **Tiles:** how long was recorded, total CPU time used, the average load and the top app.
@@ -257,8 +264,16 @@ Things to know:
 - **Killing WindowServer logs you out** and closes every app. **kernel_task** is macOS
   cooling the Mac and can't be killed usefully. The [process guide](processes.md) gives a
   verdict for each common process.
-- Some system processes ignore the polite signal. Then you'll see **Kill failed**, and the
-  only option left is `sudo kill -9 <pid>`, after saving your work.
+- **Force kill.** Some processes ignore the polite signal, and the kill then shows as
+  **Kill failed**. The Overview's "survived a kill" insight lists the process with a
+  **Force kill** button, and right-clicking any process offers **Force kill (kill -9)…**.
+  It confirms first, because the process can't save or clean up. Root and macOS processes
+  ask for your password, or you can open a Terminal with `sudo kill -9 <pid>` typed in.
+- **Relaunched at once?** Some programs come straight back under a new pid, launched by
+  macOS (launchd) or by the app that owns them. The banner says so and names who restarted
+  it, and the row shows **restarted**. Killing it again won't help: stop whatever launches it.
+- **Terminal kills** (Open sudo shell) are watched for a minute. When the process exits,
+  the banner says it stopped.
 - **Quit gracefully** (right-click an app) is the gentle option for apps: it asks the app to
   quit, so it can save first.
 - Killing a **Chrome tab** renderer shows "Aw, Snap!" in the tabs it served. Reload them to
@@ -305,6 +320,7 @@ Everything stays in `~/Library/Application Support/CPUSentinel/`:
 | `policies.json` | Your rules |
 | `history.jsonl` | Events (flagged, killed, and so on) |
 | `usage-24h.json` | Hourly CPU time per program for the last 7 days |
+| `usage-6h.json` | CPU time per program per minute for the last 6 hours |
 
 Nothing is sent anywhere, except a prompt you choose to send to ChatGPT with ✨ Explain.
 To reset everything, quit CPU Sentinel and delete that folder.

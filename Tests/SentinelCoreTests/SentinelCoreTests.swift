@@ -41,6 +41,34 @@ final class StartTimeTests: XCTestCase {
     }
 }
 
+final class KillTests: XCTestCase {
+    /// A dead child its parent has not collected is a zombie; signal 0 still succeeds on it.
+    func testZombieIsNotAlive() throws {
+        var pid: pid_t = 0
+        let argv: [UnsafeMutablePointer<CChar>?] = [strdup("/usr/bin/true"), nil]
+        defer { argv.forEach { free($0) } }
+        XCTAssertEqual(posix_spawn(&pid, "/usr/bin/true", nil, nil, argv, nil), 0)
+        // Wait for it to exit without reaping it.
+        let deadline = Date().addingTimeInterval(5)
+        while !Killer.isZombie(pid), Date() < deadline { usleep(20_000) }
+        XCTAssertTrue(Killer.isZombie(pid))
+        XCTAssertEqual(Darwin.kill(pid, 0), 0, "signal 0 succeeds on a zombie")
+        XCTAssertFalse(Killer.isAlive(pid))
+        var status: Int32 = 0
+        waitpid(pid, &status, 0)
+    }
+
+    func testForceKill() throws {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/bin/sleep")
+        p.arguments = ["30"]
+        try p.run()
+        let s = ProcessSample(pid: p.processIdentifier, uid: getuid(), cpu: 0, path: "/bin/sleep")
+        XCTAssertEqual(Killer.forceKill(s), .forceKilled)
+        XCTAssertEqual(Killer.forceKill(ProcessSample(pid: 1, uid: 0, cpu: 0, path: "/sbin/launchd")), .refused("launchd cannot be killed"))
+    }
+}
+
 final class ResolvePathTests: XCTestCase {
     /// ps printed "system_profiler", "(system_profiler)" and "/usr/sbin/system_profiler" for
     /// one program, and the Overview donut listed it twice.
@@ -297,6 +325,23 @@ final class HistoryWindowTests: XCTestCase {
 final class DailyUsageTests: XCTestCase {
     let t0 = Date(timeIntervalSince1970: 36_000 * 100)  // on an hour boundary
 
+    /// The one-minute store behind the 30 minute to 6 hour views.
+    func testMinuteBucketsAndSixHourRetention() {
+        let u = DailyUsage(fileURL: nil, retainHours: 6, bucket: 60)
+        u.record([], at: t0)
+        for i in 1...24 { u.record([ProcessSample(pid: 1, uid: 501, cpu: i <= 12 ? 100 : 50, path: "/a")], at: t0 + Double(i) * 5) }
+        let rows = u.summaries(at: t0 + 120, buckets: 30)
+        // A tick counts towards the minute it lands in: the one at 60 s is the second minute's.
+        let last3 = Array(rows.first?.hourly.suffix(3) ?? [])
+        XCTAssertEqual(last3[0], 100, accuracy: 0.01)
+        XCTAssertEqual(last3[1], (100 + 11 * 50) / 12, accuracy: 0.01)
+        XCTAssertEqual(last3[2], 50, accuracy: 0.01)
+        XCTAssertEqual(u.sampled(at: t0 + 120, buckets: 30), 120, accuracy: 0.01)
+        u.record([ProcessSample(pid: 1, uid: 501, cpu: 10, path: "/b")], at: t0 + 6 * 3600 + 180)
+        u.record([ProcessSample(pid: 1, uid: 501, cpu: 10, path: "/b")], at: t0 + 6 * 3600 + 185)
+        XCTAssertNil(u.entries["/a"], "older than 6 hours is pruned")
+    }
+
     func testCoreSecondsAddUpByPathAcrossPids() {
         let u = DailyUsage(fileURL: nil)
         u.record([], at: t0)
@@ -374,6 +419,17 @@ final class InsightsTests: XCTestCase {
         let out = Insights.generate(input(samples))
         XCTAssertTrue(out.contains { $0.id == "why-mediaanalysisd" })
         XCTAssertTrue(out.contains { $0.id == "many-claude" && $0.title.hasPrefix("4 claude") })
+    }
+
+    func testFailedKillOffersForceKillOnlyWhileRunning() {
+        let e = [HistoryEntry(date: Date(), kind: .killFailed, pid: 7, name: "SkyComputerUseService",
+                              path: "/x/SkyComputerUseService", cpu: 4, detail: "failed")]
+        let running = Insights.generate(input([ProcessSample(pid: 7, uid: 501, cpu: 4, path: "/x/SkyComputerUseService")], events: e))
+        let f = running.first { $0.id == "failed-SkyComputerUseService" }
+        XCTAssertEqual(f?.offersForceKill, true)
+        XCTAssertEqual(f?.related.map(\.sample.pid), [7])
+        XCTAssertFalse(Insights.generate(input([], events: e)).contains { $0.id.hasPrefix("failed-") },
+                       "gone since: no insight")
     }
 
     func testRepeatOffender() {

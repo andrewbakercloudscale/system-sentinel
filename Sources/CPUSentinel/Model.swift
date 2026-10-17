@@ -14,6 +14,24 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
     @Published var flagged: Set<Int32> = []
     @Published var lastError: String?
     @Published var lastAction: String?
+    /// Kills in progress, so their buttons can say so: a polite stop waits up to 5 s.
+    @Published var killing: Set<Int32> = []
+    /// The result of the last kill, shown as a banner over the page.
+    @Published var toast: Toast?
+    /// Programs relaunched under a new pid soon after a kill, by path, so their row can say
+    /// "restarted" instead of looking as if the kill did nothing.
+    @Published var restarted: [String: Int32] = [:]
+    /// Recent kills, by path, watched for a minute for a relaunch.
+    private var recentKills: [String: (sample: ProcessSample, at: Date)] = [:]
+    /// Kills run in Terminal, where only the process exiting tells us it worked.
+    private var watching: [Int32: (sample: ProcessSample, until: Date)] = [:]
+
+    struct Toast: Equatable {
+        let id = UUID()
+        let ok: Bool
+        let title: String
+        let detail: String?
+    }
 
     let sentinel: Sentinel
     let cores = Double(ProcessInfo.processInfo.activeProcessorCount)
@@ -49,7 +67,10 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
             history: History(fileURL: Model.snapshotDir == nil ? Model.supportDir.appendingPathComponent("history.jsonl") : nil,
                              seed: Model.snapshotDir == nil ? nil : Model.supportDir.appendingPathComponent("history.jsonl")),
             dailyUsage: DailyUsage(fileURL: Model.supportDir.appendingPathComponent("usage-24h.json"),
-                                   readOnly: Model.snapshotDir != nil))
+                                   readOnly: Model.snapshotDir != nil),
+            // A larger file than the hourly one, so it is written every 5 minutes, not every minute.
+            recentUsage: DailyUsage(fileURL: Model.supportDir.appendingPathComponent("usage-6h.json"),
+                                    retainHours: 6, bucket: 60, saveEvery: 300, readOnly: Model.snapshotDir != nil))
         super.init()
         sentinel.detector.threshold = threshold
         sentinel.detector.window = windowSeconds
@@ -85,6 +106,7 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
             flagged = flagged.filter { sentinel.detector.hotDuration(of: $0, at: Date()) != nil }
             lastError = nil
             for e in events { handle(e) }
+            checkKills()
             thermal = ProcessInfo.processInfo.thermalState
             insights = Insights.generate(insightInput())
         } catch {
@@ -267,6 +289,8 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
     // MARK: Actions
 
     func kill(_ s: ProcessSample) {
+        guard !killing.contains(s.pid) else { return }
+        killing.insert(s.pid)
         // The kill blocks (grace period, admin prompt), so it runs off the main thread; the
         // history write stays on it, where every other read and write of the engine happens.
         Task.detached {
@@ -274,29 +298,103 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
             await MainActor.run {
                 let ok = outcome == .terminated || outcome == .forceKilled || outcome == .alreadyGone
                 self.sentinel.history.record(ok ? .killed : .killFailed, s, detail: "\(outcome)")
-                self.lastAction = "\(s.displayName): \(Self.describe(outcome))"
                 self.flagged.remove(s.pid)
-                self.tick()
+                self.finishKill(s, ok: ok, outcome: outcome)
             }
+        }
+    }
+
+    /// Force kill: SIGKILL at once, through the admin prompt for root and macOS processes.
+    func forceKill(_ s: ProcessSample) {
+        guard !killing.contains(s.pid) else { return }
+        killing.insert(s.pid)
+        Task.detached {
+            let outcome = Killer.forceKill(s)
+            await MainActor.run {
+                let ok = outcome == .forceKilled || outcome == .alreadyGone
+                self.sentinel.history.record(ok ? .killed : .killFailed, s, detail: "force: \(outcome)")
+                self.flagged.remove(s.pid)
+                self.finishKill(s, ok: ok, outcome: outcome)
+            }
+        }
+    }
+
+    /// Clears the busy button, refreshes, says what happened, and starts watching for the
+    /// case that makes a kill look like it did nothing: the program launched again at once.
+    private func finishKill(_ s: ProcessSample, ok: Bool, outcome: KillOutcome) {
+        killing.remove(s.pid)
+        lastAction = "\(s.displayName): \(Self.describe(outcome))"
+        if ok, !s.isChromeRenderer { recentKills[s.path] = (s, Date()) }
+        showToast(Toast(ok: ok, title: "\(s.displayName) \(Self.describe(outcome))", detail: ok ? nil : Self.advice(outcome)))
+        tick()
+    }
+
+    private static func advice(_ o: KillOutcome) -> String? {
+        if case .failed(let why) = o, why.contains("SIGTERM") || why.contains("SIGKILL") {
+            return "It is still running. Right-click it and choose Force kill, or use Force kill in the insight on the Overview."
+        }
+        return nil
+    }
+
+    /// Each tick: Terminal kills that have now exited, and killed programs that came back.
+    private func checkKills() {
+        let now = Date()
+        for (pid, w) in watching {
+            if !Killer.isAlive(pid) {
+                watching[pid] = nil
+                killing.remove(pid)
+                sentinel.history.record(.killed, w.sample, detail: "sudo shell")
+                recentKills[w.sample.path] = (w.sample, now)
+                showToast(Toast(ok: true, title: "\(w.sample.displayName) stopped", detail: nil))
+            } else if now > w.until {
+                watching[pid] = nil
+                killing.remove(pid)
+                showToast(Toast(ok: false, title: "\(w.sample.displayName) is still running",
+                                detail: "The Terminal kill has not taken effect after a minute. Check the Terminal window for a password prompt or an error."))
+            }
+        }
+        for (path, k) in recentKills {
+            if now.timeIntervalSince(k.at) > 60 {
+                recentKills[path] = nil
+                continue
+            }
+            guard restarted[path] == nil,
+                  let again = sentinel.latest.first(where: { $0.path == path && $0.pid != k.sample.pid }) else { continue }
+            restarted[path] = again.pid
+            let parent = ProcessSampler.parentPID(of: again.pid)
+            let byLaunchd = parent == 1
+            let by = byLaunchd ? "macOS (launchd)" : parent.flatMap { p in sentinel.latest.first { $0.pid == p }.map { "\($0.displayName) (pid \(p))" } } ?? "another process"
+            showToast(Toast(ok: true, title: "\(k.sample.displayName) was killed, then relaunched as pid \(again.pid)",
+                            detail: "Restarted by \(by). Killing it again will not help\(byLaunchd ? ": macOS keeps this service running and the new copy usually settles down." : "; stop whatever keeps launching it.")"))
+            DispatchQueue.main.asyncAfter(deadline: .now() + 120) { [weak self] in self?.restarted[path] = nil }
+        }
+    }
+
+    func showToast(_ t: Toast) {
+        toast = t
+        DispatchQueue.main.asyncAfter(deadline: .now() + (t.detail == nil ? 4 : 9)) { [weak self] in
+            if self?.toast?.id == t.id { self?.toast = nil }
         }
     }
 
     /// The deliberate override for a protected process: the admin password prompt.
     func killProtected(_ s: ProcessSample) {
+        guard !killing.contains(s.pid) else { return }
+        killing.insert(s.pid)
         Task.detached {
             let outcome = Killer.killProtectedAsAdmin(s)
             await MainActor.run {
                 let ok = outcome == .terminated || outcome == .alreadyGone
                 self.sentinel.history.record(ok ? .killed : .killFailed, s, detail: "as admin: \(outcome)")
-                self.lastAction = "\(s.displayName): \(Self.describe(outcome))"
-                self.tick()
+                self.finishKill(s, ok: ok, outcome: outcome)
             }
         }
     }
 
     /// Opens Terminal with the sudo kill typed and run, so the password goes to sudo itself.
-    func openSudoShell(_ s: ProcessSample) {
-        let cmd = Killer.sudoCommand(for: s).replacingOccurrences(of: "\"", with: "\\\"")
+    func openSudoShell(_ s: ProcessSample, force: Bool = false) {
+        let command = force ? Killer.forceSudoCommand(for: s) : Killer.sudoCommand(for: s)
+        let cmd = command.replacingOccurrences(of: "\"", with: "\\\"")
         let source = "tell application \"Terminal\"\nactivate\ndo script \"\(cmd)\"\nend tell"
         var error: NSDictionary?
         NSAppleScript(source: source)?.executeAndReturnError(&error)
@@ -306,7 +404,9 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
                 ? "Allow CPU Sentinel to control Terminal in System Settings > Privacy & Security > Automation."
                 : "Could not open Terminal: \(error[NSAppleScript.errorMessage] ?? error)"
         } else {
-            lastAction = "Terminal: \(Killer.sudoCommand(for: s))"
+            lastAction = "Terminal: \(command)"
+            killing.insert(s.pid)
+            watching[s.pid] = (s, Date().addingTimeInterval(60))
         }
     }
 

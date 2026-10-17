@@ -9,12 +9,26 @@ struct ProcessesView: View {
     @State private var search = ""
 
     enum Sort: String, CaseIterable {
-        case now = "Now", m15 = "15 min", h1 = "1 hour", memory = "Memory"
+        case now = "Now", m15 = "15 min", h1 = "1 hour", h6 = "6 hours", memory = "Memory"
+
+        /// The averaging window this sort ranks by, which the average column then shows.
+        var window: TimeInterval? {
+            switch self {
+            case .m15: return 900
+            case .h1: return 3600
+            case .h6: return 6 * 3600
+            default: return nil
+            }
+        }
     }
 
     var body: some View {
         let sort = Sort(rawValue: sortRaw) ?? .now
-        let rows = sorted(model.top.filter { search.isEmpty || $0.displayName.localizedCaseInsensitiveContains(search) }, by: sort)
+        // Ranked across every process, not just the 30 busiest right now: the heaviest over
+        // 6 hours may be idle at this moment.
+        let all = model.top.isEmpty ? [] : model.sentinel.latest
+        let rows = Array(sorted(all.filter { search.isEmpty || $0.displayName.localizedCaseInsensitiveContains(search) }, by: sort).prefix(30))
+        let window = sort.window ?? 900
         VStack(spacing: 8) {
             HStack(spacing: 8) {
                 HStack(spacing: 5) {
@@ -32,14 +46,14 @@ struct ProcessesView: View {
                 Text("Process").frame(maxWidth: .infinity, alignment: .leading).padding(.leading, 34)
                 Text("15 min trend").frame(width: 76)
                 Text("now").frame(width: 62, alignment: .trailing)
-                Text("15 min").frame(width: 44, alignment: .trailing)
+                Text(window == 900 ? "15 min" : window == 3600 ? "1 hour" : "6 hours").frame(width: 44, alignment: .trailing)
                 Text("memory").frame(width: 54, alignment: .trailing)
                 Text("").frame(width: 128)
             }
             .font(.caption2.weight(.medium)).foregroundStyle(.secondary)
             VStack(spacing: 2) {
                 ForEach(Array(rows.enumerated()), id: \.element.pid) { i, s in
-                    ProcessRow(model: model, sample: s, zebra: i.isMultiple(of: 2))
+                    ProcessRow(model: model, sample: s, zebra: i.isMultiple(of: 2), window: window)
                 }
             }
             Text("100% is one full core; a busy process can use several. Averages count idle time, so they show what has been chewing the CPU, not how hot it runs when it does.")
@@ -52,6 +66,7 @@ struct ProcessesView: View {
         case .now: return list.sorted { $0.cpu > $1.cpu }
         case .m15: return list.map { ($0, model.average($0, 900)) }.sorted { $0.1 > $1.1 }.map(\.0)
         case .h1: return list.map { ($0, model.average($0, 3600)) }.sorted { $0.1 > $1.1 }.map(\.0)
+        case .h6: return list.map { ($0, model.average($0, 6 * 3600)) }.sorted { $0.1 > $1.1 }.map(\.0)
         case .memory: return list.sorted { $0.rssKB > $1.rssKB }
         }
     }
@@ -84,13 +99,15 @@ private struct ProcessRow: View {
     @ObservedObject var model: Model
     let sample: ProcessSample
     let zebra: Bool
+    /// The average column's window: 15 minutes, or what the list is sorted by.
+    var window: TimeInterval = 900
     @State private var hover = false
     @State private var showInfo = false
 
     var body: some View {
         let s = sample
         let flagged = model.flagged.contains(s.pid)
-        let avg15 = model.average(s, 900)
+        let avg15 = model.average(s, window)
         HStack(spacing: 8) {
             IconView(icon: IconCache.shared.icon(for: s), size: 26)
             VStack(alignment: .leading, spacing: 2) {
@@ -100,6 +117,10 @@ private struct ProcessRow: View {
                     if let hot = model.hotFor(s) { Pill(text: "hot \(hot)", symbol: "flame.fill", color: Theme.heat(50)) }
                     if s.isRoot { Pill(text: "root", color: Tab.settings.color) }
                     policyPill(model.policy(for: s))
+                    if model.restarted[s.path] == s.pid {
+                        Pill(text: "restarted", symbol: "arrow.clockwise", color: Tab.rules.color)
+                            .help("Killed a moment ago and launched again under this new pid")
+                    }
                 }
                 Text(subtitle(s)).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
             }
@@ -132,7 +153,7 @@ private struct ProcessRow: View {
                 if s.pid == getpid() {
                     Pill(text: "this app", color: Tab.overview.color).frame(width: 96, alignment: .trailing)
                 } else if Safety.canKillManually(s) {
-                    KillButton(isRoot: s.isRoot) { model.kill(s) }
+                    KillButton(model: model, sample: s)
                 } else {
                     SudoButton(model: model, sample: s)
                 }
@@ -185,6 +206,8 @@ private struct ProcessRow: View {
         }
         .disabled(!s.path.hasPrefix("/"))
         Button("Copy pid") { copy("\(s.pid)") }
+        Button("Force kill (kill -9)…") { ForceKillButton.confirm(model, s) }
+            .disabled(s.pid <= 1 || s.pid == getpid())
         Button("Copy sudo kill command") { copy(Killer.sudoCommand(for: s)) }
         Button("Open Activity Monitor") {
             NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/Utilities/Activity Monitor.app"))
@@ -223,6 +246,7 @@ private struct InfoPopover: View {
                 stat("1 min", model.average(s, 60))
                 stat("15 min", model.average(s, 900))
                 stat("1 hour", model.average(s, 3600))
+                stat("6 hours", model.average(s, 6 * 3600))
             }
             Sparkline(values: model.sparkline(s, minutes: 60, buckets: 60), color: Theme.heat(s.cpu)).frame(height: 40)
             Text("Last hour").font(.caption2).foregroundStyle(.secondary)
@@ -307,12 +331,21 @@ struct HeatBar: View {
 
 /// Red for a normal kill, orange for a root kill (asks for the password).
 struct KillButton: View {
-    let isRoot: Bool
-    let action: () -> Void
+    @ObservedObject var model: Model
+    let sample: ProcessSample
+    private var isRoot: Bool { sample.isRoot }
+    private var busy: Bool { model.killing.contains(sample.pid) }
 
     var body: some View {
-        Button(action: action) {
-            Label("Kill", systemImage: isRoot ? "lock.fill" : "xmark.octagon.fill")
+        Button { model.kill(sample) } label: {
+            HStack(spacing: 4) {
+                if busy {
+                    ProgressView().controlSize(.mini).tint(.white)
+                    Text("Killing…")
+                } else {
+                    Label("Kill", systemImage: isRoot ? "lock.fill" : "xmark.octagon.fill")
+                }
+            }
                 .font(.caption.weight(.bold))
                 .foregroundStyle(.white)
                 .padding(.horizontal, 9).padding(.vertical, 5)
@@ -322,6 +355,8 @@ struct KillButton: View {
                 .contentShape(Capsule())
         }
         .buttonStyle(.plain)
+        .disabled(busy)
+        .opacity(busy ? 0.75 : 1)
         .frame(width: 96, alignment: .trailing)
         .help(isRoot ? "Runs as root: asks for your password" : "Stop politely, force after 5 s")
     }
@@ -335,7 +370,14 @@ struct SudoButton: View {
 
     var body: some View {
         Button(action: confirm) {
-            Label("sudo kill", systemImage: "terminal.fill")
+            HStack(spacing: 4) {
+                if model.killing.contains(sample.pid) {
+                    ProgressView().controlSize(.mini)
+                    Text("Killing…")
+                } else {
+                    Label("sudo kill", systemImage: "terminal.fill")
+                }
+            }
                 .font(.caption.weight(.bold))
                 .foregroundStyle(Color(hex: "#dc2626"))
                 .padding(.horizontal, 9).padding(.vertical, 4)
@@ -399,5 +441,58 @@ struct ExplainButton: View {
         }
         .buttonStyle(.plain)
         .help("Opens ChatGPT with a prompt describing this process and your Mac")
+    }
+}
+
+/// SIGKILL, for a process that ignored the polite kill. Always confirms first: the process
+/// cannot save or clean up, and for a core macOS process the warning says what will break.
+struct ForceKillButton: View {
+    @ObservedObject var model: Model
+    let sample: ProcessSample
+
+    var body: some View {
+        let busy = model.killing.contains(sample.pid)
+        Button { Self.confirm(model, sample) } label: {
+            HStack(spacing: 4) {
+                if busy {
+                    ProgressView().controlSize(.mini).tint(.white)
+                    Text("Killing…")
+                } else {
+                    Label("Force kill", systemImage: "bolt.fill")
+                }
+            }
+            .font(.caption.weight(.bold))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 9).padding(.vertical, 5)
+            .background(Capsule().fill(LinearGradient(colors: [Color(hex: "#b91c1c"), Color(hex: "#7f1d1d")],
+                                                      startPoint: .top, endPoint: .bottom)))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .disabled(busy || sample.pid <= 1 || sample.pid == getpid())
+        .frame(width: 104, alignment: .trailing)
+        .help("kill -9: stops it at once, with no chance to save")
+    }
+
+    static func confirm(_ model: Model, _ s: ProcessSample) {
+        let protected = !Safety.canKillManually(s)
+        let alert = NSAlert()
+        alert.alertStyle = .critical
+        alert.messageText = "Force kill \(s.displayName) (pid \(s.pid))?"
+        var text = "Force kill (SIGKILL, kill -9) stops it at once. It cannot be ignored, and the process gets no chance to save or clean up."
+        if protected { text += "\n\n" + SudoButton.consequence(of: s.name) }
+        if s.uid != getuid() { text += "\n\nIt runs as \(s.isRoot ? "root" : "another user"), so macOS asks for your password." }
+        alert.informativeText = text
+        alert.addButton(withTitle: "Force kill")
+        alert.buttons[0].hasDestructiveAction = true
+        if s.uid != getuid() { alert.addButton(withTitle: "Open sudo shell") }
+        alert.addButton(withTitle: "Cancel")
+        NSApp.activate(ignoringOtherApps: true)
+        let r = alert.runModal()
+        if r == .alertFirstButtonReturn {
+            model.forceKill(s)
+        } else if r == .alertSecondButtonReturn, s.uid != getuid() {
+            model.openSudoShell(s, force: true)
+        }
     }
 }

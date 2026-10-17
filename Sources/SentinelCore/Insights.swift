@@ -168,6 +168,8 @@ public struct Insight: Equatable, Sendable, Identifiable {
         public var id: Int32 { sample.pid }
     }
 
+    /// The processes involved get a Force kill button (the polite kill already failed).
+    public var offersForceKill = false
     public var expandable: Bool { why != nil || !steps.isEmpty || !related.isEmpty }
 
     public init(id: String, tone: Tone, symbol: String, title: String, detail: String) {
@@ -356,10 +358,12 @@ public enum Insights {
                                title: "\(name) was flagged \(list.count) times this week",
                                detail: "Set a rule for it on the Processes tab: auto-kill if you never want it, or ignore if it is expected."))
         }
-        if let failed = i.events.last(where: { $0.kind == .killFailed && $0.date > now.addingTimeInterval(-86_400) }) {
+        // Only while it is still running: a failed kill of something since gone is old news.
+        if let failed = i.events.last(where: { $0.kind == .killFailed && $0.date > now.addingTimeInterval(-86_400) }),
+           i.samples.contains(where: { $0.path == failed.path }) {
             out.append(Insight(id: "failed-\(failed.name)", tone: .warning, symbol: "xmark.shield.fill",
                                title: "\(failed.name) survived a kill",
-                               detail: "It ignored the polite stop signal. Only a force kill (kill -9) would stop it\(failed.name == "WindowServer" ? ", which logs you out" : "")."))
+                               detail: "It ignored the polite stop signal. Force kill stops it for certain\(failed.name == "WindowServer" ? ", but logs you out" : ""): the process gets no chance to save or clean up."))
         }
 
         return out.map { enrich($0, i) }.sorted { $0.tone > $1.tone }
@@ -455,8 +459,13 @@ public enum Insights {
         case _ where x.id.hasPrefix("repeat-"):
             x.steps = ["Find it on the Processes tab and right-click to set a rule.", "Auto-kill if you never want it running hot; Ignore if it is expected (for example a nightly build)."]
         case _ where x.id.hasPrefix("failed-"):
-            x.why = "A kill first sends SIGTERM, a polite request to exit. Some system processes ignore it on purpose. SIGKILL (kill -9) cannot be ignored, but stopping a core process that way takes down what depends on it."
-            x.steps = ["Usually better: find what is making it busy, using Explain.", "If you must, run sudo kill -9 <pid> in Terminal, after saving your work."]
+            let name = String(x.id.dropFirst("failed-".count))
+            x.why = "A kill first sends SIGTERM, a polite request to exit. Some processes ignore it on purpose. SIGKILL (Force kill, kill -9) cannot be ignored, but the process gets no chance to save, and stopping a core macOS process this way takes down what depends on it."
+            x.related = byCPU.filter { $0.name == name }.prefix(3).map { related($0, i) }
+            x.offersForceKill = true
+            x.steps = ["Save your work in anything that depends on it.",
+                       "Press Force kill below. Root and macOS processes ask for your password.",
+                       "If it comes straight back, something relaunches it: Explain shows what, and the fix is to stop that."]
         default: break
         }
         return x
