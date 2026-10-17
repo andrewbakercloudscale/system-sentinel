@@ -802,8 +802,9 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
         }
         clusterTimes = next
         clusterTimesAt = now
+        let names = Dictionary(memoryApps.map { ($0.key, $0.name) }, uniquingKeysWith: { a, _ in a })
         let list = { (d: [String: (cpu: Double, top: ProcessSample, topCPU: Double)]) in
-            d.map { ClusterApp(key: $0.key, name: self.memoryApps.first { m in m.key == $0.key }?.name ?? Model.memoryName($0.key), sample: $0.value.top, cpu: $0.value.cpu) }
+            d.map { g in ClusterApp(key: g.key, name: names[g.key] ?? Model.memoryName(g.key), sample: g.value.top, cpu: g.value.cpu) }
                 .filter { $0.cpu >= 0.5 }.sorted { $0.cpu > $1.cpu }.prefix(6).map { $0 }
         }
         if seconds > 0 { clusterApps = (list(e), list(p)) }
