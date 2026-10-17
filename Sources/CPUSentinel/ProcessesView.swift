@@ -181,12 +181,11 @@ private struct ProcessRow: View {
     private func policyPill(_ p: Policy) -> some View {
         switch p {
         case .alert: EmptyView()
-        case .autoKill: Pill(text: "auto-kill", symbol: "bolt.fill", color: Theme.heat(100))
-        case .autoKillOnBattery: Pill(text: "auto-kill on battery", symbol: "battery.50percent", color: Theme.heat(80))
-        case .ignore(let until?): Pill(text: "ignored until \(Fmt.time(until))", symbol: "moon.fill", color: Tab.rules.color)
-        case .ignore(nil): Pill(text: "ignored", symbol: "moon.fill", color: Tab.rules.color)
+        case .ignore, .ignoreDuring: Pill(text: p.label, symbol: "moon.fill", color: Tab.rules.color)
+        default: Pill(text: p.label, symbol: p == .autoKill ? "bolt.fill" : "battery.50percent", color: Theme.heat(p == .autoKill ? 100 : 80))
         }
     }
+
 
     @ViewBuilder
     private func menu(_ s: ProcessSample) -> some View {
@@ -194,6 +193,9 @@ private struct ProcessRow: View {
             Button("Alert me (default)") { model.setPolicy(.alert, for: s) }
             Button("Auto-kill") { model.setPolicy(.autoKill, for: s) }.disabled(!Safety.canAutoKill(s))
             Button("Auto-kill on battery") { model.setPolicy(.autoKillOnBattery, for: s) }.disabled(!Safety.canAutoKill(s))
+            Button("Auto-kill when battery under 30%") { model.setPolicy(.autoKillBelow(percent: 30), for: s) }.disabled(!Safety.canAutoKill(s))
+            Button("Ignore during work hours (9:00–17:00)") { model.setPolicy(.ignoreDuring(from: 9, to: 17), for: s) }
+            Button("Ignore overnight (22:00–07:00)") { model.setPolicy(.ignoreDuring(from: 22, to: 7), for: s) }
             Button("Ignore for 1 hour") { model.setPolicy(.ignore(until: Date().addingTimeInterval(3600)), for: s) }
             Button("Always ignore") { model.setPolicy(.ignore(until: nil), for: s) }
         }

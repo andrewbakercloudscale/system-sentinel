@@ -26,6 +26,8 @@ public final class Sentinel {
     private let killer: (ProcessSample) -> KillOutcome
     /// Whether the Mac is running on battery, for the auto-kill-on-battery rule.
     public var onBattery: () -> Bool = { false }
+    /// Battery charge in percent, for the auto-kill-below rule.
+    public var batteryPercent: () -> Int? = { nil }
 
     public init(
         detector: Detector = Detector(),
@@ -67,12 +69,11 @@ public final class Sentinel {
         for actor in detector.update(latest, at: now) {
             let s = actor.sample
             if Safety.isProtected(s) { continue }
-            var policy = policies.policy(for: s.path, at: now)
-            if policy == .autoKillOnBattery { policy = onBattery() ? .autoKill : .alert }
+            let policy = policies.policy(for: s.path, at: now).resolved(at: now, onBattery: onBattery(), percent: batteryPercent())
             switch policy {
             case .ignore:
                 continue
-            case .alert, .autoKillOnBattery:
+            case .alert, .autoKillOnBattery, .autoKillBelow, .ignoreDuring:
                 history.record(.flagged, s, at: now)
                 events.append(.alert(s))
             case .autoKill:

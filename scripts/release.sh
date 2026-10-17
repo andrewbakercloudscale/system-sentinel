@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+# Builds a zip of CPU Sentinel.app for a GitHub release, in dist/.
+#
+#   bash scripts/release.sh
+#
+# With a Developer ID it is signed with the hardened runtime and notarised, so it opens on
+# any Mac without warnings:
+#
+#   DEVELOPER_ID="Developer ID Application: Name (TEAMID)" \
+#   NOTARY_PROFILE=cpu-sentinel bash scripts/release.sh
+#
+# NOTARY_PROFILE is a keychain profile made once with
+#   xcrun notarytool store-credentials cpu-sentinel --apple-id you@example.com --team-id TEAMID
+#
+# Without them the app is ad-hoc signed: users must run `xattr -cr` on it (see the README).
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" Resources/Info.plist)
+APP="build/CPU Sentinel.app"
+ZIP="dist/CPU-Sentinel-$VERSION.zip"
+
+echo "== tests"
+swift test >/dev/null 2>&1 || { echo "tests failed, not releasing"; exit 1; }
+
+echo "== build $VERSION"
+swift build -c release
+BIN="$(swift build -c release --show-bin-path)/CPUSentinel"
+rm -rf "$APP"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" dist
+cp "$BIN" "$APP/Contents/MacOS/CPUSentinel"
+cp Resources/Info.plist "$APP/Contents/Info.plist"
+
+if [[ -n "${DEVELOPER_ID:-}" ]]; then
+    echo "== sign: $DEVELOPER_ID"
+    codesign --force --options runtime --timestamp --sign "$DEVELOPER_ID" "$APP"
+    codesign --verify --strict --verbose=2 "$APP"
+    if [[ -n "${NOTARY_PROFILE:-}" ]]; then
+        echo "== notarise"
+        ditto -c -k --keepParent "$APP" "dist/notarise.zip"
+        xcrun notarytool submit "dist/notarise.zip" --keychain-profile "$NOTARY_PROFILE" --wait
+        rm -f "dist/notarise.zip"
+        xcrun stapler staple "$APP"
+        spctl --assess --type execute --verbose "$APP"
+    else
+        echo "!! NOTARY_PROFILE not set: signed but not notarised, Gatekeeper will still warn"
+    fi
+else
+    echo "== ad-hoc sign (no DEVELOPER_ID): users need xattr -cr"
+    codesign --force --sign - "$APP"
+    codesign --verify "$APP"
+fi
+
+rm -f "$ZIP"
+ditto -c -k --keepParent "$APP" "$ZIP"
+echo "== $ZIP ($(du -h "$ZIP" | cut -f1))"

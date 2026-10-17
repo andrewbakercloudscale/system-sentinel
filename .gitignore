@@ -4,3 +4,4 @@
 .swiftpm/
 build/
 .omc/
+dist/

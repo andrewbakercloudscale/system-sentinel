@@ -13,6 +13,7 @@ struct CPUSentinelApp: App {
             // The menu bar draws SwiftUI images as monochrome templates, so the colour has to
             // be baked into a non-template NSImage.
             Image(nsImage: menuIcon)
+            if let t = model.menuBarText { Text(t).monospacedDigit() }
         }
         .menuBarExtraStyle(.window)
     }
@@ -166,8 +167,8 @@ struct RulesView: View {
 
     var body: some View {
         let rules = model.sentinel.policies.policies.sorted { $0.key < $1.key }
-        let autoKill = rules.filter { $0.value == .autoKill || $0.value == .autoKillOnBattery }.count
-        let ignored = rules.filter { if case .ignore = $0.value { return true }; return false }.count
+        let autoKill = rules.filter { $0.value.killsSometimes }.count
+        let ignored = rules.filter { if case .ignore = $0.value { return true }; if case .ignoreDuring = $0.value { return true }; return false }.count
         VStack(spacing: 10) {
             HStack(spacing: 8) {
                 StatTile(symbol: "bolt.fill", color: Theme.heat(100), value: "\(autoKill)", label: "auto-kill")
@@ -204,12 +205,11 @@ struct RulesView: View {
     private func rulePill(_ p: Policy) -> some View {
         switch p {
         case .alert: Pill(text: "alert", symbol: "bell.fill", color: Tab.events.color)
-        case .autoKill: Pill(text: "auto-kill", symbol: "bolt.fill", color: Theme.heat(100))
-        case .autoKillOnBattery: Pill(text: "auto-kill on battery", symbol: "battery.50percent", color: Theme.heat(80))
-        case .ignore(let until?): Pill(text: "ignored until \(Fmt.time(until))", symbol: "moon.fill", color: Tab.rules.color)
-        case .ignore(nil): Pill(text: "always ignored", symbol: "moon.fill", color: Tab.rules.color)
+        case .ignore, .ignoreDuring: Pill(text: p.label, symbol: "moon.fill", color: Tab.rules.color)
+        default: Pill(text: p.label, symbol: p == .autoKill ? "bolt.fill" : "battery.50percent", color: Theme.heat(p == .autoKill ? 100 : 80))
         }
     }
+
 }
 
 /// Edits are a draft until Save, so dragging a slider past the value you wanted does not
@@ -256,6 +256,7 @@ struct SettingsView: View {
                 Text("Trends and insights only cover the time CPU Sentinel is running.")
                     .font(.caption2).foregroundStyle(.secondary)
             }
+            MenuBarSettingsCard(model: model)
             Card(title: "Reports", symbol: "calendar.badge.clock", tint: Tab.events.color) {
                 Toggle("Weekly report notification, Monday morning", isOn: $model.weeklyReport).toggleStyle(.switch)
                 Text("Top apps, CPU hours, time on battery and average power draw for the last 7 days. The same report is always on the Events tab.")
@@ -296,6 +297,10 @@ struct SettingsView: View {
 enum Snapshot {
     static func run(_ model: Model, into dir: String) {
         try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        // The exported report, both formats, through the same code as the Export buttons.
+        let doc = model.reportDocument()
+        try? doc.markdown.write(to: URL(fileURLWithPath: dir).appendingPathComponent("report.md"), atomically: true, encoding: .utf8)
+        try? ReportPDF.write(doc, to: URL(fileURLWithPath: dir).appendingPathComponent("report.pdf"))
         for alert in [false, true] {
             let icon = CPUSentinelApp.menuIcon(alert: alert)
             let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 96, pixelsHigh: 72, bitsPerSample: 8,

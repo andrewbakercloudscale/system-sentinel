@@ -21,7 +21,13 @@ struct BatteryView: View {
             }
             EnergyCard(model: model)
             SleepBlockersCard(model: model)
-            if let b = model.battery, b.present { HealthCard(battery: b) }
+            SleepCard(report: model.sleepReport)
+            DisplaysCard(model: model)
+            NetworkDiskCard(model: model)
+            if let b = model.battery, b.present {
+                HealthCard(battery: b)
+                HealthTrendCard(model: model)
+            }
             TodayCard(lines: model.daySummary())
         }
     }
@@ -193,6 +199,7 @@ private struct EnergyCard: View {
                     HStack {
                         Text(r.name).font(.callout.weight(.medium)).lineLimit(1)
                         if r.pids.count > 1 { Text("\(r.pids.count) processes").font(.caption2).foregroundStyle(.tertiary) }
+                        if r.name.contains("Chrome"), ChromeTabs.isRunning { ChromeTabsButton() }
                     }
                     ShareBar(share: share, color: Tab.battery.color)
                 }

@@ -30,15 +30,18 @@ CPU Sentinel answers each of those. It was built after a macOS energy logger
 | | |
 |---|---|
 | **Insights in plain English** | "WindowServer is busy because the screen is being captured", "Photos is analysing your library", "3 Chrome tab processes use 40% together". Click **More** to see what is happening, each process involved and who started it, and numbered steps to fix it. |
+| **One-click fixes** | Insights carry buttons that act, not just advise: **Quit Slack**, **Let the Mac sleep (stop 5 caffeinate)**, **Turn on Low Power Mode**, or the exact System Settings page. A minute after you quit or kill something it tells you what changed: "power 14 W → 6 W, about 4 hours more battery". |
+| **Heat and power alerts** | A pop-up when the Mac runs hot or draws more than your chosen watts (default 25 W) for your chosen minutes (default 3), naming the likely culprit with Kill and Ignore buttons. |
 | **Explain with ChatGPT** | The sparkles button opens ChatGPT with a ready-made prompt: the process, its CPU history, your Mac model and its busiest processes, asking what it is and how to bring it down. |
 | **Battery and energy** | Live power draw in watts and a 7 day chart, time left, energy use and idle wakeups by app with an estimate of the minutes each costs per hour on battery, sleep blockers (including `caffeinate` "on behalf of" a terminal tool) with a Kill button, and battery health: capacity, cycles and macOS's own verdict. |
+| **Beyond the CPU** | Memory pressure and swap, graphics load, screen brightness and displays, network and disk by app, how the Mac sleeps (dark wakes and their causes, charge lost with the lid shut), battery wear over time with a projected date for 80%, and charging habits. Chrome's tabs ranked by likely energy use, with Show and Close. |
 | **Performance and efficiency cores** | Per-core load on the Overview, split into the efficiency cores macOS uses for background work and the performance cores that draw most of the power. |
-| **Reports** | "Today in brief" in plain sentences, comparison with your usual week, and a weekly report on the Events tab with an optional Monday notification. |
+| **Reports** | "Today in brief" in plain sentences, comparison with your usual week, apps working far above their own usual, and a weekly report on the Events tab with an optional Monday notification. Export it as Markdown or PDF. |
 | **History from 30 minutes to a week** | CPU by app over the last 30 minutes, 3, 6 or 24 hours, or 7 days, the heaviest users and when each one peaked. Kept across restarts and sleep. |
 | **Know when a process started** | Every process shows its uptime, so a renderer that has been busy for 13 days is easy to spot. |
 | **Kill anything, carefully** | One-click kill for your own processes, your password for root ones, a separate sudo button with a warning for core macOS processes, and Force kill (kill -9) for anything that ignores a kill. A banner says whether it worked and who relaunched it if it came back. |
-| **Rules that remember** | Per app: alert (the default), ignore, auto-kill, or auto-kill only on battery. Auto-kill is limited to 3 kills an hour per app. The Rules tab also lists every launch agent and daemon that starts by itself, with its CPU. |
-| **Dark mode, and a window you can move** | Every screen is designed for light and dark. **Pop out** moves the panel into a normal window you can drag. |
+| **Rules that remember** | Per app: alert (the default), ignore, ignore during work hours or overnight, auto-kill, auto-kill on battery, or auto-kill only under 30% battery. Auto-kill is limited to 3 kills an hour per app. The Rules tab also lists every launch agent and daemon that starts by itself, with its CPU. |
+| **Dark mode, and a window you can move** | Every screen is designed for light and dark. **Pop out** moves the panel into a normal window you can drag. The menu bar can show CPU load, watts or battery beside the icon. |
 
 ## Screenshots
 
@@ -117,9 +120,11 @@ describing the process and your Mac. [What's in it](docs/guide.md#explain-with-c
 ## Development
 
 ```bash
-swift test                     # 37 tests, including a real CPU burner that must be flagged and killed
+swift test                     # 77 tests, including a real CPU burner that must be flagged and killed
 swift build                    # debug build
 bash scripts/build-app.sh      # test, build, bundle, install, launch
+bash scripts/release.sh        # zip for a GitHub release in dist/; signs and notarises
+                               # when DEVELOPER_ID and NOTARY_PROFILE are set
 ```
 
 To render every tab, in light and dark, to PNG files without touching your data:

@@ -168,6 +168,8 @@ public struct Insight: Equatable, Sendable, Identifiable {
         public var id: Int32 { sample.pid }
     }
 
+    /// One-click fixes, shown as buttons.
+    public var fixes: [FixAction] = []
     /// The processes involved get a Force kill button (the polite kill already failed).
     public var offersForceKill = false
     public var expandable: Bool { why != nil || !steps.isEmpty || !related.isEmpty }
@@ -213,6 +215,15 @@ public struct InsightInput: Sendable {
     public var energy: [EnergyRow] = []
     /// The usual machine total over the last week, in percent of one core.
     public var typicalTotal: Double?
+    public var memory: MemoryStatus?
+    /// Sleep over the last 24 hours.
+    public var sleep: SleepReport?
+    /// Charging over the last 7 days.
+    public var charge: ChargeHabits?
+    /// When battery health is projected to reach 80%.
+    public var healthProjection: Date?
+    /// Apps far above their own usual.
+    public var unusual: [UnusualApp] = []
 
     public init(cores: Double, samples: [ProcessSample], total1m: Double, total15m: Double, total60m: Double,
                 avg15m: [Int32: Double], recordedMinutes: Double, daily: [DailyUsage.Summary], dailySampled: TimeInterval,
@@ -374,6 +385,8 @@ public enum Insights {
         }
 
         out += power(i, at: now)
+        // "All quiet" is about CPU; it would contradict a memory, sleep or battery warning.
+        if out.contains(where: { $0.tone >= .warning }) { out.removeAll { $0.id == "quiet" } }
         return out.map { enrich($0, i) }.sorted { $0.tone > $1.tone }
     }
 
@@ -476,7 +489,30 @@ public enum Insights {
                        "If it comes straight back, something relaunches it: Explain shows what, and the fix is to stop that."]
         default: break
         }
+        x.fixes += fixes(for: x, i)
         return x
+    }
+
+    /// One-click fixes for the CPU insights; the power ones set their own.
+    static func fixes(for x: Insight, _ i: InsightInput) -> [FixAction] {
+        func quit(_ s: [ProcessSample]) -> [FixAction] {
+            let mine = s.filter { $0.pid != getpid() && Safety.canKillManually($0) }
+            guard let first = mine.first else { return [] }
+            let name = AppIdentity.bundlePath(of: first.path) != nil ? AppIdentity.appName(of: first.path) : first.displayName
+            return [.quit(pids: mine.map(\.pid), name: name)]
+        }
+        switch x.id {
+        case "ws-capture": return [.openSettings(.screenRecording)]
+        case "ws": return [.openSettings(.accessibilityDisplay), .openSettings(.displays)]
+        case "lowpower": return [.openSettings(.battery)]
+        case _ where x.id.hasPrefix("hog-"):
+            return x.related.first.map { r in ProcessGuide.note(for: r.sample.name)?.verdict == .avoid ? [] : quit([r.sample]) } ?? []
+        case _ where x.id.hasPrefix("many-"):
+            let s = x.related.map(\.sample)
+            return s.count > 1 && s.allSatisfy({ Safety.canKillManually($0) }) && s.first.map({ !$0.isChromeRenderer }) == true
+                ? [.kill(pids: s.map(\.pid), label: "Stop all \(s.count)")] : []
+        default: return []
+        }
     }
 
     /// "2.3 cores" or "45% of a core".

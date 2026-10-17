@@ -410,7 +410,8 @@ final class InsightsTests: XCTestCase {
     func testHeatComesFirstAndQuietIsGood() {
         let out = Insights.generate(input([], total1m: 50, thermal: 2))
         XCTAssertEqual(out.first?.id, "thermal")
-        XCTAssertTrue(out.contains { $0.id == "quiet" && $0.tone == .good })
+        XCTAssertFalse(out.contains { $0.id == "quiet" }, "not quiet while hot")
+        XCTAssertTrue(Insights.generate(input([], total1m: 50)).contains { $0.id == "quiet" && $0.tone == .good })
     }
 
     func testUnfamiliarDaemonIsExplainedAndCopiesAddUp() {

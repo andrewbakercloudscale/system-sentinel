@@ -32,6 +32,20 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
     /// Energy Impact and wakeups by app, from the latest `top` reading.
     @Published var energy: [EnergyRow] = []
     @Published var backgroundItems: [BackgroundItem] = []
+    @Published var memory: MemoryStatus?
+    /// Graphics chip busy share, 0 to 100.
+    @Published var gpu: Double?
+    /// Sleep over the last 24 hours, from the power log; refreshed every 15 minutes.
+    @Published var sleepReport: SleepReport?
+    /// Network and disk by app, from the latest 30 second reading.
+    @Published var io: [IORow] = []
+    /// What recent kills and quits changed, newest first.
+    @Published var impacts: [Impact] = []
+    let healthLog: HealthLog
+    private let ioTracker = IOTracker()
+    private var lastSleepRead: Date?
+    private var typicalCache: (at: Date, values: [String: Double])?
+    private var reportedBlockers: Set<String> = []
     let powerHistory: PowerHistory
     /// Energy Impact per app, hourly for 7 days, stored the same way as CPU.
     let energyUsage: DailyUsage
@@ -59,6 +73,15 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
     @AppStorage("threshold") var threshold: Double = 80 { didSet { sentinel.detector.threshold = threshold } }
     @AppStorage("windowSeconds") var windowSeconds: Double = 120 { didSet { sentinel.detector.window = windowSeconds } }
     @AppStorage("weeklyReport") var weeklyReport = true
+    /// What the menu bar shows beside the icon: none, load, watts or battery.
+    @AppStorage("menuBarShows") var menuBarShows = "none"
+    @AppStorage("alertBlockers") var alertBlockers = true
+    /// Heat and power alerts: hot (thermal serious or worse), or over `heatWatts` for `heatMinutes`.
+    @AppStorage("alertHeat") var alertHeat = true
+    @AppStorage("heatWatts") var heatWatts: Double = 25
+    @AppStorage("heatMinutes") var heatMinutes: Double = 3
+    private var heatWatch = HeatWatch()
+    @AppStorage("blockerHours") var blockerHours: Double = 2
     @AppStorage("lastWeeklyReport") private var lastWeeklyReport: Double = 0
 
     static let supportDir: URL = FileManager.default
@@ -93,8 +116,10 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
         // Energy is read every 30 s, so a tick may stand for up to 45 s.
         energyUsage = DailyUsage(fileURL: Model.supportDir.appendingPathComponent("energy-7d.json"), maxStep: 45,
                                  saveEvery: 300, readOnly: Model.snapshotDir != nil)
+        healthLog = HealthLog(fileURL: Model.supportDir.appendingPathComponent("battery-health.json"), readOnly: Model.snapshotDir != nil)
         super.init()
         sentinel.onBattery = { [weak self] in MainActor.assumeIsolated { self?.battery?.onBattery ?? false } }
+        sentinel.batteryPercent = { [weak self] in MainActor.assumeIsolated { self?.battery?.percent } }
         backgroundItems = BackgroundItems.scan()
         sentinel.detector.threshold = threshold
         sentinel.detector.window = windowSeconds
@@ -144,23 +169,49 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
     private func readPower() {
         let now = Date()
         battery = PowerReader.read()
-        if let b = battery { powerHistory.record(b, at: now) }
+        if let b = battery {
+            powerHistory.record(b, at: now)
+            healthLog.record(b, at: now)
+        }
         coreLoad = coreSampler.sample() ?? coreLoad
+        memory = MemoryStatus.read()
+        gpu = GPUReader.utilization()
+        checkHeat(now)
         checkWeeklyReport(now)
+        if lastSleepRead.map({ now.timeIntervalSince($0) >= 900 }) ?? true {
+            lastSleepRead = now
+            Task.detached {
+                let events = SleepLog.parse(SleepLog.read(), since: now.addingTimeInterval(-86_400))
+                let report = SleepLog.report(events, until: now)
+                await MainActor.run { self.sleepReport = report }
+            }
+        }
         // `top` takes about a second; run it off the main thread every 30 s.
         guard !energyRunning, lastEnergy.map({ now.timeIntervalSince($0) >= 30 }) ?? true else { return }
         energyRunning = true
         lastEnergy = now
+        let pids = sentinel.latest.map(\.pid)
         Task.detached {
             let readings = EnergySampler.sample()
             let blockers = SleepBlockers.read()
-            await MainActor.run { self.finishEnergy(readings, blockers) }
+            let net = IOSampler.network()
+            var counters: [Int32: IOCounters] = [:]
+            for pid in pids {
+                let d = IOSampler.disk(pid)
+                let n = net[pid]
+                guard d != nil || n != nil else { continue }
+                counters[pid] = IOCounters(netIn: n?.0 ?? 0, netOut: n?.1 ?? 0, diskRead: d?.0 ?? 0, diskWrite: d?.1 ?? 0)
+            }
+            let done = counters
+            await MainActor.run { self.finishEnergy(readings, blockers, done) }
         }
     }
 
-    private func finishEnergy(_ readings: [Int32: (power: Double, idleWakeups: Int)], _ blockers: [SleepBlocker]) {
+    private func finishEnergy(_ readings: [Int32: (power: Double, idleWakeups: Int)], _ blockers: [SleepBlocker], _ counters: [Int32: IOCounters]) {
         energyRunning = false
         let now = Date()
+        io = IORow.group(ioTracker.update(counters, at: now), processes: sentinel.latest, key: Model.appKey, name: Model.appName)
+        notifyOverdueBlockers(blockers, at: now)
         let samples = wakeups.update(readings, at: now)
         energy = EnergyRow.group(samples, processes: sentinel.latest, key: Model.appKey, name: Model.appName)
         self.blockers = blockers
@@ -205,6 +256,167 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
     }
 
     func sample(pid: Int32) -> ProcessSample? { sentinel.latest.first { $0.pid == pid } }
+
+    /// One notification per sleep assertion held longer than the setting allows.
+    private func notifyOverdueBlockers(_ blockers: [SleepBlocker], at now: Date) {
+        guard alertBlockers, Model.snapshotDir == nil else { return }
+        let due = SleepBlockers.overdue(blockers, reported: reportedBlockers, threshold: blockerHours * 3600, at: now)
+        guard let first = due.first else { return }
+        for b in due { reportedBlockers.insert(SleepBlockers.reportKey(b)) }
+        let content = UNMutableNotificationContent()
+        if due.count == 1 {
+            let held = first.since.map { Self.duration(now.timeIntervalSince($0)) } ?? ""
+            content.title = "\(first.name) has kept your Mac awake for \(held)"
+            content.body = (first.onBehalfOf.map { "On behalf of \($0). " } ?? "") + "\(first.kind.meaning). The Energy tab can stop it."
+        } else {
+            // One notification for many, so a pile of old ones does not flood the screen.
+            let names = Array(Set(due.map { $0.onBehalfOf.map { "\($0) (caffeinate)" } ?? $0.name })).sorted()
+            content.title = "\(due.count) things have kept your Mac awake for over \(Int(blockerHours))h"
+            content.body = names.prefix(4).joined(separator: ", ") + ". The Energy tab can stop them."
+        }
+        content.categoryIdentifier = "info"
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "blocker-\(SleepBlockers.reportKey(first))", content: content, trigger: nil))
+    }
+
+    /// Pops up a notification naming the culprit when the Mac runs hot or draws a lot of power.
+    private func checkHeat(_ now: Date) {
+        guard alertHeat, Model.snapshotDir == nil else { return }
+        heatWatch.thresholdWatts = heatWatts
+        heatWatch.minutes = heatMinutes
+        guard let reason = heatWatch.update(watts: battery?.watts, thermal: ProcessInfo.processInfo.thermalState.rawValue, at: now) else { return }
+        // The culprit: the top energy user, else the busiest process over the last minute.
+        var culprit = heatCulprit(now)
+        // Respect Ignore rules: still warn, without naming it.
+        if let c = culprit, case .ignore = sentinel.policies.policy(for: c.path, at: now).resolved(at: now, onBattery: battery?.onBattery ?? false, percent: battery?.percent) {
+            culprit = nil
+        }
+        let title: String
+        var body: String
+        switch reason {
+        case .heat(let state):
+            title = state >= 3 ? "Your Mac is critically hot" : "Your Mac is running hot"
+            body = "macOS is slowing the chip to cool down."
+        case .power(let w, let m):
+            title = String(format: "Drawing %.0f W for %@", w, Self.duration(m * 60))
+            body = String(format: "Over your %.0f W alert level", heatWatts)
+            if let b = battery, b.onBattery, w > 0, let e = b.energyLeft { body += String(format: ": about %@ of battery left at this rate", Self.duration(e / w * 3600)) }
+            body += "."
+        }
+        guard let s = culprit else {
+            let content = UNMutableNotificationContent()
+            content.title = title
+            content.body = body
+            content.categoryIdentifier = "info"
+            UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "heat-\(now.timeIntervalSince1970)", content: content, trigger: nil))
+            return
+        }
+        notify(s, title: title, body: body + " Most likely: \(s.displayName), at \(Int(sentinel.cpuHistory.average(s.pid, over: 60, at: now)))% CPU.", actions: true)
+    }
+
+    private func heatCulprit(_ now: Date) -> ProcessSample? {
+        if let top = energy.first, let pid = top.pids.max(by: { sentinel.cpuHistory.average($0, over: 60, at: now) < sentinel.cpuHistory.average($1, over: 60, at: now) }),
+           let s = sample(pid: pid), s.pid != getpid() {
+            return s
+        }
+        return sentinel.latest.filter { $0.pid != getpid() }.max { sentinel.cpuHistory.average($0.pid, over: 60, at: now) < sentinel.cpuHistory.average($1.pid, over: 60, at: now) }
+    }
+
+    /// The text beside the menu bar icon, per the setting.
+    var menuBarText: String? {
+        switch menuBarShows {
+        case "load": return "\(Int(machineLoad))%"
+        case "watts": return battery?.watts.map { String(format: "%.1f W", $0) }
+        case "battery":
+            guard let b = battery, b.present else { return nil }
+            if b.onBattery, let m = b.minutesLeft { return "\(b.percent)% · \(m / 60):\(String(format: "%02d", m % 60))" }
+            return "\(b.percent)%"
+        default: return nil
+        }
+    }
+
+    // MARK: Fixes
+
+    func perform(_ fix: FixAction) {
+        switch fix {
+        case .quit(let pids, let name):
+            quit(pids: pids, name: name)
+        case .kill(let pids, let label):
+            let targets = pids.compactMap(sample(pid:))
+            startImpact(label, pids: pids)
+            for s in targets { kill(s) }
+            lastAction = "\(label): \(targets.count) stopped"
+        case .lowPowerMode:
+            Task.detached {
+                // osascript, so the admin prompt runs off the main thread.
+                let task = Process()
+                task.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+                task.arguments = ["-e", "do shell script \"/usr/bin/pmset -a lowpowermode 1\" with administrator privileges"]
+                task.standardError = FileHandle.nullDevice
+                let ok = (try? task.run()) != nil && { task.waitUntilExit(); return task.terminationStatus == 0 }()
+                await MainActor.run {
+                    self.showToast(Toast(ok: ok, title: ok ? "Low Power Mode is on" : "Low Power Mode was not changed",
+                                         detail: ok ? nil : "The password prompt was cancelled or refused."))
+                    self.tick()
+                }
+            }
+        case .openSettings(let s):
+            if let url = URL(string: s.url) { NSWorkspace.shared.open(url) }
+        case .reveal(let path):
+            NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
+        }
+    }
+
+    /// Quits the app politely so it can save; processes that are not apps are stopped.
+    func quit(pids: [Int32], name: String) {
+        startImpact(name, pids: pids)
+        var apps: [NSRunningApplication] = []
+        var loose: [ProcessSample] = []
+        for pid in pids {
+            if let app = NSRunningApplication(processIdentifier: pid), app.bundleURL != nil, app.activationPolicy != .prohibited {
+                apps.append(app)
+            } else if let s = sample(pid: pid), let bundle = AppIdentity.bundlePath(of: s.path),
+                      let app = NSWorkspace.shared.runningApplications.first(where: { $0.bundleURL?.path == bundle }) {
+                apps.append(app)
+            } else if let s = sample(pid: pid) {
+                loose.append(s)
+            }
+        }
+        var seen = Set<pid_t>()
+        for app in apps where seen.insert(app.processIdentifier).inserted { app.terminate() }
+        for s in loose { kill(s) }
+        showToast(Toast(ok: true, title: "Asked \(name) to quit", detail: "The result, in power and CPU, follows in a minute."))
+    }
+
+    /// Notes the draw and CPU now, and a minute later says what changed.
+    func startImpact(_ name: String, pids: [Int32]) {
+        let now = Date()
+        let wattsBefore = powerHistory.since(now.addingTimeInterval(-120)).last?.watts ?? battery?.watts
+        let cpuBefore = sentinel.cpuHistory.totalAverage(over: 60, at: now)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 60) { [weak self] in
+            guard let self else { return }
+            let later = Date()
+            let after = self.powerHistory.since(later.addingTimeInterval(-30))
+            let wattsAfter = after.isEmpty ? self.battery?.watts : after.reduce(0) { $0 + $1.watts } / Double(after.count)
+            let impact = Impact(name: name, at: now, wattsBefore: wattsBefore, wattsAfter: wattsAfter,
+                                cpuBefore: cpuBefore, cpuAfter: self.sentinel.cpuHistory.totalAverage(over: 30, at: later),
+                                energyLeft: self.battery?.onBattery == true ? self.battery?.energyLeft : nil)
+            self.impacts.insert(impact, at: 0)
+            if self.impacts.count > 20 { self.impacts.removeLast() }
+            self.showToast(Toast(ok: impact.helped, title: impact.helped ? "Stopping \(name) helped" : "Stopping \(name) made little difference",
+                                 detail: impact.summary.prefix(1).uppercased() + impact.summary.dropFirst() + "."))
+        }
+    }
+
+    // MARK: Report
+
+    func reportDocument() -> ReportDocument {
+        var hw = [CChar](repeating: 0, count: 64)
+        var size = hw.count
+        sysctlbyname("hw.model", &hw, &size, nil, 0)
+        return ReportDocument.build(machine: "\(String(cString: hw)), \(Int(cores)) cores, macOS \(ProcessInfo.processInfo.operatingSystemVersionString)",
+                                    weekly: weekly(), today: daySummary(), battery: battery,
+                                    projection: HealthLog.projection(healthLog.entries), sleep: sleepReport, memory: memory, at: Date())
+    }
 
     // MARK: Explain
 
@@ -336,7 +548,29 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
         input.blockers = blockers
         input.energy = energy
         input.typicalTotal = sentinel.dailyUsage.typicalTotal(at: now)
+        input.memory = memory
+        input.sleep = sleepReport
+        input.charge = ChargeHabits.from(powerHistory.since(now.addingTimeInterval(-7 * 86_400)))
+        input.healthProjection = HealthLog.projection(healthLog.entries)
+        input.unusual = unusualApps(now)
         return input
+    }
+
+    /// Apps far above their own week, from the 15 minute averages.
+    private func unusualApps(_ now: Date) -> [UnusualApp] {
+        if typicalCache.map({ now.timeIntervalSince($0.at) >= 300 }) ?? true {
+            typicalCache = (now, sentinel.dailyUsage.typicalByGroup(at: now, group: Model.appKey))
+        }
+        guard let typical = typicalCache?.values, !typical.isEmpty, recordedMinutes >= 15 else { return [] }
+        var current: [String: (name: String, cpu: Double, pids: [Int32])] = [:]
+        for s in sentinel.latest where s.cpu >= 1 {
+            let k = Model.appKey(s.path)
+            var c = current[k] ?? (Model.appName(k), 0, [])
+            c.cpu += sentinel.cpuHistory.average(s.pid, over: 900, at: now)
+            c.pids.append(s.pid)
+            current[k] = c
+        }
+        return Unusual.find(current: current, typical: typical)
     }
 
     /// Who started each busy process: "screencapture, started by claude".
@@ -422,6 +656,7 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
         killing.remove(s.pid)
         lastAction = "\(s.displayName): \(Self.describe(outcome))"
         if ok, !s.isChromeRenderer { recentKills[s.path] = (s, Date()) }
+        if ok, s.cpu >= 20 || (battery?.onBattery ?? false) { startImpact(s.displayName, pids: [s.pid]) }
         showToast(Toast(ok: ok, title: "\(s.displayName) \(Self.describe(outcome))", detail: ok ? nil : Self.advice(outcome)))
         tick()
     }

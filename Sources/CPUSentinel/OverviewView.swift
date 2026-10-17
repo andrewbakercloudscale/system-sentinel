@@ -19,6 +19,7 @@ struct OverviewView: View {
             }
             .fixedSize(horizontal: false, vertical: true)
             CoresCard(model: model)
+            MemoryCard(model: model)
             InsightList(model: model)
         }
     }
@@ -491,6 +492,9 @@ private struct InsightCard: View {
             }
             .contentShape(Rectangle())
             .onTapGesture { if i.expandable { withAnimation(.easeInOut(duration: 0.15)) { expanded.toggle() } } }
+            if !i.fixes.isEmpty {
+                FixButtons(model: model, fixes: i.fixes).padding(.leading, 36)
+            }
 
             if expanded {
                 if let why = i.why {

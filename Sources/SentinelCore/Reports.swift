@@ -100,6 +100,7 @@ extension Insights {
                         if gain >= 10 { x.why = "At this rate, quitting it would add about \(Insights.duration(gain * 60)) to what is left. Estimated from its share of Energy Impact, after setting aside about \(String(format: "%.1f", BatteryMath.baseline)) W the screen and idle chip draw anyway." }
                     }
                     x.related = rel(top.pids)
+                    x.fixes = quitFix(top.pids, top.name, byPID)
                     x.steps = ["Quit it, or close the windows or tabs you are not using.",
                                "Check its own settings for background refresh, animations or sync you can turn off.",
                                "The Battery tab ranks every app by energy."]
@@ -112,6 +113,7 @@ extension Insights {
                                 title: "\(b.percent)% left: Low Power Mode would stretch it",
                                 detail: "It lowers the chip's clock and pauses background work, usually adding 10 to 30% more time.")
                 x.steps = ["System Settings > Battery > Low Power Mode: Only on Battery.", "Lower screen brightness: the display is often the biggest single draw."]
+                x.fixes = [.lowPowerMode, .openSettings(.battery)]
                 out.append(x)
             }
             // macOS background jobs that are better left for when the Mac is plugged in.
@@ -128,6 +130,7 @@ extension Insights {
                     x.related = rel(busy.map(\.pid))
                     x.steps = ["Plug in and leave it: these finish on their own.",
                                "Time Machine: System Settings > General > Time Machine > Options > Back up on battery power, off."]
+                    if names.contains("Time Machine") { x.fixes = [.openSettings(.timeMachine)] }
                     out.append(x)
                 }
             }
@@ -140,6 +143,8 @@ extension Insights {
                 x.steps = ["System Settings > Battery > Battery Health (the i button) for Apple's view.",
                            "Keep Optimised Battery Charging on so it sits at 80% when plugged in for long.",
                            "Apple replaces batteries under 80% within warranty or AppleCare."]
+                if let p = i.healthProjection { x.steps.append("At the current rate of wear it reaches 80% around \(p.formatted(.dateTime.month(.wide).year())).") }
+                x.fixes = [.openSettings(.battery)]
                 out.append(x)
             } else if let h = b.health, h < 80 {
                 out.append(Insight(id: "health", tone: .info, symbol: "battery.50percent",
@@ -167,7 +172,11 @@ extension Insights {
             }
             x.steps = ["Finish or close the sessions named above if you are not using them.",
                        "Kill a caffeinate process to let the Mac sleep; the tool it served keeps running.",
-                       "The Battery tab lists every sleep blocker and how long it has been held."]
+                       "The Energy tab lists every sleep blocker and how long it has been held."]
+            let caffeinate = long.filter { $0.name == "caffeinate" }.map(\.pid)
+            if !caffeinate.isEmpty {
+                x.fixes = [.kill(pids: caffeinate, label: caffeinate.count == 1 ? "Let the Mac sleep (stop caffeinate)" : "Let the Mac sleep (stop \(caffeinate.count) caffeinate)")]
+            }
             out.append(x)
         }
 
@@ -179,6 +188,7 @@ extension Insights {
             x.why = "Idle wakeups are timers firing: polling, animations, busy loops waiting for something. Activity Monitor's Energy tab counts them too. Under about 50 a second is normal for an active app."
             x.related = rel(w.pids)
             x.steps = ["Quit it when you are not using it.", "Look for animated content, live dashboards or polling plug-ins inside it.", "Update it: excessive wakeups are a common bug that vendors fix."]
+            x.fixes = quitFix(w.pids, w.name, byPID)
             out.append(x)
         }
 
@@ -188,8 +198,80 @@ extension Insights {
                                title: String(format: "This hour is %.1fx your usual", i.total60m / usual),
                                detail: "Averaging \(fmtCores(i.total60m)) against a typical \(fmtCores(usual)) over the last week."))
         }
+        out += more(i, at: now, rel: rel, byPID: byPID)
         return out
     }
+
+    static func quitFix(_ pids: [Int32], _ name: String, _ byPID: [Int32: ProcessSample]) -> [FixAction] {
+        let mine = pids.compactMap { byPID[$0] }.filter { $0.pid != getpid() && Safety.canKillManually($0) }
+        return mine.isEmpty ? [] : [.quit(pids: mine.map(\.pid), name: name)]
+    }
+
+    /// Memory, sleep, charging and apps above their usual.
+    static func more(_ i: InsightInput, at now: Date, rel: ([Int32], String?) -> [Insight.Related],
+                     byPID: [Int32: ProcessSample]) -> [Insight] {
+        var out: [Insight] = []
+        if let m = i.memory, m.pressure >= .warning {
+            let heavy = i.samples.sorted { $0.rssKB > $1.rssKB }.prefix(4)
+            var x = Insight(id: "memory", tone: m.pressure == .critical ? .critical : .warning, symbol: "memorychip.fill",
+                            title: "Memory is \(m.pressure == .critical ? "critically short" : "tight"): \(ReportDocument.bytes(m.swapUsed)) in swap",
+                            detail: "\(ReportDocument.bytes(m.used)) of \(ReportDocument.bytes(m.total)) in use. macOS is compressing memory and writing it to disk, which makes everything slower.")
+            x.why = "When apps need more memory than the Mac has, macOS first compresses what is idle, then moves it to the swap file on disk. Swapping costs CPU and disk time and feels like a slow Mac, even when CPU figures look modest. The fix is to close what holds the most memory."
+            x.related = heavy.map { Insight.Related(sample: $0, about: "Using \(ReportDocument.bytes(UInt64($0.rssKB) * 1024))", parent: i.parents[$0.pid]) }
+            x.steps = ["Quit the apps at the top of this list that you are not using.", "Close browser tabs: each one holds its own memory.", "Restarting clears swap that has built up over days."]
+            if let top = heavy.first(where: { $0.pid != getpid() && Safety.canKillManually($0) }) {
+                let name = AppIdentity.bundlePath(of: top.path) != nil ? AppIdentity.appName(of: top.path) : top.displayName
+                x.fixes = [.quit(pids: [top.pid], name: name)]
+            }
+            out.append(x)
+        }
+        if let r = i.sleep, r.sleeps > 0 {
+            if let l = r.lossPerHour, l >= 1.5 {
+                var x = Insight(id: "sleepdrain", tone: .warning, symbol: "moon.stars.fill",
+                                title: String(format: "Lost %.1f%% an hour while asleep", l),
+                                detail: "\(r.chargeLost)% over \(Insights.duration(r.batteryAsleep)) asleep on battery, with \(r.darkWakes) dark wakes. A sleeping MacBook should lose about 1% an hour or less.")
+                x.why = "Dark wakes are the Mac waking with the screen off to check mail, sync, run maintenance or answer the network. Each one costs a little; dozens a night add up."
+                x.steps = ["System Settings > Battery > Options: turn off Wake for network access.",
+                           "Quit apps that sync constantly before closing the lid.",
+                           "Check Keeping your Mac awake on the Energy tab: something there may be stopping deep sleep."]
+                x.fixes = [.openSettings(.battery)]
+                out.append(x)
+            } else if r.darkWakes >= 40 {
+                let top = r.wakeCauses.first.map { " Mostly: \($0.cause)." } ?? ""
+                var x = Insight(id: "darkwakes", tone: .info, symbol: "moon.stars.fill",
+                                title: "Woke \(r.darkWakes) times while asleep",
+                                detail: "Over the last 24 hours, with the screen off.\(top)")
+                x.steps = ["System Settings > Battery > Options: turn off Wake for network access if you do not need it."]
+                x.fixes = [.openSettings(.battery)]
+                out.append(x)
+            }
+        }
+        if let c = i.charge, c.sitsAtFull {
+            var x = Insight(id: "charge", tone: .info, symbol: "battery.100percent.bolt",
+                            title: "Plugged in at 100% \(Int(c.fullShare * 100))% of the time",
+                            detail: "Sitting full on the charger is what wears a battery fastest.")
+            x.steps = ["System Settings > Battery > Charging: set a charge limit of 80% if your macOS offers one.",
+                       "Otherwise keep Optimised Battery Charging on: it learns your routine and holds at 80%.",
+                       "Unplug now and then and use the battery: it does not need to stay full."]
+            x.fixes = [.openSettings(.battery)]
+            out.append(x)
+        }
+        for u in i.unusual.prefix(2) {
+            var x = Insight(id: "unusual-\(u.key)", tone: .warning, symbol: "exclamationmark.arrow.triangle.2.circlepath",
+                            title: u.usual < 1 ? "\(u.name) is at \(Int(u.now))%; it is usually idle" : String(format: "%@ is at %.1fx its usual", u.name, u.ratio),
+                            detail: "\(Fmt0.pct(u.now)) over the last 15 minutes against a typical \(Fmt0.pct(u.usual)) an hour over the last week.")
+            x.why = "Compared with this app's own history rather than a fixed limit, so a normally light app working hard stands out even below the alert threshold. Often a stuck page, a sync loop or an update."
+            x.related = rel(u.pids, nil)
+            x.steps = ["Check what it is doing: a big sync, an export, a stuck window.", "Quit and reopen it if it should be idle."]
+            x.fixes = quitFix(u.pids, u.name, byPID)
+            out.append(x)
+        }
+        return out
+    }
+}
+
+enum Fmt0 {
+    static func pct(_ v: Double) -> String { v >= 10 ? "\(Int(v))%" : String(format: "%.1f%%", v) }
 }
 
 /// The day so far in a few sentences, for the Battery tab and the daily notification.

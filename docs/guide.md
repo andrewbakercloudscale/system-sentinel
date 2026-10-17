@@ -49,6 +49,9 @@ source Activity Monitor uses. CPU Sentinel itself uses well under 1% of one core
 | ![normal](images/menubar-normal.png) | Running. Click to open the panel. |
 | ![alert](images/menubar-alert.png) | A process has stayed over your threshold and was flagged. Check Events or the notification. |
 
+**Settings > Menu bar** can add a readout beside the icon: the Mac's CPU load, the power
+draw in watts, or the battery charge (with time left when unplugged).
+
 The pill in the top right shows the whole Mac's load right now. Its dot turns from green
 to amber to red as the load rises.
 
@@ -77,6 +80,8 @@ The answer to "is my Mac busy, and why?" in one screen:
   efficiency cores (E) come first and the performance cores (P) after. macOS runs
   background work on E cores; busy P cores mean heavy foreground work, and that is where
   most of the power goes.
+- **Memory.** Memory pressure as macOS judges it (Normal, Under pressure, Critical), memory
+  used, compressed and swapped to disk. Pressure matters, not how full memory looks.
 - **Insights.** See below.
 
 ---
@@ -95,6 +100,15 @@ Click **More** on an insight to open it:
   example. Each process has its own Explain, bring-to-front and Kill buttons.
 - **What to do:** numbered steps.
 - **Explain and how to fix it:** opens ChatGPT with the whole insight as a prompt.
+
+Many insights also carry **fix buttons**, visible without opening them. Red ones act:
+**Quit** (the app quits normally and can save), **Stop** (kills the processes; stopping
+several asks first, except `caffeinate`), **Turn on Low Power Mode** (asks for your
+password). Blue ones open the right page of System Settings.
+
+A minute after you quit or kill something, a banner says what it changed, for example
+"power 14.0 W → 6.0 W, CPU 3.0 cores → 80% of a core, about 4h 0m more battery". The
+Events tab keeps the recent results.
 
 ### Insights you may see
 
@@ -121,6 +135,10 @@ Click **More** on an insight to open it:
 | **X wakes the CPU N times a second** | An app causes 150 or more idle wakeups a second | Constant wakeups cost battery even at low CPU. |
 | **macOS says: Check Battery** / **Battery holds N%** | macOS reports a battery condition, or capacity is under 80% | What it means and what to do. |
 | **This hour is Nx your usual** | The last hour is at least twice the 7 day hourly average | Something unusual is running. |
+| **Memory is tight: N GB in swap** | macOS reports memory pressure | The apps holding the most memory, and a Quit button for the largest. |
+| **X is at Nx its usual** | An app has averaged 30% or more for 15 minutes, at least 4 times its own hourly average over the last week | Measured against the app's own history, so a normally light app working hard stands out below the alert threshold. |
+| **Lost N% an hour while asleep** / **Woke N times while asleep** | Sleeping on battery lost 1.5% an hour or more, or 40 or more dark wakes in 24 hours | What wakes it and how to stop it. |
+| **Plugged in at 100% N% of the time** | Over the last week, 10 or more hours on the charger, mostly full | Sitting full wears the battery; set a charge limit. |
 | **X survived a kill** | A kill failed in the last 24 hours | The process ignored the polite stop signal; only a force kill would stop it. |
 
 ### Example: WindowServer and screen capture
@@ -227,6 +245,20 @@ What the Mac draws and what is costing battery:
   Killing `caffeinate` lets the Mac sleep; the tool carries on.
 - **Battery health.** Capacity against new, charge cycles against the design count, and
   macOS's verdict (Normal, Check Battery, Service Recommended), with advice.
+- **Sleep, last 24 hours.** From macOS's power log: time asleep, dark wakes (the Mac
+  waking with the screen off) and what caused them, and charge lost an hour while asleep
+  on battery. About 1% an hour or less is healthy.
+- **Graphics and displays.** How busy the graphics chip is, screen brightness, each
+  display with its resolution and refresh rate, and tips (brightness is often the biggest
+  single draw; external and high refresh displays cost graphics work).
+- **Network and disk.** Download, upload and disk traffic by app, every 30 seconds. Disk
+  for processes run by the system is not visible to apps.
+- **Battery wear and charging.** Health logged once a day, charted with the 80% line, a
+  projected date for reaching 80% after two weeks of readings, cycles a week, and
+  charging habits: time on the charger and how much of it at 100%.
+- **Chrome tabs.** On the Chrome row of Energy by app, **Tabs** lists every open tab with
+  likely energy users first (video, calls, live apps), each with **Show** and **Close**.
+  Chrome does not say which tab uses what, outside its own Task Manager.
 - **Today in brief.** The day in a few sentences: average load, heaviest apps, busiest
   hour, time on battery, average draw and drain, and sleep blockers.
 
@@ -252,6 +284,9 @@ Everything CPU Sentinel did, or decided not to do:
 The tiles count the last 7 days, the chart shows each day, and the log lists every event
 with its time and CPU.
 
+**What stopping things changed** lists the measured result of recent quits and kills.
+**Share a report** saves the week, today, battery, sleep and memory as Markdown or PDF.
+
 ---
 
 ## Rules
@@ -273,6 +308,8 @@ path, so a rule for one tab applies to every tab.
 | **Ignore for 1 hour / always** | Nothing. |
 | **Auto-kill** | It is killed and you are told. Not offered for root or core macOS processes. At most 3 kills an hour per app; after that you are alerted instead. |
 | **Auto-kill on battery** | Auto-kill while on battery; alert when plugged in. |
+| **Auto-kill when battery under 30%** | Auto-kill only on battery below 30%; alert otherwise. |
+| **Ignore during work hours (9:00–17:00) / overnight (22:00–07:00)** | Nothing during those hours; alert outside them. For a build server that is expected to be busy at work, or a backup at night. |
 
 ---
 
@@ -285,6 +322,16 @@ path, so a rule for one tab applies to every tab.
   only a process that stays over the line the whole time does.
 - **Launch CPU Sentinel at login.**
 - **Weekly report notification** on Monday morning (on by default; applies at once).
+- **Menu bar:** nothing, CPU load, power draw or battery beside the icon.
+- **Heat and power alerts** (on by default): a pop-up when macOS reports the Mac is hot,
+  or when the power draw stays over your level (10 to 60 W, default 25 W) for your chosen
+  time (1 to 30 minutes, default 3). A MacBook idles at 3 to 8 W; 20 to 30 W is heavy
+  work. The alert names the likely culprit with Kill and Ignore buttons, at most once
+  every 30 minutes (getting hotter still breaks through).
+- **Sleep blockers:** notify when something keeps the Mac awake longer than N hours
+  (default 2). Once per hold; several at once arrive as one notification.
+
+The menu bar, alert and report settings apply at once.
 
 Changes apply when you click **Save**. **Revert** throws them away.
 
@@ -298,6 +345,9 @@ When a process is flagged you get a notification with:
 - **Ignore for 1 hour**: no more alerts for it for an hour.
 - **Always ignore**: never alert for this app again (removable on the Rules tab).
 - **Always auto-kill**: kill it now and every time from now on.
+
+Heat and power alerts carry the same buttons for the likely culprit. If the culprit has
+an Ignore rule, the alert still comes but does not name it.
 
 Each process alerts once per episode, not every 5 seconds. If notifications don't appear,
 allow them in **System Settings > Notifications > CPU Sentinel**.
@@ -376,6 +426,7 @@ Everything stays in `~/Library/Application Support/CPUSentinel/`:
 | `usage-6h.json` | CPU time per program per minute for the last 6 hours |
 | `power-7d.json` | Power draw and battery level per minute for the last 7 days |
 | `energy-7d.json` | Hourly Energy Impact per program for the last 7 days |
+| `battery-health.json` | One battery reading a day (capacity, design capacity, cycles), kept indefinitely |
 
 Nothing is sent anywhere, except a prompt you choose to send to ChatGPT with ✨ Explain.
 To reset everything, quit CPU Sentinel and delete that folder.
