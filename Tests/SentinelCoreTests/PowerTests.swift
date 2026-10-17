@@ -162,6 +162,14 @@ final class EnergyTests: XCTestCase {
         XCTAssertEqual(BatteryMath.minutesGained(energyLeft: 60, watts: 10, appWatts: 10), 0)
     }
 
+    func testAppEnergyIsWattHoursAboveBaseline() {
+        // An hour at 14.5 W is 12 Wh above the 2.5 W baseline; minutes below it add nothing.
+        let hour = (0..<60).map { PowerHistory.Point(t: $0 * 60, watts: 14.5, onBattery: true, percent: 80, n: 1) }
+        let idle = [PowerHistory.Point(t: 3600, watts: 1, onBattery: true, percent: 80, n: 1)]
+        XCTAssertEqual(BatteryMath.appEnergy(hour + idle), 12, accuracy: 0.001)
+        XCTAssertEqual(BatteryMath.appEnergy([]), 0)
+    }
+
     func testHeavyAppOnBatteryNamesItsCost() {
         var i = input([ps(1, 80, "/Applications/Chrome.app/Contents/MacOS/Chrome")])
         i.battery = BatteryStatus(onBattery: true, percent: 50, watts: 12.5, maxCapacity: 5000, designCapacity: 5000, voltage: 12)

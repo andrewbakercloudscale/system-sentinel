@@ -433,9 +433,31 @@ final class InsightsTests: XCTestCase {
                        "gone since: no insight")
     }
 
+    func testTotalBetweenFillsWholeSavedMinutes() {
+        let t0 = Date(timeIntervalSince1970: 1_800_000_000 / 60 * 60)
+        let u = DailyUsage(fileURL: nil, retainHours: 6, bucket: 60)
+        u.record([], at: t0)
+        for i in 1...36 { u.record([ProcessSample(pid: 1, uid: 501, cpu: 200, path: "/a")], at: t0 + Double(i) * 5) }
+        // Only the first minute lies wholly inside the range; the half minute after it does not count.
+        let t = u.total(from: t0, to: t0 + 90)
+        XCTAssertEqual(t.seconds, 55, accuracy: 0.01, "the tick at 60 s belongs to the second minute")
+        XCTAssertEqual(t.coreSeconds, 110, accuracy: 0.01)
+        XCTAssertEqual(u.total(from: t0 + 200, to: t0 + 300).seconds, 0)
+    }
+
     func testRepeatOffender() {
         let e = (0..<3).map { _ in HistoryEntry(date: Date(), kind: .flagged, pid: 1, name: "knowledgeconstructiond", path: "/k", cpu: 95, detail: "") }
-        XCTAssertTrue(Insights.generate(input([], events: e)).contains { $0.id == "repeat-knowledgeconstructiond" })
+        let r = Insights.generate(input([], events: e)).first { $0.id == "repeat-knowledgeconstructiond" }
+        XCTAssertNotNil(r)
+        XCTAssertTrue(r?.about?.hasPrefix("macOS is building its on-device knowledge") == true, "says what it is")
+        XCTAssertTrue(r?.steps.first?.contains("Ignore") == true, "normal background work: ignore, not auto-kill")
+    }
+
+    func testAboutFallsBackToWhereItLives() {
+        XCTAssertTrue(ProcessGuide.about(name: "x", path: "/System/Library/PrivateFrameworks/X.framework/x").hasPrefix("Part of macOS"))
+        XCTAssertTrue(ProcessGuide.about(name: "Helper", path: "/Applications/Slack.app/Contents/Frameworks/Helper").contains("inside the Slack app"))
+        XCTAssertTrue(ProcessGuide.about(name: "rg", path: "/opt/homebrew/bin/rg").contains("you installed"))
+        XCTAssertTrue(ProcessGuide.about(name: "x", path: "x").contains("no notes"))
     }
 }
 

@@ -210,7 +210,9 @@ struct LastHourChart: View {
         var id: String { "\(key)@\(time.timeIntervalSince1970)" }
     }
 
-    var body: some View {
+    /// The stacked series: live history where there is some, before it the saved per-minute
+    /// store, so a relaunch does not blank the chart.
+    private func series(zoomed: Bool) -> (points: [Point], topKeys: [String]) {
         let now = Date()
         let buckets = zoomed ? 120 : 60
         let window: TimeInterval = 3600
@@ -218,23 +220,51 @@ struct LastHourChart: View {
         let cores = max(model.cores, 1)
         let stacked = hist.stacked(over: window, buckets: buckets, at: now, key: Model.appKey)
         let totals = hist.sparkline(nil, over: window, buckets: buckets, at: now)
-        let topKeys = stacked.sorted { $0.value.reduce(0, +) > $1.value.reduce(0, +) }.prefix(zoomed ? 7 : 5).map(\.key)
-        let colors = ColorBook.shared.colors(for: topKeys)
         let width = window / Double(buckets)
         let start = now.addingTimeInterval(-window)
         let recordedFrom = now.addingTimeInterval(-hist.recorded(at: now))
+        // The live history starts empty at launch; before it, use the saved per-minute store.
+        let minutes = model.sentinel.recentUsage
+        let minuteStarts = minutes.starts(at: now, count: 61)
+        let minuteRows = minutes.summaries(at: now, buckets: 61, group: Model.appKey, name: Model.appName)
+        let minuteByKey = Dictionary(minuteRows.map { ($0.key, $0.hourly) }, uniquingKeysWith: { a, _ in a })
+        let minuteTotals = minuteStarts.indices.map { m in minuteRows.reduce(0) { $0 + $1.hourly[m] } }
+        let minuteCoverage = minutes.coverage(at: now, buckets: 61)
+        func savedMinute(_ t: Date) -> Int? {
+            guard t < recordedFrom, let m = minuteStarts.firstIndex(of: minutes.start(t)), minuteCoverage[m] > 0 else { return nil }
+            return m
+        }
+        func value(_ k: String, _ i: Int, _ t: Date) -> Double {
+            if let m = savedMinute(t) { return minuteByKey[k]?[m] ?? 0 }
+            return stacked[k]?[i] ?? 0
+        }
+        let times = (0..<buckets).map { start.addingTimeInterval(Double($0) * width + width / 2) }
+        let keys = Set(stacked.keys).union(minuteByKey.keys)
+        let weight = Dictionary(keys.map { k in (k, times.indices.reduce(0) { $0 + value(k, $1, times[$1]) }) }, uniquingKeysWith: +)
+        let topKeys = weight.filter { $0.value > 0 }.sorted { $0.value > $1.value }.prefix(zoomed ? 7 : 5).map(\.key)
         let points: [Point] = (0..<buckets).flatMap { i -> [Point] in
-            let t = start.addingTimeInterval(Double(i) * width + width / 2)
-            guard t >= recordedFrom.addingTimeInterval(-width) else { return [] }
+            let t = times[i]
+            let saved = savedMinute(t)
+            guard saved != nil || t >= recordedFrom.addingTimeInterval(-width) else { return [] }
             var used = 0.0
             var row = topKeys.map { k -> Point in
-                let v = stacked[k]?[i] ?? 0
+                let v = value(k, i, t)
                 used += v
                 return Point(time: t, key: k, name: Model.appName(k), value: v / cores)
             }
-            row.append(Point(time: t, key: "other", name: "Other", value: max(totals[i] - used, 0) / cores))
+            let total = saved.map { minuteTotals[$0] } ?? totals[i]
+            row.append(Point(time: t, key: "other", name: "Other", value: max(total - used, 0) / cores))
             return row
         }
+        return (points, topKeys)
+    }
+
+    var body: some View {
+        let (points, topKeys) = series(zoomed: zoomed)
+        let now = Date()
+        let window: TimeInterval = 3600
+        let start = now.addingTimeInterval(-window)
+        let colors = ColorBook.shared.colors(for: topKeys)
         let domain = topKeys + ["other"]
         // The hovered moment: the nearest bucket's values, for the tooltip.
         let hovered: [Point] = selected.flatMap { sel in
@@ -497,6 +527,11 @@ private struct InsightCard: View {
             }
 
             if expanded {
+                if let about = i.about {
+                    Section("What it is") {
+                        Text(about).font(.caption).fixedSize(horizontal: false, vertical: true)
+                    }
+                }
                 if let why = i.why {
                     Section("What is happening") {
                         Text(why).font(.caption).fixedSize(horizontal: false, vertical: true)

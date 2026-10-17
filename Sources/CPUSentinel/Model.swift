@@ -505,7 +505,26 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
 
     /// Machine load (100 = every core) averaged over `window` seconds.
     func machineAverage(_ window: TimeInterval) -> Double {
-        sentinel.cpuHistory.totalAverage(over: window, at: Date()) / max(cores, 1)
+        totalAverage(window, at: Date()) / max(cores, 1)
+    }
+
+    /// Total CPU (100 = one core) over `window`: the live history, and before it the saved
+    /// per-minute store, so the averages mean something straight after a relaunch.
+    func totalAverage(_ window: TimeInterval, at now: Date) -> Double {
+        let hist = sentinel.cpuHistory
+        let live = min(hist.recorded(at: now), window)
+        let saved = live < window
+            ? sentinel.recentUsage.total(from: now.addingTimeInterval(-window), to: now.addingTimeInterval(-live))
+            : (coreSeconds: 0, seconds: 0)
+        let seconds = live + saved.seconds
+        guard seconds > 0 else { return 0 }
+        return (hist.totalAverage(over: live, at: now) * live + saved.coreSeconds * 100) / seconds
+    }
+
+    /// Minutes of the last hour with data, live or saved.
+    func coveredMinutes(at now: Date) -> Double {
+        let live = min(sentinel.cpuHistory.recorded(at: now), 3600)
+        return (live + sentinel.recentUsage.total(from: now.addingTimeInterval(-3600), to: now.addingTimeInterval(-live)).seconds) / 60
     }
 
     func average(_ s: ProcessSample, _ window: TimeInterval) -> Double {
@@ -516,7 +535,7 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
         sentinel.cpuHistory.sparkline(s.pid, over: minutes * 60, buckets: buckets, at: Date())
     }
 
-    var recordedMinutes: Double { sentinel.cpuHistory.recorded(at: Date()) / 60 }
+    var recordedMinutes: Double { coveredMinutes(at: Date()) }
 
     static func appKey(_ path: String) -> String { AppIdentity.groupKey(of: path) }
 
@@ -533,8 +552,8 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
         for s in sentinel.latest where s.cpu >= 20 { avg15[s.pid] = hist.average(s.pid, over: 900, at: now) }
         var input = InsightInput(
             cores: cores, samples: sentinel.latest,
-            total1m: hist.totalAverage(over: 60, at: now), total15m: hist.totalAverage(over: 900, at: now),
-            total60m: hist.totalAverage(over: 3600, at: now), avg15m: avg15,
+            total1m: totalAverage(60, at: now), total15m: totalAverage(900, at: now),
+            total60m: totalAverage(3600, at: now), avg15m: avg15,
             recordedMinutes: hist.recorded(at: now) / 60,
             daily: usage.summaries(at: now, group: Model.appKey, name: Model.appName),
             dailySampled: usage.sampled(at: now),

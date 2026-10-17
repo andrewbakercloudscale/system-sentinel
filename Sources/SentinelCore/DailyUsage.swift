@@ -165,6 +165,18 @@ public final class DailyUsage {
         .sorted { $0.coreSeconds > $1.coreSeconds }
     }
 
+    /// CPU recorded in whole buckets lying between `from` and `to`: core-seconds and the
+    /// seconds sampled. Fills in what an in-memory history lost to a relaunch.
+    public func total(from: Date, to: Date) -> (coreSeconds: Double, seconds: Double) {
+        let lo = from.timeIntervalSince1970, hi = to.timeIntervalSince1970
+        var cs = 0.0, secs = 0.0
+        for (h, c) in coverage where Double(h) >= lo && Double(h + bucket) <= hi {
+            secs += c
+            cs += entries.values.reduce(0) { $0 + ($1.hours[h] ?? 0) }
+        }
+        return (cs, secs)
+    }
+
     /// Total CPU per hour across everything, oldest first, in percent of one core.
     public func totalHourly(at now: Date, hours: Int = 24) -> [Double] {
         starts(at: now, count: count(hours)).map { h in

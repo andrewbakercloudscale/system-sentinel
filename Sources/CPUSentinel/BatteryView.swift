@@ -178,7 +178,7 @@ private struct EnergyCard: View {
         Card(title: "Energy by app", symbol: "flame.fill", tint: Tab.battery.color,
              trailing: AnyView(ChipPicker(options: ["Now", "24 hours", "7 days"], selection: $range, color: Tab.battery.color))) {
             if range == "Now" { now } else { history(hours: range == "7 days" ? 24 * 7 : 24) }
-            Text("Energy Impact is Activity Monitor's measure: CPU plus the cost of waking the chip, graphics and disk. Wakeups are times a second the app interrupts the chip's rest.")
+            Text("Watts and watt-hours are estimates: the Mac's measured draw above idle, split by each app's Energy Impact (Activity Monitor's unitless score for CPU, wakeups, graphics and disk). Wakeups are times a second the app interrupts the chip's rest.")
                 .font(.caption2).foregroundStyle(.tertiary).fixedSize(horizontal: false, vertical: true)
         }
     }
@@ -205,10 +205,17 @@ private struct EnergyCard: View {
                 }
                 Spacer(minLength: 8)
                 VStack(alignment: .trailing, spacing: 1) {
-                    Text(String(format: "%.1f", r.power)).font(.callout.weight(.semibold)).monospacedDigit()
-                    Text(cost(share)).font(.caption2).foregroundStyle(.secondary)
+                    if let w = watts(share) {
+                        Text(w).font(.callout.weight(.semibold)).monospacedDigit()
+                        Text(minutes(share) ?? String(format: "impact %.1f", r.power))
+                            .font(.caption2).foregroundStyle(.secondary)
+                    } else {
+                        Text(String(format: "%.1f", r.power)).font(.callout.weight(.semibold)).monospacedDigit()
+                        Text("energy impact").font(.caption2).foregroundStyle(.secondary)
+                    }
                 }
                 .frame(width: 92, alignment: .trailing)
+                .help(String(format: "Estimated power draw. Energy Impact %.1f (Activity Monitor's unitless score).", r.power))
                 Text("\(Int(r.wakeups))/s").font(.caption).monospacedDigit()
                     .foregroundStyle(r.wakeups >= 150 ? Theme.heat(90) : .secondary)
                     .frame(width: 52, alignment: .trailing)
@@ -217,20 +224,30 @@ private struct EnergyCard: View {
         }
     }
 
-    /// "~1.2 W", and on battery how many minutes of each hour it costs.
-    private func cost(_ share: Double) -> String {
-        guard let b = model.battery, let w = b.watts else { return "" }
+    /// The app's estimated draw, "~1.2 W"; nil when the Mac reports no watts.
+    private func watts(_ share: Double) -> String? {
+        guard let w = model.battery?.watts else { return nil }
         let appW = BatteryMath.appWatts(share: share, totalWatts: w)
-        guard appW >= 0.1 else { return "<0.1 W" }
-        let watts = String(format: "~%.1f W", appW)
-        guard b.onBattery else { return watts }
-        return "\(watts) · \(Int(BatteryMath.minutesPerHour(appWatts: appW, watts: w))) min/h"
+        return appW < 0.1 ? "<0.1 W" : String(format: "~%.1f W", appW)
+    }
+
+    /// On battery, how many minutes of each hour's charge the app costs.
+    private func minutes(_ share: Double) -> String? {
+        guard let b = model.battery, b.onBattery, let w = b.watts else { return nil }
+        let appW = BatteryMath.appWatts(share: share, totalWatts: w)
+        return "\(Int(BatteryMath.minutesPerHour(appWatts: appW, watts: w))) min/h of battery"
+    }
+
+    /// "~4.2 Wh" (or "~120 mWh"): the app's share of the energy drawn over the period.
+    private func energy(_ wh: Double) -> String {
+        wh < 1 ? String(format: "~%.0f mWh", wh * 1000) : String(format: "~%.1f Wh", wh)
     }
 
     @ViewBuilder
     private func history(hours: Int) -> some View {
         let rows = Array(model.energySummaries(hours: hours).prefix(10))
-        let total = rows.reduce(0) { $0 + $1.coreSeconds }
+        let total = model.energySummaries(hours: hours).reduce(0) { $0 + $1.coreSeconds }
+        let drawn = BatteryMath.appEnergy(model.powerHistory.since(Date().addingTimeInterval(-Double(hours) * 3600)))
         if rows.isEmpty {
             Text("No energy history yet: it builds up as CPU Sentinel runs.").font(.caption).foregroundStyle(.secondary)
         }
@@ -243,10 +260,16 @@ private struct EnergyCard: View {
                 }
                 Spacer(minLength: 8)
                 VStack(alignment: .trailing, spacing: 1) {
-                    Text(String(format: "%.1f", r.average)).font(.callout.weight(.semibold)).monospacedDigit()
-                    Text("average impact").font(.caption2).foregroundStyle(.secondary)
+                    if drawn > 0, total > 0 {
+                        Text(energy(drawn * r.coreSeconds / total)).font(.callout.weight(.semibold)).monospacedDigit()
+                        Text(String(format: "impact %.1f", r.average)).font(.caption2).foregroundStyle(.secondary)
+                    } else {
+                        Text(String(format: "%.1f", r.average)).font(.callout.weight(.semibold)).monospacedDigit()
+                        Text("average impact").font(.caption2).foregroundStyle(.secondary)
+                    }
                 }
                 .frame(width: 92, alignment: .trailing)
+                .help(String(format: "Estimated energy used over the period, from its share of Energy Impact and the Mac's measured draw. Average Energy Impact %.1f (Activity Monitor's unitless score).", r.average))
                 Text(Fmt.pct(total > 0 ? r.coreSeconds / total * 100 : 0)).font(.caption).monospacedDigit().foregroundStyle(.secondary)
                     .frame(width: 52, alignment: .trailing)
                     .help("Share of all energy over the period")
@@ -418,6 +441,7 @@ struct CoresCard: View {
                     }
                 }
                 Text(caption(load)).font(.caption2).foregroundStyle(.tertiary).fixedSize(horizontal: false, vertical: true)
+                    .help("Which app is on which core is not something macOS reports: each app's threads hop between cores many times a second. Background-priority work (Spotlight, Photos, backups, updates) is kept on the E cores; what you are using goes to the P cores. The Processes tab shows which apps are busy.")
             }
         }
     }
@@ -438,7 +462,7 @@ struct CoresCard: View {
         }
         if p >= 50 { return "The performance cores are busy: that is heavy foreground work, and where most of the power goes." }
         if e >= 50, p < 25 { return "Mostly efficiency cores: background work, which macOS runs cheaply." }
-        return "macOS puts background work on the efficiency cores (E) and demanding work on the performance cores (P), which draw several times the power."
+        return "macOS puts background work on the efficiency cores (E) and demanding work on the performance cores (P), which draw several times the power. Apps hop between cores many times a second, so there is no per-core app list: the Processes tab shows who is busy."
     }
 }
 

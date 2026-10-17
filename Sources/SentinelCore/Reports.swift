@@ -61,6 +61,12 @@ public enum BatteryMath {
         guard watts > 0 else { return 0 }
         return appWatts / watts * 60
     }
+
+    /// Watt-hours drawn above the baseline over per-minute points: the energy apps can be
+    /// blamed for, to split by each app's share of Energy Impact.
+    public static func appEnergy(_ points: [PowerHistory.Point]) -> Double {
+        points.reduce(0) { $0 + max($1.watts - baseline, 0) / 60 }
+    }
 }
 
 extension DailyUsage {

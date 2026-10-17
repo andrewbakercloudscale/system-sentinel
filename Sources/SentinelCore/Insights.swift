@@ -27,6 +27,32 @@ public enum ProcessGuide {
         return notes[name]
     }
 
+    /// What a process is, in a sentence or two: the note when there is one, otherwise what
+    /// its location says about it (part of macOS, part of an app, a tool you installed).
+    public static func about(name: String, path: String) -> String {
+        if let n = note(for: name) { return "\(n.headline). \(n.detail)" }
+        let p = path.hasPrefix("/") ? path : ""
+        if let app = p.range(of: ".app/") {
+            let bundle = (String(p[..<app.lowerBound]) as NSString).lastPathComponent
+            let system = p.hasPrefix("/System/")
+            return system
+                ? "A helper inside \(bundle), part of macOS. It does work for that app in the background."
+                : "A helper inside the \(bundle) app. It does work for that app; quitting the app stops it."
+        }
+        if p.hasPrefix("/System/") || p.hasPrefix("/usr/libexec/") || p.hasPrefix("/usr/sbin/") || p.hasPrefix("/usr/bin/") || p.hasPrefix("/sbin/") {
+            return "Part of macOS (it lives in \((p as NSString).deletingLastPathComponent)). Apple background services like this usually finish their job and settle; killing one rarely helps, as launchd restarts it."
+        }
+        if p.hasPrefix("/opt/homebrew/") || p.hasPrefix("/usr/local/") {
+            return "A command-line tool you installed (Homebrew or similar), at \(p). Something you or a script started runs it."
+        }
+        if p.contains("/Library/") {
+            return "A background service an installed app added, at \(p). The app that installed it controls it; see the Rules tab's background items."
+        }
+        return p.isEmpty
+            ? "CPU Sentinel has no notes on \(name) yet. Explain asks for a full answer."
+            : "A program at \(p). CPU Sentinel has no notes on it yet; Explain asks for a full answer."
+    }
+
     static let notes: [String: Note] = {
         let spotlight = Note(
             headline: "Spotlight is indexing",
@@ -154,6 +180,8 @@ public struct Insight: Equatable, Sendable, Identifiable {
     public let symbol: String
     public let title: String
     public let detail: String
+    /// What the process at the heart of it is, for insights about one process.
+    public var about: String?
     /// The longer explanation shown when the insight is expanded.
     public var why: String?
     /// What to do, in order.
@@ -172,7 +200,7 @@ public struct Insight: Equatable, Sendable, Identifiable {
     public var fixes: [FixAction] = []
     /// The processes involved get a Force kill button (the polite kill already failed).
     public var offersForceKill = false
-    public var expandable: Bool { why != nil || !steps.isEmpty || !related.isEmpty }
+    public var expandable: Bool { about != nil || why != nil || !steps.isEmpty || !related.isEmpty }
 
     public init(id: String, tone: Tone, symbol: String, title: String, detail: String) {
         self.id = id
@@ -453,8 +481,8 @@ public enum Insights {
         case _ where x.id.hasPrefix("hog-"):
             if let p = pid("hog-"), let s = i.samples.first(where: { $0.pid == p }) {
                 x.related = [related(s, i)]
-                x.why = ProcessGuide.note(for: s.name)?.detail
-                    ?? "It has stayed busy for the whole window rather than spiking, which usually means a long job, a loop, or something stuck."
+                x.about = ProcessGuide.about(name: s.name, path: s.path)
+                x.why = "It has stayed busy for the whole window rather than spiking, which usually means a long job, a loop, or something stuck."
                 x.steps = ["Check it is doing something you expect (a build, an export, a sync).", "If not, quit it from its app, or Kill it here.", "If it does this often, set Auto-kill or Ignore on the Processes tab."]
             }
         case _ where x.id.hasPrefix("why-"):
@@ -478,10 +506,24 @@ public enum Insights {
         case "top24", "split", "peakhour":
             x.steps = ["Open the Trends tab for the hour-by-hour breakdown and the full ranking."]
         case _ where x.id.hasPrefix("repeat-"):
-            x.steps = ["Find it on the Processes tab and right-click to set a rule.", "Auto-kill if you never want it running hot; Ignore if it is expected (for example a nightly build)."]
+            let name = String(x.id.dropFirst("repeat-".count))
+            let path = i.events.last(where: { $0.name == name })?.path ?? name
+            x.about = ProcessGuide.about(name: name, path: path)
+            x.related = byCPU.filter { $0.name == name }.prefix(3).map { related($0, i) }
+            switch ProcessGuide.note(for: name)?.verdict {
+            case .wait?:
+                x.steps = ["This is normal background work: right-click it on the Processes tab and choose Ignore so it stops alerting.",
+                           "Auto-kill only postpones the work, so avoid it. Leaving the Mac plugged in and awake lets it finish sooner."]
+            case .avoid?:
+                x.steps = ["Do not auto-kill it: macOS depends on it. Right-click it on the Processes tab and choose Ignore.",
+                           "If it stays busy, find what is making it work: Explain lists the usual causes."]
+            default:
+                x.steps = ["Find it on the Processes tab and right-click to set a rule.", "Auto-kill if you never want it running hot; Ignore if it is expected (for example a nightly build)."]
+            }
         case _ where x.id.hasPrefix("failed-"):
             let name = String(x.id.dropFirst("failed-".count))
             x.why = "A kill first sends SIGTERM, a polite request to exit. Some processes ignore it on purpose. SIGKILL (Force kill, kill -9) cannot be ignored, but the process gets no chance to save, and stopping a core macOS process this way takes down what depends on it."
+            x.about = ProcessGuide.about(name: name, path: i.events.last(where: { $0.name == name })?.path ?? name)
             x.related = byCPU.filter { $0.name == name }.prefix(3).map { related($0, i) }
             x.offersForceKill = true
             x.steps = ["Save your work in anything that depends on it.",
