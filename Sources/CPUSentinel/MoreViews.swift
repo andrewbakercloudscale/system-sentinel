@@ -24,8 +24,41 @@ struct FixButtons: View {
                 }
                 .buttonStyle(.plain)
                 .help(help(f))
+                if case .quit(let pids, let name) = f {
+                    Button { forceQuit(pids, name) } label: {
+                        Label("Force Quit", systemImage: "bolt.fill")
+                            .font(.caption.weight(.semibold)).foregroundStyle(Theme.heat(100))
+                            .padding(.horizontal, 9).padding(.vertical, 4)
+                            .background(Capsule().strokeBorder(Theme.heat(100), lineWidth: 1.2))
+                            .contentShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .help("Stop \(name) at once, without saving. Asks first.")
+                }
             }
         }
+    }
+
+    /// Force Quit for a quit fix. Quitting a VM's app by force would leave the VM running,
+    /// so its virtual machine goes too.
+    private func forceQuit(_ pids: [Int32], _ name: String) {
+        var all = pids
+        if model.vmHost()?.name == name {
+            all += model.memoryApps.filter { Model.isVM($0.key) }.flatMap(\.pids)
+        }
+        let bytes = model.memoryApps.filter { !Set($0.pids).isDisjoint(with: all) }.reduce(UInt64(0)) { $0 + $1.bytes }
+        let alert = NSAlert()
+        alert.alertStyle = .critical
+        alert.messageText = "Force quit \(name)?"
+        var text = "All \(all.count) of its processes stop at once, with no chance to save. Anything unsaved is lost."
+        if all.count > pids.count { text += " Its virtual machine stops too, like pulling the plug: containers inside it stop." }
+        if bytes > 0 { text += " Frees about \(ReportDocument.bytes(bytes))." }
+        alert.informativeText = text
+        alert.addButton(withTitle: "Force Quit")
+        alert.buttons[0].hasDestructiveAction = true
+        alert.addButton(withTitle: "Cancel")
+        NSApp.activate(ignoringOtherApps: true)
+        if alert.runModal() == .alertFirstButtonReturn { model.forceQuit(pids: all, name: name) }
     }
 
     /// Stopping several processes at once (other than caffeinate) asks first.
