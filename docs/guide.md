@@ -325,7 +325,7 @@ event shows as **Kill failed**.
 **"Kill failed: still running after SIGTERM as admin".** The process ignored the polite
 signal. Core macOS processes often do. See [Killing processes](#killing-processes).
 
-**The sudo button doesn't open Terminal, or the error mentions -1743.** CPU Sentinel isn't
+**The sudo kill button doesn't open Terminal, or the error mentions -1743.** CPU Sentinel isn't
 allowed to control Terminal. Allow it in **System Settings > Privacy & Security >
 Automation > CPU Sentinel > Terminal**.
 

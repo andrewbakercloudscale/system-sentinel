@@ -91,7 +91,7 @@ xattr -cr "/Applications/CPU Sentinel.app"
 ## Safety, in short
 
 - Core macOS processes (WindowServer, kernel_task, launchd, Finder, Dock and others) are never
-  killed automatically and have no Kill button. Their **sudo** button warns you what will
+  killed automatically and have no Kill button. Their **sudo kill** button warns you what will
   happen first.
 - Root processes need your admin password and are never auto-killed.
 - Auto-kill applies only to apps you opted in, at most 3 times an hour each.

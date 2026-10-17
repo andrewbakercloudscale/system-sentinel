@@ -130,7 +130,7 @@ private struct ProcessRow: View {
                 .buttonStyle(.plain)
                 .help("Explain: ask ChatGPT why this is busy and how to bring it down")
                 if s.pid == getpid() {
-                    Pill(text: "this app", color: Tab.overview.color).frame(width: 72, alignment: .trailing)
+                    Pill(text: "this app", color: Tab.overview.color).frame(width: 96, alignment: .trailing)
                 } else if Safety.canKillManually(s) {
                     KillButton(isRoot: s.isRoot) { model.kill(s) }
                 } else {
@@ -322,7 +322,7 @@ struct KillButton: View {
                 .contentShape(Capsule())
         }
         .buttonStyle(.plain)
-        .frame(width: 72, alignment: .trailing)
+        .frame(width: 96, alignment: .trailing)
         .help(isRoot ? "Runs as root: asks for your password" : "Stop politely, force after 5 s")
     }
 }
@@ -335,7 +335,7 @@ struct SudoButton: View {
 
     var body: some View {
         Button(action: confirm) {
-            Label("sudo", systemImage: "terminal.fill")
+            Label("sudo kill", systemImage: "terminal.fill")
                 .font(.caption.weight(.bold))
                 .foregroundStyle(Color(hex: "#dc2626"))
                 .padding(.horizontal, 9).padding(.vertical, 4)
@@ -344,7 +344,7 @@ struct SudoButton: View {
                 .contentShape(Capsule())
         }
         .buttonStyle(.plain)
-        .frame(width: 72, alignment: .trailing)
+        .frame(width: 96, alignment: .trailing)
         .help("Protected macOS process: kill it as admin")
     }
 
