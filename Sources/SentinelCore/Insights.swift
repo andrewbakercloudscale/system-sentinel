@@ -206,6 +206,13 @@ public struct InsightInput: Sendable {
     public var lowPower: Bool
     /// pid to the name of the process that started it, for the busy ones.
     public var parents: [Int32: String] = [:]
+    /// nil on a Mac without a battery.
+    public var battery: BatteryStatus?
+    public var blockers: [SleepBlocker] = []
+    /// By app, heaviest first.
+    public var energy: [EnergyRow] = []
+    /// The usual machine total over the last week, in percent of one core.
+    public var typicalTotal: Double?
 
     public init(cores: Double, samples: [ProcessSample], total1m: Double, total15m: Double, total60m: Double,
                 avg15m: [Int32: Double], recordedMinutes: Double, daily: [DailyUsage.Summary], dailySampled: TimeInterval,
@@ -366,6 +373,7 @@ public enum Insights {
                                detail: "It ignored the polite stop signal. Force kill stops it for certain\(failed.name == "WindowServer" ? ", but logs you out" : ""): the process gets no chance to save or clean up."))
         }
 
+        out += power(i, at: now)
         return out.map { enrich($0, i) }.sorted { $0.tone > $1.tone }
     }
 

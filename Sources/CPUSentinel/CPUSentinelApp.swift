@@ -105,6 +105,7 @@ struct MenuView: View {
         case .overview: OverviewView(model: model)
         case .processes: ProcessesView(model: model)
         case .trends: TrendsView(model: model)
+        case .battery: BatteryView(model: model)
         case .events: EventsView(model: model)
         case .rules: RulesView(model: model)
         case .settings: SettingsView(model: model)
@@ -131,6 +132,8 @@ struct MenuView: View {
             FooterButton(title: "Quit", symbol: "power", color: Tab.settings.color) {
                 model.sentinel.dailyUsage.save()
                 model.sentinel.recentUsage.save()
+                model.powerHistory.save()
+                model.energyUsage.save()
                 NSApplication.shared.terminate(nil)
             }
         }
@@ -163,7 +166,7 @@ struct RulesView: View {
 
     var body: some View {
         let rules = model.sentinel.policies.policies.sorted { $0.key < $1.key }
-        let autoKill = rules.filter { if case .autoKill = $0.value { return true }; return false }.count
+        let autoKill = rules.filter { $0.value == .autoKill || $0.value == .autoKillOnBattery }.count
         let ignored = rules.filter { if case .ignore = $0.value { return true }; return false }.count
         VStack(spacing: 10) {
             HStack(spacing: 8) {
@@ -193,6 +196,7 @@ struct RulesView: View {
                     .padding(.vertical, 2)
                 }
             }
+            BackgroundItemsCard(model: model)
         }
     }
 
@@ -201,6 +205,7 @@ struct RulesView: View {
         switch p {
         case .alert: Pill(text: "alert", symbol: "bell.fill", color: Tab.events.color)
         case .autoKill: Pill(text: "auto-kill", symbol: "bolt.fill", color: Theme.heat(100))
+        case .autoKillOnBattery: Pill(text: "auto-kill on battery", symbol: "battery.50percent", color: Theme.heat(80))
         case .ignore(let until?): Pill(text: "ignored until \(Fmt.time(until))", symbol: "moon.fill", color: Tab.rules.color)
         case .ignore(nil): Pill(text: "always ignored", symbol: "moon.fill", color: Tab.rules.color)
         }
@@ -250,6 +255,11 @@ struct SettingsView: View {
                     .toggleStyle(.switch)
                 Text("Trends and insights only cover the time CPU Sentinel is running.")
                     .font(.caption2).foregroundStyle(.secondary)
+            }
+            Card(title: "Reports", symbol: "calendar.badge.clock", tint: Tab.events.color) {
+                Toggle("Weekly report notification, Monday morning", isOn: $model.weeklyReport).toggleStyle(.switch)
+                Text("Top apps, CPU hours, time on battery and average power draw for the last 7 days. The same report is always on the Events tab.")
+                    .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
             HStack(spacing: 8) {
                 if dirty {

@@ -24,6 +24,8 @@ public final class Sentinel {
 
     private let sampler: () throws -> [ProcessSample]
     private let killer: (ProcessSample) -> KillOutcome
+    /// Whether the Mac is running on battery, for the auto-kill-on-battery rule.
+    public var onBattery: () -> Bool = { false }
 
     public init(
         detector: Detector = Detector(),
@@ -65,10 +67,12 @@ public final class Sentinel {
         for actor in detector.update(latest, at: now) {
             let s = actor.sample
             if Safety.isProtected(s) { continue }
-            switch policies.policy(for: s.path, at: now) {
+            var policy = policies.policy(for: s.path, at: now)
+            if policy == .autoKillOnBattery { policy = onBattery() ? .autoKill : .alert }
+            switch policy {
             case .ignore:
                 continue
-            case .alert:
+            case .alert, .autoKillOnBattery:
                 history.record(.flagged, s, at: now)
                 events.append(.alert(s))
             case .autoKill:

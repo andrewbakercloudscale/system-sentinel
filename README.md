@@ -1,10 +1,12 @@
 # CPU Sentinel
 
-**Find out what is using your Mac's CPU, why, and whether to do anything about it.**
+**Find out what is using your Mac's CPU and battery, why, and what to do about it.**
 
 CPU Sentinel lives in the menu bar. It samples every process every 5 seconds and shows the
 load on a gauge, as charts and as plain-English insights. It records which apps used the
-most CPU over the last day and week, and explains what each macOS process is for. When
+most CPU over the last day and week, and explains what each macOS process is for. The
+Energy tab shows the Mac's power draw, which apps cost the most battery, what keeps the Mac
+awake and how the battery is wearing. When
 something gets stuck at high CPU it tells you, and it can kill that process in one click or
 automatically.
 
@@ -17,7 +19,8 @@ On a Mac that feels slow, Activity Monitor gives you a list of numbers. It doesn
 - **which processes are a problem** rather than a passing spike;
 - **what a process is,** like `mediaanalysisd`, `knowledgeconstructiond` or `WindowServer`;
 - **whether it's safe to kill** a process;
-- **which app used the most CPU** over the last day or week.
+- **which app used the most CPU** over the last day or week;
+- **what is draining the battery,** or keeping the Mac awake with the lid open.
 
 CPU Sentinel answers each of those. It was built after a macOS energy logger
 (`PerfPowerServices`) used one and a half cores for 37 hours and nothing said so.
@@ -28,10 +31,13 @@ CPU Sentinel answers each of those. It was built after a macOS energy logger
 |---|---|
 | **Insights in plain English** | "WindowServer is busy because the screen is being captured", "Photos is analysing your library", "3 Chrome tab processes use 40% together". Click **More** to see what is happening, each process involved and who started it, and numbered steps to fix it. |
 | **Explain with ChatGPT** | The sparkles button opens ChatGPT with a ready-made prompt: the process, its CPU history, your Mac model and its busiest processes, asking what it is and how to bring it down. |
+| **Battery and energy** | Live power draw in watts and a 7 day chart, time left, energy use and idle wakeups by app with an estimate of the minutes each costs per hour on battery, sleep blockers (including `caffeinate` "on behalf of" a terminal tool) with a Kill button, and battery health: capacity, cycles and macOS's own verdict. |
+| **Performance and efficiency cores** | Per-core load on the Overview, split into the efficiency cores macOS uses for background work and the performance cores that draw most of the power. |
+| **Reports** | "Today in brief" in plain sentences, comparison with your usual week, and a weekly report on the Events tab with an optional Monday notification. |
 | **History from 30 minutes to a week** | CPU by app over the last 30 minutes, 3, 6 or 24 hours, or 7 days, the heaviest users and when each one peaked. Kept across restarts and sleep. |
 | **Know when a process started** | Every process shows its uptime, so a renderer that has been busy for 13 days is easy to spot. |
 | **Kill anything, carefully** | One-click kill for your own processes, your password for root ones, a separate sudo button with a warning for core macOS processes, and Force kill (kill -9) for anything that ignores a kill. A banner says whether it worked and who relaunched it if it came back. |
-| **Rules that remember** | Per app: alert (the default), ignore, or auto-kill. Auto-kill is limited to 3 kills an hour per app. |
+| **Rules that remember** | Per app: alert (the default), ignore, auto-kill, or auto-kill only on battery. Auto-kill is limited to 3 kills an hour per app. The Rules tab also lists every launch agent and daemon that starts by itself, with its CPU. |
 | **Dark mode, and a window you can move** | Every screen is designed for light and dark. **Pop out** moves the panel into a normal window you can drag. |
 
 ## Screenshots
@@ -45,6 +51,12 @@ The top 30, each with uptime, a 15 minute trend, averages, memory and Kill.
 CPU by hour, stacked by app, and the heaviest users over 24 hours or 7 days.
 
 ![Trends tab](docs/images/trends-light.png)
+
+### Energy
+
+Power draw, energy by app, what keeps the Mac awake, and battery health.
+
+![Energy tab](docs/images/energy-light.png)
 
 ### Events
 Everything flagged, killed or auto-killed over 7 days.

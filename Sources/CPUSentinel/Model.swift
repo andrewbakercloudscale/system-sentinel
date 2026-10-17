@@ -23,6 +23,22 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
     @Published var restarted: [String: Int32] = [:]
     /// Recent kills, by path, watched for a minute for a relaunch.
     private var recentKills: [String: (sample: ProcessSample, at: Date)] = [:]
+    /// Battery and power, refreshed every tick. nil on a Mac without a battery.
+    @Published var battery: BatteryStatus?
+    /// Load per core since the last tick, split into efficiency and performance cores.
+    @Published var coreLoad: CoreLoad?
+    /// Processes keeping the Mac awake, refreshed with the energy readings.
+    @Published var blockers: [SleepBlocker] = []
+    /// Energy Impact and wakeups by app, from the latest `top` reading.
+    @Published var energy: [EnergyRow] = []
+    @Published var backgroundItems: [BackgroundItem] = []
+    let powerHistory: PowerHistory
+    /// Energy Impact per app, hourly for 7 days, stored the same way as CPU.
+    let energyUsage: DailyUsage
+    private let coreSampler = CoreSampler()
+    private let wakeups = WakeupTracker()
+    private var lastEnergy: Date?
+    private var energyRunning = false
     /// Kills run in Terminal, where only the process exiting tells us it worked.
     private var watching: [Int32: (sample: ProcessSample, until: Date)] = [:]
 
@@ -42,6 +58,8 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
 
     @AppStorage("threshold") var threshold: Double = 80 { didSet { sentinel.detector.threshold = threshold } }
     @AppStorage("windowSeconds") var windowSeconds: Double = 120 { didSet { sentinel.detector.window = windowSeconds } }
+    @AppStorage("weeklyReport") var weeklyReport = true
+    @AppStorage("lastWeeklyReport") private var lastWeeklyReport: Double = 0
 
     static let supportDir: URL = FileManager.default
         .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -71,7 +89,13 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
             // A larger file than the hourly one, so it is written every 5 minutes, not every minute.
             recentUsage: DailyUsage(fileURL: Model.supportDir.appendingPathComponent("usage-6h.json"),
                                     retainHours: 6, bucket: 60, saveEvery: 300, readOnly: Model.snapshotDir != nil))
+        powerHistory = PowerHistory(fileURL: Model.supportDir.appendingPathComponent("power-7d.json"), readOnly: Model.snapshotDir != nil)
+        // Energy is read every 30 s, so a tick may stand for up to 45 s.
+        energyUsage = DailyUsage(fileURL: Model.supportDir.appendingPathComponent("energy-7d.json"), maxStep: 45,
+                                 saveEvery: 300, readOnly: Model.snapshotDir != nil)
         super.init()
+        sentinel.onBattery = { [weak self] in MainActor.assumeIsolated { self?.battery?.onBattery ?? false } }
+        backgroundItems = BackgroundItems.scan()
         sentinel.detector.threshold = threshold
         sentinel.detector.window = windowSeconds
         setUpNotifications()
@@ -107,12 +131,80 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
             lastError = nil
             for e in events { handle(e) }
             checkKills()
+            readPower()
             thermal = ProcessInfo.processInfo.thermalState
             insights = Insights.generate(insightInput())
         } catch {
             lastError = "Could not read processes: \(error)"
         }
     }
+
+    // MARK: Power
+
+    private func readPower() {
+        let now = Date()
+        battery = PowerReader.read()
+        if let b = battery { powerHistory.record(b, at: now) }
+        coreLoad = coreSampler.sample() ?? coreLoad
+        checkWeeklyReport(now)
+        // `top` takes about a second; run it off the main thread every 30 s.
+        guard !energyRunning, lastEnergy.map({ now.timeIntervalSince($0) >= 30 }) ?? true else { return }
+        energyRunning = true
+        lastEnergy = now
+        Task.detached {
+            let readings = EnergySampler.sample()
+            let blockers = SleepBlockers.read()
+            await MainActor.run { self.finishEnergy(readings, blockers) }
+        }
+    }
+
+    private func finishEnergy(_ readings: [Int32: (power: Double, idleWakeups: Int)], _ blockers: [SleepBlocker]) {
+        energyRunning = false
+        let now = Date()
+        let samples = wakeups.update(readings, at: now)
+        energy = EnergyRow.group(samples, processes: sentinel.latest, key: Model.appKey, name: Model.appName)
+        self.blockers = blockers
+        // Stored as samples whose "cpu" is the Energy Impact, so the CPU store's code serves.
+        let paths = Dictionary(sentinel.latest.map { ($0.pid, $0) }, uniquingKeysWith: { a, _ in a })
+        energyUsage.record(samples.compactMap { e in
+            paths[e.pid].map { ProcessSample(pid: e.pid, uid: $0.uid, cpu: e.power, path: $0.path) }
+        }, at: now)
+    }
+
+    /// Energy Impact by app over the last `hours`.
+    func energySummaries(hours: Int) -> [DailyUsage.Summary] {
+        energyUsage.summaries(at: Date(), hours: hours, group: Model.appKey, name: Model.appName)
+    }
+
+    func weekly() -> WeeklyReport {
+        WeeklyReport.build(usage: sentinel.dailyUsage, power: powerHistory.points, events: sentinel.history.entries,
+                           group: Model.appKey, name: Model.appName, at: Date())
+    }
+
+    func daySummary() -> [String] {
+        let now = Date()
+        let usage = sentinel.dailyUsage
+        return DaySummary.lines(daily: usage.summaries(at: now, group: Model.appKey, name: Model.appName),
+                                sampled: usage.sampled(at: now), totalHourly: usage.totalHourly(at: now),
+                                hourStarts: DailyUsage.hourStarts(at: now, hours: 24).map { Date(timeIntervalSince1970: Double($0)) },
+                                power: BatterySummary.from(powerHistory.since(now.addingTimeInterval(-86_400))),
+                                blockers: blockers, cores: cores, at: now)
+    }
+
+    /// Monday from 9:00, once a week, with at least a day of data.
+    private func checkWeeklyReport(_ now: Date) {
+        guard weeklyReport, Model.snapshotDir == nil, now.timeIntervalSince1970 - lastWeeklyReport >= 6 * 86_400 else { return }
+        let c = Calendar.current.dateComponents([.weekday, .hour], from: now)
+        guard c.weekday == 2, (c.hour ?? 0) >= 9, sentinel.dailyUsage.sampled(at: now, hours: 24 * 7) >= 86_400 else { return }
+        lastWeeklyReport = now.timeIntervalSince1970
+        let content = UNMutableNotificationContent()
+        content.title = "Your Mac's week"
+        content.body = weekly().text
+        content.categoryIdentifier = "info"
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "weekly-\(Int(now.timeIntervalSince1970))", content: content, trigger: nil))
+    }
+
+    func sample(pid: Int32) -> ProcessSample? { sentinel.latest.first { $0.pid == pid } }
 
     // MARK: Explain
 
@@ -227,7 +319,7 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
         let usage = sentinel.dailyUsage
         var avg15: [Int32: Double] = [:]
         for s in sentinel.latest where s.cpu >= 20 { avg15[s.pid] = hist.average(s.pid, over: 900, at: now) }
-        return InsightInput(
+        var input = InsightInput(
             cores: cores, samples: sentinel.latest,
             total1m: hist.totalAverage(over: 60, at: now), total15m: hist.totalAverage(over: 900, at: now),
             total60m: hist.totalAverage(over: 3600, at: now), avg15m: avg15,
@@ -240,6 +332,11 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
             thermal: ProcessInfo.processInfo.thermalState.rawValue,
             lowPower: ProcessInfo.processInfo.isLowPowerModeEnabled,
             parents: parentNames())
+        input.battery = battery
+        input.blockers = blockers
+        input.energy = energy
+        input.typicalTotal = sentinel.dailyUsage.typicalTotal(at: now)
+        return input
     }
 
     /// Who started each busy process: "screencapture, started by claude".

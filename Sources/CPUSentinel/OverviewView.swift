@@ -18,6 +18,7 @@ struct OverviewView: View {
                     .modifier(ZoomOnClick(kind: .lastHour, model: model))
             }
             .fixedSize(horizontal: false, vertical: true)
+            CoresCard(model: model)
             InsightList(model: model)
         }
     }

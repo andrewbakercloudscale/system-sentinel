@@ -6,6 +6,8 @@ public enum Policy: Codable, Equatable, Sendable {
     case alert
     /// Terminate it, then tell the owner.
     case autoKill
+    /// Auto-kill while the Mac runs on battery; alert when plugged in.
+    case autoKillOnBattery
     /// Say nothing until the date, or ever when nil.
     case ignore(until: Date?)
 }

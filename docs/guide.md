@@ -8,6 +8,7 @@
 - [Insights](#insights)
 - [Processes](#processes)
 - [Trends](#trends)
+- [Energy](#energy)
 - [Events](#events)
 - [Rules](#rules)
 - [Settings](#settings)
@@ -72,6 +73,10 @@ The answer to "is my Mac busy, and why?" in one screen:
 - **Click either chart** to open a larger, live version in its own window. The larger
   Right now chart lists more apps with cores used; the larger Last hour chart shows the
   values at any moment when you hover over it.
+- **Cores.** The load on each core over the last 5 seconds. On Apple silicon the
+  efficiency cores (E) come first and the performance cores (P) after. macOS runs
+  background work on E cores; busy P cores mean heavy foreground work, and that is where
+  most of the power goes.
 - **Insights.** See below.
 
 ---
@@ -109,6 +114,13 @@ Click **More** on an insight to open it:
 | **macOS itself vs your apps** | After 30 minutes of recording | How much CPU went to background system work compared with apps you run. |
 | **Busiest hour** | After an hour of recording | When in the day the Mac worked hardest. |
 | **X was flagged N times this week** | An app was flagged three or more times in 7 days | Set a rule instead of dismissing the alert again. |
+| **X costs about N minutes of battery an hour** | On battery, one app is 20% or more of all energy use | Its share of the power draw, and how much longer the battery would last without it. |
+| **N% left: Low Power Mode would stretch it** | On battery at 30% or less, Low Power Mode off | How to turn it on. |
+| **Time Machine / Spotlight / Photos analysis running on battery** | A deferrable macOS job is at 20% or more on battery | Plug in and it finishes sooner at no battery cost. |
+| **N things are keeping your Mac awake** | Something has held a sleep assertion for over an hour | Who is holding it (for `caffeinate`, the tool it works for) and a Kill button for each. |
+| **X wakes the CPU N times a second** | An app causes 150 or more idle wakeups a second | Constant wakeups cost battery even at low CPU. |
+| **macOS says: Check Battery** / **Battery holds N%** | macOS reports a battery condition, or capacity is under 80% | What it means and what to do. |
+| **This hour is Nx your usual** | The last hour is at least twice the 7 day hourly average | Something unusual is running. |
 | **X survived a kill** | A kill failed in the last 24 hours | The process ignored the polite stop signal; only a force kill would stop it. |
 
 ### Example: WindowServer and screen capture
@@ -193,9 +205,39 @@ app can use more CPU time than the time that passed.
 
 ---
 
+## Energy
+
+![Energy tab](images/energy-light.png)
+
+What the Mac draws and what is costing battery:
+
+- **Battery.** Charge, time left (macOS's estimate, or the charge left divided by the
+  current draw), charging state, charger watts, temperature and the whole Mac's power
+  draw in watts. On a Mac without a battery this is replaced by a note.
+- **Power draw.** Watts over the last hour, 6 or 24 hours, or 7 days, coloured by battery
+  or mains power, with the average, peak, time on battery and how many percent an hour the
+  battery dropped. A MacBook idles at 2 to 5 W.
+- **Energy by app.** Activity Monitor's Energy Impact (CPU plus the cost of waking the
+  chip, graphics and disk) and idle wakeups a second, refreshed every 30 seconds.
+  Each app's estimated watts is its share of Energy Impact applied to the draw above about
+  2.5 W (screen and idle chip); on battery it also shows the minutes of each hour it
+  costs. **24 hours** and **7 days** rank average Energy Impact over that period.
+- **Keeping your Mac awake.** Every process holding a sleep assertion, how long it has
+  held it, and for `caffeinate` the tool it works for ("for claude (pid 61739)").
+  Killing `caffeinate` lets the Mac sleep; the tool carries on.
+- **Battery health.** Capacity against new, charge cycles against the design count, and
+  macOS's verdict (Normal, Check Battery, Service Recommended), with advice.
+- **Today in brief.** The day in a few sentences: average load, heaviest apps, busiest
+  hour, time on battery, average draw and drain, and sleep blockers.
+
+---
+
 ## Events
 
 ![Events tab](images/events-light.png)
+
+**Your week** at the top: core-hours used, hours watched, time on battery, average power
+draw, the five heaviest apps and the busiest day.
 
 Everything CPU Sentinel did, or decided not to do:
 
@@ -216,7 +258,12 @@ with its time and CPU.
 
 ![Rules tab](images/rules-light.png)
 
-Every app you have set a rule for, and a button to remove each one. Rules are keyed by the
+Every app you have set a rule for, and a button to remove each one. Below them,
+**Starts by itself** lists every launch agent and daemon (from `~/Library/LaunchAgents`,
+`/Library/LaunchAgents` and `/Library/LaunchDaemons`): whether it runs at login, stays
+running or runs on a timer, whether it is running now and its CPU, heaviest first.
+**Login Items** opens System Settings, where you can switch them off.
+ Rules are keyed by the
 program's path, so they survive restarts and new process IDs. All Chrome tabs share one
 path, so a rule for one tab applies to every tab.
 
@@ -225,6 +272,7 @@ path, so a rule for one tab applies to every tab.
 | **Alert** (default) | A notification; you decide. |
 | **Ignore for 1 hour / always** | Nothing. |
 | **Auto-kill** | It is killed and you are told. Not offered for root or core macOS processes. At most 3 kills an hour per app; after that you are alerted instead. |
+| **Auto-kill on battery** | Auto-kill while on battery; alert when plugged in. |
 
 ---
 
@@ -236,6 +284,7 @@ path, so a rule for one tab applies to every tab.
   default is 80% (of one core) for 2 minutes. Builds and other short bursts never count;
   only a process that stays over the line the whole time does.
 - **Launch CPU Sentinel at login.**
+- **Weekly report notification** on Monday morning (on by default; applies at once).
 
 Changes apply when you click **Save**. **Revert** throws them away.
 
@@ -325,6 +374,8 @@ Everything stays in `~/Library/Application Support/CPUSentinel/`:
 | `history.jsonl` | Events (flagged, killed, and so on) |
 | `usage-24h.json` | Hourly CPU time per program for the last 7 days |
 | `usage-6h.json` | CPU time per program per minute for the last 6 hours |
+| `power-7d.json` | Power draw and battery level per minute for the last 7 days |
+| `energy-7d.json` | Hourly Energy Impact per program for the last 7 days |
 
 Nothing is sent anywhere, except a prompt you choose to send to ChatGPT with ✨ Explain.
 To reset everything, quit CPU Sentinel and delete that folder.

@@ -30,6 +30,7 @@ struct EventsView: View {
                     StatTile(symbol: Self.symbol(k), color: Self.color(k), value: "\(counts[k] ?? 0)", label: Self.label(k).lowercased())
                 }
             }
+            WeeklyCard(report: model.weekly())
             Card(title: "Last 7 days", symbol: "calendar", tint: Tab.events.color) {
                 Chart(perDay) { d in
                     BarMark(x: .value("Day", d.day, unit: .day), y: .value("Events", d.count), width: .ratio(0.6))

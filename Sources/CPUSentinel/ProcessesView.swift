@@ -182,6 +182,7 @@ private struct ProcessRow: View {
         switch p {
         case .alert: EmptyView()
         case .autoKill: Pill(text: "auto-kill", symbol: "bolt.fill", color: Theme.heat(100))
+        case .autoKillOnBattery: Pill(text: "auto-kill on battery", symbol: "battery.50percent", color: Theme.heat(80))
         case .ignore(let until?): Pill(text: "ignored until \(Fmt.time(until))", symbol: "moon.fill", color: Tab.rules.color)
         case .ignore(nil): Pill(text: "ignored", symbol: "moon.fill", color: Tab.rules.color)
         }
@@ -192,6 +193,7 @@ private struct ProcessRow: View {
         Section("Rule") {
             Button("Alert me (default)") { model.setPolicy(.alert, for: s) }
             Button("Auto-kill") { model.setPolicy(.autoKill, for: s) }.disabled(!Safety.canAutoKill(s))
+            Button("Auto-kill on battery") { model.setPolicy(.autoKillOnBattery, for: s) }.disabled(!Safety.canAutoKill(s))
             Button("Ignore for 1 hour") { model.setPolicy(.ignore(until: Date().addingTimeInterval(3600)), for: s) }
             Button("Always ignore") { model.setPolicy(.ignore(until: nil), for: s) }
         }
