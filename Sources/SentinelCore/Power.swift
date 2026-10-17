@@ -323,6 +323,9 @@ public enum EnergySampler {
 
     /// Reads the last table in `top` output: `PID POWER IDLEW` rows. IDLEW is the running
     /// total since the process started, sometimes with a trailing "+".
+    /// Above this an Energy Impact is a glitch: a whole Mac flat out scores a few thousand.
+    public static let maxImpact = 5000.0
+
     public static func parse(_ output: String) -> [Int32: (power: Double, idleWakeups: Int)] {
         let lines = output.split(separator: "\n", omittingEmptySubsequences: false)
         guard let header = lines.lastIndex(where: { $0.hasPrefix("PID") }) else { return [:] }
@@ -330,7 +333,7 @@ public enum EnergySampler {
         for line in lines[(header + 1)...] {
             let f = line.split(separator: " ", omittingEmptySubsequences: true)
             guard f.count >= 3, let pid = Int32(f[0]),
-                  let power = Double(f[1].replacingOccurrences(of: ",", with: ".")) else { continue }
+                  let power = Double(f[1].replacingOccurrences(of: ",", with: ".")), power <= maxImpact else { continue }
             let w = Int(f[2].trimmingCharacters(in: CharacterSet(charactersIn: "+-*"))) ?? 0
             out[pid] = (power, w)
         }

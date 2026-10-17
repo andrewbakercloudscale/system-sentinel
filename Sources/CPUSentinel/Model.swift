@@ -44,6 +44,7 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
     @Published var blockers: [SleepBlocker] = []
     /// Energy Impact and wakeups by app, from the latest `top` reading.
     @Published var energy: [EnergyRow] = []
+    @Published var energyAt: Date?
     @Published var backgroundItems: [BackgroundItem] = []
     @Published var memory: MemoryStatus?
     /// Memory by app, largest first, refreshed every tick.
@@ -148,6 +149,7 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
         // Energy is read every 30 s, so a tick may stand for up to 45 s.
         energyUsage = DailyUsage(fileURL: Model.supportDir.appendingPathComponent("energy-7d.json"), maxStep: 45,
                                  saveEvery: 300, readOnly: Model.snapshotDir != nil)
+        energyUsage.dropOutliers(above: EnergySampler.maxImpact)
         memoryHistory = MemoryHistory(fileURL: Model.supportDir.appendingPathComponent("memory-7d.json"), readOnly: Model.snapshotDir != nil)
         healthLog = HealthLog(fileURL: Model.supportDir.appendingPathComponent("battery-health.json"), readOnly: Model.snapshotDir != nil)
         super.init()
@@ -225,7 +227,7 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
             }
         }
         // `top` takes about a second; run it off the main thread every 30 s.
-        guard !energyRunning, lastEnergy.map({ now.timeIntervalSince($0) >= 30 }) ?? true else { return }
+        guard !energyRunning, lastEnergy.map({ now.timeIntervalSince($0) >= 15 }) ?? true else { return }
         energyRunning = true
         lastEnergy = now
         let pids = sentinel.latest.map(\.pid)
@@ -251,6 +253,7 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
         io = IORow.group(ioTracker.update(counters, at: now), processes: sentinel.latest, key: Model.appKey, name: Model.appName)
         notifyOverdueBlockers(blockers, at: now)
         let samples = wakeups.update(readings, at: now)
+        energyAt = now
         energy = EnergyRow.group(samples, processes: sentinel.latest, key: Model.appKey, name: Model.appName)
         self.blockers = blockers
         // Stored as samples whose "cpu" is the Energy Impact, so the CPU store's code serves.

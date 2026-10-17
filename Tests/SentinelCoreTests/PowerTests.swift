@@ -377,3 +377,21 @@ final class ReportTests: XCTestCase {
         XCTAssertTrue(lines[4].hasPrefix("1 sleep blocker has"))
     }
 }
+
+final class EnergyGlitchTests: XCTestCase {
+    func testImpossibleImpactIsDroppedAndOldOutliersRemoved() {
+        let out = EnergySampler.parse("PID POWER IDLEW\n358 167150900.0 3\n12 45.2 10+\n")
+        XCTAssertNil(out[358])
+        XCTAssertEqual(out[12]?.power, 45.2)
+
+        let u = DailyUsage(fileURL: nil)
+        let t = Date(timeIntervalSince1970: 1_700_000_000)
+        u.record([ProcessSample(pid: 1, uid: 0, cpu: 167_150_900, path: "/usr/sbin/syslogd"),
+                  ProcessSample(pid: 2, uid: 501, cpu: 20, path: "/bin/app")], at: t)
+        u.record([ProcessSample(pid: 1, uid: 0, cpu: 167_150_900, path: "/usr/sbin/syslogd"),
+                  ProcessSample(pid: 2, uid: 501, cpu: 20, path: "/bin/app")], at: t.addingTimeInterval(5))
+        XCTAssertEqual(u.dropOutliers(above: EnergySampler.maxImpact), 1)
+        XCTAssertNil(u.entries["/usr/sbin/syslogd"])
+        XCTAssertNotNil(u.entries["/bin/app"])
+    }
+}

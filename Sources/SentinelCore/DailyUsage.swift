@@ -76,6 +76,22 @@ public final class DailyUsage {
         }
     }
 
+    /// Removes buckets holding an impossible sample (a `top` glitch once read syslogd at 167
+    /// million), so one bad reading cannot take over a week of history. Returns how many.
+    @discardableResult
+    public func dropOutliers(above limit: Double) -> Int {
+        var n = 0
+        for (key, var e) in entries {
+            for (t, peak) in e.peaks where peak > limit {
+                e.peaks[t] = nil
+                e.hours[t] = nil
+                n += 1
+            }
+            entries[key] = e.hours.isEmpty ? nil : e
+        }
+        return n
+    }
+
     public static func hour(_ d: Date) -> Int { Int(d.timeIntervalSince1970) / 3600 * 3600 }
 
     /// The hour starts of the last `hours` hours, oldest first, ending with the current one.

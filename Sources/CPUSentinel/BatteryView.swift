@@ -153,6 +153,7 @@ struct PowerChart: View {
             }
             Text("The whole Mac's draw, screen included. A MacBook idles at 2 to 5 W; video calls and builds reach 20 to 40 W.")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            RightNowPower(model: model)
         }
     }
 
@@ -165,6 +166,60 @@ struct PowerChart: View {
             out.append(Bar(start: Date(timeIntervalSince1970: Double(start)), watts: watts, onBattery: battery))
         }
         return out.sorted { $0.start < $1.start }
+    }
+}
+
+// MARK: Right now
+
+/// The apps drawing the most power right now, live, under the chart.
+private struct RightNowPower: View {
+    @ObservedObject var model: Model
+
+    var body: some View {
+        let rows = Array(model.energy.prefix(5))
+        let total = model.energy.reduce(0) { $0 + $1.power }
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Image(systemName: "dot.radiowaves.left.and.right").foregroundStyle(Tab.battery.color)
+                Text(model.battery?.watts.map { String(format: "Right now: %.1f W. Drawing the most:", $0) } ?? "Drawing the most right now:")
+                    .font(.callout.weight(.semibold))
+                Spacer()
+                if let at = model.energyAt {
+                    TimelineView(.periodic(from: .now, by: 1)) { ctx in
+                        Text("updated \(max(0, Int(ctx.date.timeIntervalSince(at))))s ago · every 15 s")
+                            .font(.caption).foregroundStyle(.secondary).monospacedDigit()
+                    }
+                }
+            }
+            if rows.isEmpty {
+                Text("Reading…").font(.caption).foregroundStyle(.secondary)
+            }
+            ForEach(rows) { r in
+                let share = total > 0 ? r.power / total : 0
+                let sample = r.pids.first.flatMap(model.sample(pid:))
+                HStack(spacing: 8) {
+                    IconView(icon: IconCache.shared.icon(for: sample ?? ProcessSample(pid: 0, uid: 501, cpu: 0, path: r.key)), size: 20)
+                    HStack(spacing: 6) {
+                        Text(r.name).font(.callout).lineLimit(1).truncationMode(.middle)
+                        if r.pids.count > 1 { Text("\(r.pids.count) processes").font(.caption).foregroundStyle(.secondary).fixedSize() }
+                    }
+                    .frame(width: 230, alignment: .leading)
+                    ShareBar(share: share, color: Tab.battery.color)
+                    Spacer(minLength: 6)
+                    Text(watts(share) ?? String(format: "impact %.0f", r.power))
+                        .font(.callout.weight(.semibold)).monospacedDigit().frame(width: 64, alignment: .trailing)
+                        .help(String(format: "Energy Impact %.1f: %.0f%% of everything drawing power now", r.power, share * 100))
+                }
+            }
+        }
+        .padding(10)
+        .background(RoundedRectangle(cornerRadius: 9).fill(Tab.battery.color.opacity(0.07)))
+    }
+
+    private func watts(_ share: Double) -> String? {
+        guard let w = model.battery?.watts else { return nil }
+        let appW = BatteryMath.appWatts(share: share, totalWatts: w)
+        return appW < 0.1 ? "<0.1 W" : String(format: "~%.1f W", appW)
     }
 }
 
