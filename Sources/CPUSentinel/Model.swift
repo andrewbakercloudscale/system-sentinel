@@ -27,6 +27,19 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
     @Published var battery: BatteryStatus?
     /// Load per core since the last tick, split into efficiency and performance cores.
     @Published var coreLoad: CoreLoad?
+    /// Apps by CPU on each kind of core over the last sample, busiest first.
+    @Published var clusterApps: (efficiency: [ClusterApp], performance: [ClusterApp]) = ([], [])
+    private var clusterTimes: [Int32: ClusterTime] = [:]
+    private var clusterTimesAt: Date?
+
+    struct ClusterApp: Identifiable {
+        let key: String
+        let name: String
+        let sample: ProcessSample
+        /// Percent of one core.
+        let cpu: Double
+        var id: String { key }
+    }
     /// Processes keeping the Mac awake, refreshed with the energy readings.
     @Published var blockers: [SleepBlocker] = []
     /// Energy Impact and wakeups by app, from the latest `top` reading.
@@ -197,6 +210,7 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
             healthLog.record(b, at: now)
         }
         coreLoad = coreSampler.sample() ?? coreLoad
+        readClusters(now)
         memory = MemoryStatus.read()
         readMemory(now)
         gpu = GPUReader.utilization()
@@ -755,7 +769,7 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
         }
         x.related = memoryApps.prefix(4).map { a in
             let inRAM = a.bytes > a.outOfRAM ? a.bytes - a.outOfRAM : 0
-            return Insight.Related(sample: a.sample, about: "\(gb(a.bytes)) in all (\(gb(inRAM)) in RAM, \(gb(a.outOfRAM)) compressed or in swap)", parent: nil)
+            return Insight.Related(sample: a.sample, about: "\(a.name)\(a.pids.count > 1 ? ", all \(a.pids.count) processes" : ""): \(gb(a.bytes)) (\(gb(inRAM)) in RAM, \(gb(a.outOfRAM)) compressed or in swap)", parent: nil)
         }
         guard let a = quittable.first else { return x }
         let target = Model.isVM(a.key) ? (vmHost() ?? a) : a
@@ -769,6 +783,31 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
     }
 
     private func gb(_ b: UInt64) -> String { ReportDocument.bytes(b) }
+
+    private func readClusters(_ now: Date) {
+        var next: [Int32: ClusterTime] = [:]
+        var e: [String: (cpu: Double, top: ProcessSample, topCPU: Double)] = [:], p = e
+        let seconds = clusterTimesAt.map { now.timeIntervalSince($0) } ?? 0
+        for s in sentinel.latest {
+            guard let t = ClusterTime.read(s.pid) else { continue }
+            next[s.pid] = t
+            guard let before = clusterTimes[s.pid], let u = ClusterTime.usage(from: before, to: t, seconds: seconds) else { continue }
+            let k = Model.appKey(s.path)
+            for (v, isP) in [(u.efficiency, false), (u.performance, true)] where v > 0 {
+                var g = (isP ? p[k] : e[k]) ?? (0, s, 0)
+                g.cpu += v
+                if v > g.topCPU { g.top = s; g.topCPU = v }
+                if isP { p[k] = g } else { e[k] = g }
+            }
+        }
+        clusterTimes = next
+        clusterTimesAt = now
+        let list = { (d: [String: (cpu: Double, top: ProcessSample, topCPU: Double)]) in
+            d.map { ClusterApp(key: $0.key, name: self.memoryApps.first { m in m.key == $0.key }?.name ?? Model.memoryName($0.key), sample: $0.value.top, cpu: $0.value.cpu) }
+                .filter { $0.cpu >= 0.5 }.sorted { $0.cpu > $1.cpu }.prefix(6).map { $0 }
+        }
+        if seconds > 0 { clusterApps = (list(e), list(p)) }
+    }
 
     /// When the oldest of these processes started.
     func started(_ pids: [Int32]) -> Date? {

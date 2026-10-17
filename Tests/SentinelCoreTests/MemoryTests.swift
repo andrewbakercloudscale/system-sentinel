@@ -131,3 +131,16 @@ final class MemoryTests: XCTestCase {
         XCTAssertNotNil(MemoryStatus.footprint(getpid()))
     }
 }
+
+final class ClusterTimeTests: XCTestCase {
+    func testUsageSplitsEfficiencyAndPerformance() {
+        let a = ClusterTime(total: 1_000_000_000, performance: 400_000_000)
+        let b = ClusterTime(total: 3_000_000_000, performance: 900_000_000)
+        let u = ClusterTime.usage(from: a, to: b, seconds: 10)
+        XCTAssertEqual(u?.efficiency ?? 0, 15, accuracy: 0.001)
+        XCTAssertEqual(u?.performance ?? 0, 5, accuracy: 0.001)
+        // A reused pid (counters went backwards) gives nothing rather than nonsense.
+        XCTAssertNil(ClusterTime.usage(from: b, to: a, seconds: 10))
+        XCTAssertTrue(ClusterTime.read(getpid()) != nil)
+    }
+}

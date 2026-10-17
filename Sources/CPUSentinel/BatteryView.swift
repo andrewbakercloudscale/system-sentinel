@@ -421,6 +421,7 @@ private struct TodayCard: View {
 /// Each core's load, efficiency cores then performance cores.
 struct CoresCard: View {
     @ObservedObject var model: Model
+    @State private var hovered: Int?
 
     var body: some View {
         if let load = model.coreLoad {
@@ -441,13 +442,49 @@ struct CoresCard: View {
                             .frame(height: 36)
                             Text(eff ? "E" : "P").font(.system(size: 8, weight: .bold)).foregroundStyle(.secondary)
                         }
+                        .opacity(hovered.map { ($0 < load.efficiencyCount) == eff ? 1 : 0.35 } ?? 1)
+                        .onHover { inside in
+                            if inside { hovered = i } else if hovered == i { hovered = nil }
+                        }
                         .help("\(eff ? "Efficiency" : "Performance") core \(i): \(Int(v))% busy")
                     }
+                }
+                if let h = hovered {
+                    clusterList(efficiency: h < load.efficiencyCount, core: h, busy: load.perCore[h], load: load)
+                } else {
+                    Label("Hover over a core to see which apps are running on that kind of core.", systemImage: "cursorarrow.rays")
+                        .font(.caption.weight(.medium)).foregroundStyle(.secondary)
                 }
                 Text(caption(load)).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     .help("Which app is on which core is not something macOS reports: each app's threads hop between cores many times a second. Background-priority work (Spotlight, Photos, backups, updates) is kept on the E cores; what you are using goes to the P cores. The Processes tab shows which apps are busy.")
             }
         }
+    }
+
+    private func clusterList(efficiency eff: Bool, core: Int, busy: Double, load: CoreLoad) -> some View {
+        let apps = eff ? model.clusterApps.efficiency : model.clusterApps.performance
+        let count = eff ? load.efficiencyCount : load.perCore.count - load.efficiencyCount
+        let color = eff ? Self.eColor : Self.pColor
+        return VStack(alignment: .leading, spacing: 6) {
+            Text("\(eff ? "Efficiency" : "Performance") core \(core) is \(Int(busy))% busy. Running on the \(count) \(eff ? "efficiency" : "performance") cores now:")
+                .font(.caption.weight(.semibold))
+            if apps.isEmpty {
+                Text("Nothing measurable in the last few seconds.").font(.caption).foregroundStyle(.secondary)
+            }
+            ForEach(apps) { a in
+                HStack(spacing: 8) {
+                    IconView(icon: IconCache.shared.icon(for: a.sample), size: 18)
+                    Text(a.name).font(.callout).lineLimit(1).truncationMode(.middle)
+                    Spacer(minLength: 6)
+                    Text(String(format: a.cpu >= 10 ? "%.0f%%" : "%.1f%%", a.cpu)).font(.callout.weight(.semibold)).monospacedDigit()
+                        .foregroundStyle(color)
+                }
+            }
+            Text("macOS reports per app how much ran on each kind of core, not on which single core: threads move between the \(count) many times a second. 100% is one full core.")
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(10)
+        .background(RoundedRectangle(cornerRadius: 8).fill(color.opacity(0.08)))
     }
 
     static let eColor = Color(light: "#0891b2", dark: "#22d3ee")
@@ -466,7 +503,7 @@ struct CoresCard: View {
         }
         if p >= 50 { return "The performance cores are busy: that is heavy foreground work, and where most of the power goes." }
         if e >= 50, p < 25 { return "Mostly efficiency cores: background work, which macOS runs cheaply." }
-        return "macOS puts background work on the efficiency cores (E) and demanding work on the performance cores (P), which draw several times the power. Apps hop between cores many times a second, so there is no per-core app list: the Processes tab shows who is busy."
+        return "macOS puts background work on the efficiency cores (E) and demanding work on the performance cores (P), which draw several times the power. Apps hop between cores many times a second, so apps are shown per kind of core."
     }
 }
 

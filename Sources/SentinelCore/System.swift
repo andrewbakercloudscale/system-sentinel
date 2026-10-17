@@ -413,3 +413,46 @@ public enum SleepLog {
                            chargeLost: lost, batteryAsleep: batteryAsleep)
     }
 }
+
+/// Which kind of core each process ran on. macOS does not say which core an app is on (its
+/// threads hop between cores many times a second), but it does count, per process, how much
+/// of its CPU time was on the performance cores.
+public struct ClusterTime: Equatable, Sendable {
+    /// All CPU time, in nanoseconds.
+    public var total: UInt64
+    /// Of that, time on the performance cores.
+    public var performance: UInt64
+
+    public init(total: UInt64, performance: UInt64) {
+        self.total = total
+        self.performance = performance
+    }
+
+    private static let timebase: (numer: UInt64, denom: UInt64) = {
+        var tb = mach_timebase_info()
+        mach_timebase_info(&tb)
+        return (UInt64(max(tb.numer, 1)), UInt64(max(tb.denom, 1)))
+    }()
+
+    /// nil for processes of other users, which macOS will not describe.
+    public static func read(_ pid: Int32) -> ClusterTime? {
+        var info = rusage_info_v6()
+        let r = withUnsafeMutablePointer(to: &info) {
+            $0.withMemoryRebound(to: rusage_info_t?.self, capacity: 1) { proc_pid_rusage(pid, RUSAGE_INFO_V6, $0) }
+        }
+        guard r == 0 else { return nil }
+        // These counters are in Mach time units, not nanoseconds, on Apple silicon.
+        let ns = { (t: UInt64) in t / timebase.denom * timebase.numer }
+        return ClusterTime(total: ns(info.ri_user_time + info.ri_system_time),
+                           performance: ns(info.ri_user_ptime + info.ri_system_ptime))
+    }
+
+    /// Percent of one core used on the efficiency and performance cores between two readings.
+    public static func usage(from a: ClusterTime, to b: ClusterTime, seconds: Double) -> (efficiency: Double, performance: Double)? {
+        guard seconds > 0, b.total >= a.total else { return nil }
+        let total = Double(b.total - a.total)
+        let perf = min(Double(b.performance >= a.performance ? b.performance - a.performance : 0), total)
+        let k = 100 / (seconds * 1e9)
+        return ((total - perf) * k, perf * k)
+    }
+}
