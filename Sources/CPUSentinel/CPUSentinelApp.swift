@@ -18,16 +18,26 @@ struct CPUSentinelApp: App {
         .menuBarExtraStyle(.window)
     }
 
-    private var menuIcon: NSImage { Self.menuIcon(alert: model.level == .alert) }
+    private var menuIcon: NSImage {
+        let alert = model.level == .alert
+        return Self.menuIcon(alert: alert, rag: LoadRAG.of(load: model.machineAverage(60), flagged: alert))
+    }
 
-    /// Always red, so it stands out in the menu bar; the glyph carries the state.
-    private static let color = NSColor(srgbRed: 0.86, green: 0.15, blue: 0.15, alpha: 1)
+    /// Green under 40% of the Mac over the last minute, amber to 70%, red above or when
+    /// something is flagged.
+    static func color(_ rag: LoadRAG) -> NSColor {
+        switch rag {
+        case .green: NSColor(srgbRed: 0.13, green: 0.63, blue: 0.33, alpha: 1)
+        case .amber: NSColor(srgbRed: 0.93, green: 0.58, blue: 0.05, alpha: 1)
+        case .red: NSColor(srgbRed: 0.86, green: 0.15, blue: 0.15, alpha: 1)
+        }
+    }
 
     /// A solid coloured badge with a white chip glyph (a warning triangle when something is
     /// flagged): readable on light and dark menu bars, which a thin coloured outline symbol was not.
-    static func menuIcon(alert: Bool) -> NSImage {
+    static func menuIcon(alert: Bool, rag: LoadRAG? = nil) -> NSImage {
         let size = NSSize(width: 24, height: 18)
-        let fill = color
+        let fill = color(rag ?? (alert ? .red : .green))
         let glyph = NSImage(systemSymbolName: alert ? "exclamationmark.triangle.fill" : "cpu", accessibilityDescription: "CPU Sentinel")?
             .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 13, weight: .bold)
                 .applying(NSImage.SymbolConfiguration(paletteColors: [.white])))
@@ -185,7 +195,7 @@ struct RulesView: View {
                         IconView(icon: IconCache.shared.icon(for: ProcessSample(pid: 0, uid: 501, cpu: 0, path: path)), size: 26)
                         VStack(alignment: .leading, spacing: 2) {
                             Text((path as NSString).lastPathComponent).font(.callout.weight(.medium)).lineLimit(1)
-                            Text(path).font(.caption2).foregroundStyle(.tertiary).lineLimit(1).truncationMode(.middle)
+                            Text(path).font(.caption2).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
                         }
                         Spacer()
                         rulePill(policy)
@@ -212,18 +222,44 @@ struct RulesView: View {
 
 }
 
-/// Edits are a draft until Save, so dragging a slider past the value you wanted does not
-/// change detection halfway through.
+/// Every setting on this tab is a draft until Save, so dragging a slider past the value you
+/// wanted does not change detection halfway through, and nothing here applies on its own.
+struct SettingsDraft: Equatable {
+    var threshold: Double
+    var window: Double
+    var login: Bool
+    var menuBarShows: String
+    var alertHeat: Bool
+    var heatWatts: Double
+    var heatMinutes: Double
+    var alertBlockers: Bool
+    var blockerHours: Double
+    var weeklyReport: Bool
+
+    @MainActor init(_ m: Model) {
+        threshold = m.threshold; window = m.windowSeconds; login = m.launchAtLogin
+        menuBarShows = m.menuBarShows; alertHeat = m.alertHeat; heatWatts = m.heatWatts; heatMinutes = m.heatMinutes
+        alertBlockers = m.alertBlockers; blockerHours = m.blockerHours; weeklyReport = m.weeklyReport
+    }
+
+    @MainActor func apply(to m: Model) {
+        m.threshold = threshold; m.windowSeconds = window
+        if login != m.launchAtLogin { m.launchAtLogin = login }
+        m.menuBarShows = menuBarShows; m.alertHeat = alertHeat; m.heatWatts = heatWatts; m.heatMinutes = heatMinutes
+        m.alertBlockers = alertBlockers; m.blockerHours = blockerHours; m.weeklyReport = weeklyReport
+    }
+}
+
 struct SettingsView: View {
     @ObservedObject var model: Model
-    @State private var threshold: Double?
-    @State private var window: Double?
-    @State private var login: Bool?
+    @State private var edits: SettingsDraft?
 
-    private var t: Double { threshold ?? model.threshold }
-    private var w: Double { window ?? model.windowSeconds }
-    private var l: Bool { login ?? model.launchAtLogin }
-    private var dirty: Bool { t != model.threshold || w != model.windowSeconds || l != model.launchAtLogin }
+    private var draft: Binding<SettingsDraft> {
+        Binding(get: { edits ?? SettingsDraft(model) }, set: { edits = $0 })
+    }
+    private var t: Double { draft.wrappedValue.threshold }
+    private var w: Double { draft.wrappedValue.window }
+    private var dirty: Bool { edits.map { $0 != SettingsDraft(model) } ?? false }
 
     var body: some View {
         VStack(spacing: 10) {
@@ -235,7 +271,7 @@ struct SettingsView: View {
                         Spacer()
                         Text(Insights.fmtCores(t)).font(.caption).foregroundStyle(.secondary)
                     }
-                    Slider(value: Binding(get: { t }, set: { threshold = $0 }), in: 30...400, step: 10).tint(Theme.heat(t))
+                    Slider(value: draft.threshold, in: 30...400, step: 10).tint(Theme.heat(t))
                     Text("100% is one full core; a process can use several.").font(.caption2).foregroundStyle(.secondary)
                 }
                 Divider()
@@ -245,35 +281,33 @@ struct SettingsView: View {
                         Text(Model.duration(w)).font(.body.weight(.bold)).foregroundStyle(Tab.events.color)
                         Text("without a break")
                     }
-                    Slider(value: Binding(get: { w }, set: { window = $0 }), in: 30...900, step: 30).tint(Tab.events.color)
+                    Slider(value: draft.window, in: 30...900, step: 30).tint(Tab.events.color)
                     Text("Short bursts never count; only a process that stays over the line the whole time.")
                         .font(.caption2).foregroundStyle(.secondary)
                 }
             }
             Card(title: "Startup", symbol: "power", tint: Tab.processes.color) {
-                Toggle("Launch CPU Sentinel at login", isOn: Binding(get: { l }, set: { login = $0 }))
+                Toggle("Launch CPU Sentinel at login", isOn: draft.login)
                     .toggleStyle(.switch)
                 Text("Trends and insights only cover the time CPU Sentinel is running.")
                     .font(.caption2).foregroundStyle(.secondary)
             }
-            MenuBarSettingsCard(model: model)
+            MenuBarSettingsCard(model: model, draft: draft)
             Card(title: "Reports", symbol: "calendar.badge.clock", tint: Tab.events.color) {
-                Toggle("Weekly report notification, Monday morning", isOn: $model.weeklyReport).toggleStyle(.switch)
+                Toggle("Weekly report notification, Monday morning", isOn: draft.weeklyReport).toggleStyle(.switch)
                 Text("Top apps, CPU hours, time on battery and average power draw for the last 7 days. The same report is always on the Events tab.")
-                    .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
             HStack(spacing: 8) {
                 if dirty {
                     Label("Unsaved changes", systemImage: "pencil.circle.fill").font(.caption.weight(.semibold)).foregroundStyle(Tab.events.color)
                 }
                 Spacer()
-                Button("Revert") { threshold = nil; window = nil; login = nil }
+                Button("Revert") { edits = nil }
                     .disabled(!dirty)
                 Button {
-                    model.threshold = t
-                    model.windowSeconds = w
-                    if l != model.launchAtLogin { model.launchAtLogin = l }
-                    threshold = nil; window = nil; login = nil
+                    edits?.apply(to: model)
+                    edits = nil
                     model.lastAction = "Settings saved"
                 } label: {
                     Label("Save", systemImage: "checkmark").frame(minWidth: 60)

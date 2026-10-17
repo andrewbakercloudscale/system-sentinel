@@ -70,7 +70,7 @@ struct MemoryCard: View {
                              value: ReportDocument.bytes(m.swapUsed), label: "swap on disk")
                 }
                 ShareBar(share: Double(m.used) / Double(max(m.total, 1)), color: color)
-                Text(explain(m)).font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                Text(explain(m)).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -115,7 +115,7 @@ struct SleepCard: View {
                     }
                 }
                 Text("Dark wakes are the Mac waking with the screen off to sync, check mail or run maintenance. A sleeping MacBook should lose about 1% an hour or less.")
-                    .font(.caption2).foregroundStyle(.tertiary).fixedSize(horizontal: false, vertical: true)
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             } else {
                 Text(report == nil ? "Reading the power log…" : "The Mac has not slept in the last 24 hours.")
                     .font(.caption).foregroundStyle(.secondary)
@@ -177,7 +177,7 @@ struct DisplaysCard: View {
                 Label(t, systemImage: "lightbulb.fill").font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
             if tips.isEmpty {
-                Text("Nothing to change: brightness, displays and graphics load are all modest.").font(.caption2).foregroundStyle(.tertiary)
+                Text("Nothing to change: brightness, displays and graphics load are all modest.").font(.caption2).foregroundStyle(.secondary)
             }
         }
     }
@@ -216,7 +216,7 @@ struct NetworkDiskCard: View {
                 .font(.caption.monospacedDigit())
             }
             Text("Radios and disks cost power too: a big upload or a sync that never stops shows here even when CPU is low. Disk for processes run by the system is not visible to apps.")
-                .font(.caption2).foregroundStyle(.tertiary).fixedSize(horizontal: false, vertical: true)
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
     }
 }
@@ -249,7 +249,7 @@ struct HealthTrendCard: View {
                 Label("At the current rate it reaches 80% around \(p.formatted(.dateTime.month(.wide).year())).", systemImage: "calendar")
                     .font(.caption)
             } else if !entries.isEmpty {
-                Text("A projection needs two weeks of readings.").font(.caption2).foregroundStyle(.tertiary)
+                Text("A projection needs two weeks of readings.").font(.caption2).foregroundStyle(.secondary)
             }
             if let c = HealthLog.cyclesPerWeek(entries, at: now) {
                 Label(String(format: "%.1f charge cycles a week.", c), systemImage: "arrow.triangle.2.circlepath").font(.caption)
@@ -265,7 +265,7 @@ struct HealthTrendCard: View {
                 Text(habits.sitsAtFull
                      ? "Sitting at 100% on the charger wears the battery fastest. A charge limit of 80% (System Settings > Battery > Charging) or Optimised Battery Charging avoids it."
                      : "Charging looks healthy: the battery is not left full on the charger for long.")
-                    .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -296,7 +296,7 @@ private struct ChromeTabsList: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Chrome tabs, likely energy users first").font(.headline)
             Text("Chrome keeps which tab uses what to itself (Window > Task Manager shows it). Video, calls and live apps are the usual cost.")
-                .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             if let error { Text(error).font(.caption).foregroundStyle(Theme.heat(100)) }
             ScrollView {
                 VStack(spacing: 4) {
@@ -354,10 +354,10 @@ struct ImpactsCard: View {
                         Text(i.summary).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     }
                     Spacer()
-                    Text(i.at.formatted(date: .omitted, time: .shortened)).font(.caption2).foregroundStyle(.tertiary)
+                    Text(i.at.formatted(date: .omitted, time: .shortened)).font(.caption2).foregroundStyle(.secondary)
                 }
             }
-            Text("Measured a minute after each quit or kill, against the minute before.").font(.caption2).foregroundStyle(.tertiary)
+            Text("Measured a minute after each quit or kill, against the minute before.").font(.caption2).foregroundStyle(.secondary)
         }
     }
 }
@@ -375,7 +375,7 @@ struct ExportCard: View {
                 Spacer()
             }
             Text("The week, today, battery, sleep and memory in one page: for your records, IT support, or a repair shop.")
-                .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -447,8 +447,10 @@ struct ReportPage: View {
 
 // MARK: Settings
 
+/// The menu bar, alert and sleep settings; edits go to the Settings tab's draft.
 struct MenuBarSettingsCard: View {
     @ObservedObject var model: Model
+    @Binding var draft: SettingsDraft
 
     private var heatHelp: String {
         var s = "Also alerts at once when macOS reports the Mac is hot (it then slows the chip). The alert names the likely culprit, with Kill and Ignore buttons. At most one every 30 minutes."
@@ -459,7 +461,7 @@ struct MenuBarSettingsCard: View {
 
     var body: some View {
         Card(title: "Menu bar", symbol: "menubar.rectangle", tint: Tab.overview.color) {
-            Picker("Beside the icon", selection: $model.menuBarShows) {
+            Picker("Beside the icon", selection: $draft.menuBarShows) {
                 Text("Nothing").tag("none")
                 Text("CPU load").tag("load")
                 Text("Power draw").tag("watts")
@@ -467,26 +469,26 @@ struct MenuBarSettingsCard: View {
             }
             .pickerStyle(.segmented)
             Text("CPU load is the share of the whole Mac. Power draw is in watts. Battery shows the charge, and the time left when unplugged.")
-                .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
         Card(title: "Heat and power alerts", symbol: "thermometer.sun.fill", tint: Theme.heat(90)) {
-            Toggle("Pop up an alert when the Mac runs hot or draws a lot of power", isOn: $model.alertHeat).toggleStyle(.switch)
+            Toggle("Pop up an alert when the Mac runs hot or draws a lot of power", isOn: $draft.alertHeat).toggleStyle(.switch)
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
                     Text("Power draw over")
                     Spacer()
-                    Text("\(Int(model.heatWatts)) W").monospacedDigit().fontWeight(.semibold)
+                    Text("\(Int(draft.heatWatts)) W").monospacedDigit().fontWeight(.semibold)
                 }
-                Slider(value: $model.heatWatts, in: 10...60, step: 5)
-                Stepper("For at least \(Int(model.heatMinutes)) \(model.heatMinutes == 1 ? "minute" : "minutes")", value: $model.heatMinutes, in: 1...30)
+                Slider(value: $draft.heatWatts, in: 10...60, step: 5)
+                Stepper("For at least \(Int(draft.heatMinutes)) \(draft.heatMinutes == 1 ? "minute" : "minutes")", value: $draft.heatMinutes, in: 1...30)
             }
-            .disabled(!model.alertHeat)
-            Text(heatHelp).font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            .disabled(!draft.alertHeat)
+            Text(heatHelp).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
         Card(title: "Sleep blockers", symbol: "moon.zzz.fill", tint: Color(hex: "#6366f1")) {
-            Toggle("Notify when something keeps the Mac awake too long", isOn: $model.alertBlockers).toggleStyle(.switch)
-            Stepper("After \(Int(model.blockerHours)) \(model.blockerHours == 1 ? "hour" : "hours")", value: $model.blockerHours, in: 1...24)
-                .disabled(!model.alertBlockers)
+            Toggle("Notify when something keeps the Mac awake too long", isOn: $draft.alertBlockers).toggleStyle(.switch)
+            Stepper("After \(Int(draft.blockerHours)) \(draft.blockerHours == 1 ? "hour" : "hours")", value: $draft.blockerHours, in: 1...24)
+                .disabled(!draft.alertBlockers)
             Text("Once per hold: a forgotten caffeinate, a stuck download, a video call left open.")
                 .font(.caption2).foregroundStyle(.secondary)
         }

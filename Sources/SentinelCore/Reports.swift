@@ -367,3 +367,14 @@ public struct WeeklyReport: Equatable, Sendable {
         return parts.joined(separator: " ")
     }
 }
+
+/// Red, amber or green for the menu bar icon, from the last minute's machine load.
+public enum LoadRAG: String, Sendable {
+    case green, amber, red
+
+    /// `load` is 100 for every core busy. Something flagged is always red.
+    public static func of(load: Double, flagged: Bool) -> LoadRAG {
+        if flagged || load >= 70 { return .red }
+        return load >= 40 ? .amber : .green
+    }
+}

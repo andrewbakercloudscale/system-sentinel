@@ -152,7 +152,7 @@ struct PowerChart: View {
                 .frame(height: 120)
             }
             Text("The whole Mac's draw, screen included. A MacBook idles at 2 to 5 W; video calls and builds reach 20 to 40 W.")
-                .font(.caption2).foregroundStyle(.tertiary).fixedSize(horizontal: false, vertical: true)
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -179,7 +179,7 @@ private struct EnergyCard: View {
              trailing: AnyView(ChipPicker(options: ["Now", "24 hours", "7 days"], selection: $range, color: Tab.battery.color))) {
             if range == "Now" { now } else { history(hours: range == "7 days" ? 24 * 7 : 24) }
             Text("Watts and watt-hours are estimates: the Mac's measured draw above idle, split by each app's Energy Impact (Activity Monitor's unitless score for CPU, wakeups, graphics and disk). Wakeups are times a second the app interrupts the chip's rest.")
-                .font(.caption2).foregroundStyle(.tertiary).fixedSize(horizontal: false, vertical: true)
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -198,7 +198,7 @@ private struct EnergyCard: View {
                 VStack(alignment: .leading, spacing: 3) {
                     HStack {
                         Text(r.name).font(.callout.weight(.medium)).lineLimit(1)
-                        if r.pids.count > 1 { Text("\(r.pids.count) processes").font(.caption2).foregroundStyle(.tertiary) }
+                        if r.pids.count > 1 { Text("\(r.pids.count) processes").font(.caption2).foregroundStyle(.secondary) }
                         if r.name.contains("Chrome"), ChromeTabs.isRunning { ChromeTabsButton() }
                     }
                     ShareBar(share: share, color: Tab.battery.color)
@@ -315,7 +315,7 @@ private struct SleepBlockersCard: View {
                                 Text("for \(who)\(b.onBehalfOfPID.map { " (pid \($0))" } ?? "")").font(.caption).foregroundStyle(.secondary)
                             }
                         }
-                        Text(detail(b)).font(.caption2).foregroundStyle(.tertiary).lineLimit(1)
+                        Text(detail(b)).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
                     }
                     Spacer()
                     if let since = b.since {
@@ -330,7 +330,7 @@ private struct SleepBlockersCard: View {
             }
             if !model.blockers.isEmpty {
                 Text("Killing caffeinate lets the Mac sleep again; the tool it was keeping awake carries on. Apps (video calls, players, downloads) release their hold when they finish.")
-                    .font(.caption2).foregroundStyle(.tertiary).fixedSize(horizontal: false, vertical: true)
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -353,7 +353,8 @@ private struct HealthCard: View {
         let b = battery
         Card(title: "Battery health", symbol: "heart.fill", tint: Color(hex: "#e11d48")) {
             HStack(spacing: 8) {
-                StatTile(symbol: "battery.100percent", color: healthColor, value: b.health.map { "\(Int($0))%" } ?? "–", label: "of original capacity")
+                StatTile(symbol: "battery.100percent", color: healthColor,
+                         value: (b.appleMaxPercent.map(Double.init) ?? b.health).map { "\(Int($0))%" } ?? "–", label: "maximum capacity")
                 StatTile(symbol: "arrow.triangle.2.circlepath", color: Tab.processes.color,
                          value: b.cycleCount.map { c in b.designCycles.map { "\(c) / \($0)" } ?? "\(c)" } ?? "–", label: "charge cycles")
                 StatTile(symbol: b.condition == "Normal" || b.condition == nil ? "checkmark.seal.fill" : "exclamationmark.triangle.fill",
@@ -361,7 +362,10 @@ private struct HealthCard: View {
                          value: b.condition ?? "Normal", label: "macOS says")
             }
             if let m = b.maxCapacity, let d = b.designCapacity {
-                Text("Holds \(m) mAh of the \(d) mAh it held new.").font(.caption).foregroundStyle(.secondary)
+                Text(b.appleMaxPercent != nil
+                     ? "Holds \(m) mAh of the \(d) mAh it held new. Maximum capacity is the figure System Settings shows (Battery > Battery Health); Apple's calculation runs a few points above the raw charge."
+                     : "Holds \(m) mAh of the \(d) mAh it held new.")
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
             VStack(alignment: .leading, spacing: 4) {
                 ForEach(advice, id: \.self) { a in
@@ -435,12 +439,12 @@ struct CoresCard: View {
                                     .frame(height: max(36 * v / 100, 1))
                             }
                             .frame(height: 36)
-                            Text(eff ? "E" : "P").font(.system(size: 8, weight: .bold)).foregroundStyle(.tertiary)
+                            Text(eff ? "E" : "P").font(.system(size: 8, weight: .bold)).foregroundStyle(.secondary)
                         }
                         .help("\(eff ? "Efficiency" : "Performance") core \(i): \(Int(v))% busy")
                     }
                 }
-                Text(caption(load)).font(.caption2).foregroundStyle(.tertiary).fixedSize(horizontal: false, vertical: true)
+                Text(caption(load)).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     .help("Which app is on which core is not something macOS reports: each app's threads hop between cores many times a second. Background-priority work (Spotlight, Photos, backups, updates) is kept on the E cores; what you are using goes to the P cores. The Processes tab shows which apps are busy.")
             }
         }
@@ -497,7 +501,7 @@ struct BackgroundItemsCard: View {
                     VStack(alignment: .leading, spacing: 2) {
                         HStack(spacing: 6) {
                             Text(item.name).font(.callout.weight(.medium)).lineLimit(1)
-                            Text(item.vendor).font(.caption2).foregroundStyle(.tertiary)
+                            Text(item.vendor).font(.caption2).foregroundStyle(.secondary)
                         }
                         HStack(spacing: 4) {
                             Pill(text: scope(item.scope), color: item.scope == .system ? Theme.heat(80) : Tab.rules.color)
@@ -555,7 +559,7 @@ struct WeeklyCard: View {
                 }
                 ForEach(Array(report.apps.enumerated()), id: \.offset) { i, a in
                     HStack {
-                        Text("\(i + 1).").font(.caption.weight(.semibold)).foregroundStyle(.tertiary).frame(width: 18, alignment: .leading)
+                        Text("\(i + 1).").font(.caption.weight(.semibold)).foregroundStyle(.secondary).frame(width: 18, alignment: .leading)
                         Text(a.name).font(.callout).lineLimit(1)
                         Spacer()
                         Text(String(format: "%.1f core-h", a.coreHours)).font(.caption).monospacedDigit().foregroundStyle(.secondary)

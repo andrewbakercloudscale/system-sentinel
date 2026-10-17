@@ -16,7 +16,7 @@ final class BatteryTests: XCTestCase {
         "Amperage": 0, "InstantAmperage": 0, "Voltage": 13246, "CurrentCapacity": 100, "AppleRawMaxCapacity": 5357,
         "NominalChargeCapacity": 5501, "DesignCapacity": 5760, "CycleCount": 132, "Temperature": 3004,
         "IsCharging": false, "ExternalConnected": false, "FullyCharged": true, "AvgTimeToEmpty": 65535,
-        "BatteryInstalled": true, "PowerTelemetryData": ["SystemLoad": 6924, "BatteryPower": 0],
+        "BatteryInstalled": true, "PermanentFailureStatus": 0, "PowerTelemetryData": ["SystemLoad": 6924, "BatteryPower": 0],
     ]
     let source: [String: Any] = [
         "Power Source State": "Battery Power", "Current Capacity": 100, "Time to Empty": -1, "Is Charging": 0,
@@ -33,7 +33,7 @@ final class BatteryTests: XCTestCase {
         XCTAssertEqual(b.cycleCount, 132)
         XCTAssertEqual(b.designCycles, 1000)
         XCTAssertEqual(b.health!, 5357.0 / 5760 * 100, accuracy: 0.01)
-        XCTAssertEqual(b.condition, "Check Battery")
+        XCTAssertEqual(b.condition, "Normal", "IOPS's \"Check Battery\" was a false alarm on this healthy battery")
         XCTAssertEqual(b.temperature!, 30.04, accuracy: 0.001)
         XCTAssertEqual(b.voltage!, 13.246, accuracy: 0.001)
         // 5357 mAh at 13.2 V is about 71 Wh; at 6.9 W that is about 10 hours.
@@ -65,6 +65,16 @@ final class BatteryTests: XCTestCase {
         XCTAssertNil(b.minutesLeft)
         XCTAssertEqual(b.condition, "Normal")
         XCTAssertEqual(b.adapterWatts, 96)
+    }
+
+    func testAppleHealthFromSystemProfiler() {
+        let json = #"{"SPPowerDataType":[{"_name":"spbattery_information","sppower_battery_health_info":{"sppower_battery_cycle_count":132,"sppower_battery_health":"Good","sppower_battery_health_maximum_capacity":"97%"}}]}"#
+        let h = PowerReader.parseAppleHealth(Data(json.utf8))
+        XCTAssertEqual(h?.condition, "Normal")
+        XCTAssertEqual(h?.maxPercent, 97)
+        let bad = #"{"SPPowerDataType":[{"sppower_battery_health_info":{"sppower_battery_health":"Service Recommended"}}]}"#
+        XCTAssertEqual(PowerReader.parseAppleHealth(Data(bad.utf8))?.condition, "Service Recommended")
+        XCTAssertNil(PowerReader.parseAppleHealth(Data("{}".utf8)))
     }
 
     func testLiveReadDoesNotCrash() {
@@ -151,6 +161,13 @@ final class EnergyTests: XCTestCase {
         XCTAssertEqual(rows[1].power, 20)
         XCTAssertEqual(rows[1].wakeups, 120)
         XCTAssertEqual(rows[1].pids, [1, 3])
+    }
+
+    func testLoadRAG() {
+        XCTAssertEqual(LoadRAG.of(load: 15, flagged: false), .green)
+        XCTAssertEqual(LoadRAG.of(load: 40, flagged: false), .amber)
+        XCTAssertEqual(LoadRAG.of(load: 70, flagged: false), .red)
+        XCTAssertEqual(LoadRAG.of(load: 5, flagged: true), .red, "a flagged process is always red")
     }
 
     func testBatteryMinutes() {

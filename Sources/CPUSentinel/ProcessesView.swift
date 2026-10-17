@@ -57,7 +57,7 @@ struct ProcessesView: View {
                 }
             }
             Text("100% is one full core; a busy process can use several. Averages count idle time, so they show what has been chewing the CPU, not how hot it runs when it does.")
-                .font(.caption2).foregroundStyle(.tertiary).frame(maxWidth: .infinity, alignment: .leading)
+                .font(.caption2).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 

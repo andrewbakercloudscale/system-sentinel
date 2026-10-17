@@ -69,7 +69,7 @@ private struct Hero: View {
         .overlay(alignment: .bottomTrailing) {
             if model.recordedMinutes < 60 {
                 Text("\(Int(model.recordedMinutes)) min recorded so far")
-                    .font(.system(size: 9)).foregroundStyle(.white.opacity(0.6)).padding(6)
+                    .font(.caption2).foregroundStyle(.white.opacity(0.85)).padding(6)
             }
         }
     }
@@ -604,11 +604,11 @@ private struct RelatedRow: View {
                     if s.isRoot { Pill(text: "root", color: Tab.settings.color) }
                 }
                 if let about = related.about {
-                    Text(about).font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    Text(about).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
                 if let parent = related.parent {
                     Label("started by \(parent)", systemImage: "arrow.turn.down.right")
-                        .font(.caption2).foregroundStyle(.tertiary)
+                        .font(.caption2).foregroundStyle(.secondary)
                 }
             }
             Spacer(minLength: 4)

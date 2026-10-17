@@ -83,7 +83,7 @@ struct TrendsView: View {
             TrendChart(d: d, byApp: byApp)
             HeaviestCard(d: d, byApp: byApp)
             Text("Averages count only the time CPU Sentinel was running, so a day it was quit for does not read as idle. 100% in the table is one core; the chart is the whole Mac.")
-                .font(.caption2).foregroundStyle(.tertiary).frame(maxWidth: .infinity, alignment: .leading)
+                .font(.caption2).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
@@ -188,7 +188,7 @@ private struct UsageRow: View {
                 Text(Fmt.pct(row.peak)).font(.caption).monospacedDigit().foregroundStyle(Theme.heat(row.peak))
                 if let h = row.peakHour {
                     Text(Calendar.current.isDateInToday(h) ? "at \(Fmt.time(h))" : h.formatted(.dateTime.weekday(.abbreviated).hour().minute()))
-                        .font(.system(size: 9)).foregroundStyle(.tertiary)
+                        .font(.system(size: 9)).foregroundStyle(.secondary)
                 }
             }
             .frame(width: 76, alignment: .trailing)

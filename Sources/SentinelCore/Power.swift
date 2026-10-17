@@ -31,6 +31,9 @@ public struct BatteryStatus: Equatable, Sendable {
     public var lowPowerMode: Bool
     /// Battery voltage in volts, to turn mAh into watt-hours.
     public var voltage: Double?
+    /// The "Maximum Capacity" percentage System Settings shows. Apple's own figure, which
+    /// runs a few points above the raw `maxCapacity / designCapacity`.
+    public var appleMaxPercent: Int?
 
     /// Energy left in the battery, in watt-hours.
     public var energyLeft: Double? {
@@ -83,8 +86,50 @@ public enum PowerReader {
         let source = powerSource()
         let registry = smartBattery()
         guard source != nil || registry != nil else { return nil }
-        return parse(registry: registry ?? [:], source: source ?? [:],
-                     lowPowerMode: ProcessInfo.processInfo.isLowPowerModeEnabled)
+        var b = parse(registry: registry ?? [:], source: source ?? [:],
+                      lowPowerMode: ProcessInfo.processInfo.isLowPowerModeEnabled)
+        if let h = appleHealth() {
+            b.condition = h.condition ?? b.condition
+            b.appleMaxPercent = h.maxPercent
+        }
+        return b
+    }
+
+    private nonisolated(unsafe) static var healthCache: (at: Date, value: (condition: String?, maxPercent: Int?)?)?
+
+    /// The condition and maximum capacity exactly as System Settings shows them, from
+    /// system_profiler. They change slowly, so read at most every 10 minutes.
+    static func appleHealth() -> (condition: String?, maxPercent: Int?)? {
+        if let c = healthCache, Date().timeIntervalSince(c.at) < 600 { return c.value }
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/sbin/system_profiler")
+        p.arguments = ["SPPowerDataType", "-json"]
+        let pipe = Pipe()
+        p.standardOutput = pipe
+        p.standardError = FileHandle.nullDevice
+        var value: (condition: String?, maxPercent: Int?)?
+        if (try? p.run()) != nil {
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            p.waitUntilExit()
+            value = parseAppleHealth(data)
+        }
+        healthCache = (Date(), value)
+        return value
+    }
+
+    /// Parses `system_profiler SPPowerDataType -json`. "Good" is what Settings calls Normal.
+    public static func parseAppleHealth(_ data: Data) -> (condition: String?, maxPercent: Int?)? {
+        guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let items = root["SPPowerDataType"] as? [[String: Any]] else { return nil }
+        for item in items {
+            guard let h = item["sppower_battery_health_info"] as? [String: Any] else { continue }
+            let raw = h["sppower_battery_health"] as? String
+            let condition = raw.map { $0 == "Good" ? "Normal" : $0 }
+            let max = (h["sppower_battery_health_maximum_capacity"] as? String)
+                .flatMap { Int($0.trimmingCharacters(in: CharacterSet(charactersIn: "% "))) }
+            return (condition, max)
+        }
+        return nil
     }
 
     /// Builds the status from the AppleSmartBattery registry entry and the IOPS power source
@@ -116,7 +161,9 @@ public enum PowerReader {
 
         let temp = int(r, "Temperature").map { Double($0) / 100 }
         let adapter = (r["AdapterDetails"] as? [String: Any]).flatMap { int($0, "Watts") }
-        let condition = (s["BatteryHealth"] as? String).flatMap { $0.isEmpty ? nil : ($0 == "Good" ? "Normal" : $0) }
+        // IOPS's "BatteryHealth" says "Check Battery" on healthy Apple silicon batteries, so it
+        // is not used; the condition comes from system_profiler in `read()`, else this flag.
+        let condition = int(r, "PermanentFailureStatus").map { $0 == 0 ? "Normal" : "Service Recommended" }
 
         return BatteryStatus(
             present: bool(r, "BatteryInstalled") ?? (s[kIOPSIsPresentKey] as? Bool) ?? true,
