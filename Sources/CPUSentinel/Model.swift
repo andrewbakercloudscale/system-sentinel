@@ -79,6 +79,8 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
     }
 
     let sentinel: Sentinel
+    /// The running model, for the app delegate (which SwiftUI creates before the scene's state).
+    static weak var current: Model?
     let cores = Double(ProcessInfo.processInfo.activeProcessorCount)
     private var timer: Timer?
     /// Processes named in a pending notification, so its Kill button acts on the right one.
@@ -134,6 +136,7 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
         memoryHistory = MemoryHistory(fileURL: Model.supportDir.appendingPathComponent("memory-7d.json"), readOnly: Model.snapshotDir != nil)
         healthLog = HealthLog(fileURL: Model.supportDir.appendingPathComponent("battery-health.json"), readOnly: Model.snapshotDir != nil)
         super.init()
+        Model.current = self
         sentinel.onBattery = { [weak self] in MainActor.assumeIsolated { self?.battery?.onBattery ?? false } }
         sentinel.batteryPercent = { [weak self] in MainActor.assumeIsolated { self?.battery?.percent } }
         backgroundItems = BackgroundItems.scan()

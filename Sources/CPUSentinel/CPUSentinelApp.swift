@@ -4,6 +4,7 @@ import SwiftUI
 
 @main
 struct CPUSentinelApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     @StateObject private var model = Model()
 
     var body: some Scene {
@@ -391,6 +392,32 @@ enum Snapshot {
             }
         }
         exit(0)
+    }
+}
+
+/// Opening the app from Finder, Launchpad or Spotlight shows its window: at once when it
+/// was not running, and brought to the front when it was. A launch at login stays in the
+/// menu bar.
+@MainActor
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    private var atLogin = false
+
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        if let e = NSAppleEventManager.shared().currentAppleEvent, e.eventID == kAEOpenApplication,
+           e.paramDescriptor(forKeyword: keyAEPropData)?.enumCodeValue == keyAELaunchedAsLogInItem {
+            atLogin = true
+        }
+    }
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        guard !atLogin, Model.snapshotDir == nil else { return }
+        // The model is created with the menu bar scene; give it a moment.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { if let m = Model.current { PopOut.show(m) } }
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if let m = Model.current { PopOut.show(m) }
+        return true
     }
 }
 

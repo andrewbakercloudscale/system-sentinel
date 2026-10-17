@@ -12,6 +12,63 @@ automatically.
 
 ![The Overview tab: a load gauge, a donut of what is using CPU now, a last-hour chart by app and insights](docs/images/overview-light.png)
 
+## Install
+
+Paste this into Terminal. It downloads the latest release, installs it to Applications,
+clears the quarantine flag (the app is not notarised by Apple) and launches it:
+
+```bash
+cat > ~/install-cpu-sentinel.sh <<'EOF'
+#!/bin/bash
+# Installs (or updates to) the latest CPU Sentinel release in /Applications.
+set -euo pipefail
+REPO="andrewbakercloudscale/cpu-sentinel"
+APP="${CPU_SENTINEL_APP:-/Applications/CPU Sentinel.app}"
+TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP"' EXIT
+
+echo "== Downloading the latest release"
+if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
+  gh release download --repo "$REPO" --pattern 'CPU-Sentinel-*.zip' --dir "$TMP"
+else
+  URL="$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" \
+    | grep -o '"browser_download_url": *"[^"]*\.zip"' | head -1 | cut -d'"' -f4 || true)"
+  if [ -z "$URL" ]; then
+    echo "Could not reach the release. If the repository is private, install GitHub CLI"
+    echo "(brew install gh), run: gh auth login, then run this script again."
+    exit 1
+  fi
+  curl -fL --progress-bar -o "$TMP/CPU-Sentinel.zip" "$URL"
+fi
+ZIP="$(ls "$TMP"/*.zip | head -1)"
+
+echo "== Installing to $APP"
+pkill -x CPUSentinel 2>/dev/null || true
+ditto -x -k "$ZIP" "$TMP/unzipped"
+rm -rf "$APP"
+ditto "$TMP/unzipped/CPU Sentinel.app" "$APP"
+xattr -cr "$APP"
+
+if [ -z "${CPU_SENTINEL_NO_OPEN:-}" ]; then
+  echo "== Launching"
+  open "$APP"
+fi
+echo "Done: $(defaults read "$APP/Contents/Info" CFBundleShortVersionString). Look for the red chip in the menu bar."
+EOF
+chmod +x ~/install-cpu-sentinel.sh && ~/install-cpu-sentinel.sh
+```
+
+Run `~/install-cpu-sentinel.sh` again any time to update. You need macOS 14 or later.
+Look for the red chip ![menu bar icon](docs/images/menubar-normal.png) in the menu bar.
+
+**Build from source instead** (needs Xcode or its command line tools, `xcode-select --install`):
+
+```bash
+git clone https://github.com/andrewbakercloudscale/cpu-sentinel.git
+cd cpu-sentinel
+bash scripts/build-app.sh      # runs the tests, builds, installs to ~/Applications, launches
+```
+
 ## Why
 
 On a Mac that feels slow, Activity Monitor gives you a list of numbers. It doesn't tell you:
@@ -76,25 +133,6 @@ Every screen has its own dark design.
 
 ![Trends tab in dark mode](docs/images/trends-dark.png)
 
-## Install
-
-```bash
-git clone https://github.com/andrewbakercloudscale/cpu-sentinel.git
-cd cpu-sentinel
-bash scripts/build-app.sh      # runs the tests, builds, installs to ~/Applications, launches
-```
-
-You need macOS 14 or later, and Xcode or its command line tools (`xcode-select --install`).
-Look for the red chip ![menu bar icon](docs/images/menubar-normal.png) in the menu bar.
-
-A prebuilt app is attached to each [release](https://github.com/andrewbakercloudscale/cpu-sentinel/releases).
-It isn't notarised by Apple, so after moving it to Applications, run this once or macOS
-won't open it:
-
-```bash
-xattr -cr "/Applications/CPU Sentinel.app"
-```
-
 ## Documentation
 
 - **[User guide](docs/guide.md):** every screen, reading the charts, insights, killing
@@ -120,7 +158,7 @@ describing the process and your Mac. [What's in it](docs/guide.md#explain-with-c
 ## Development
 
 ```bash
-swift test                     # 77 tests, including a real CPU burner that must be flagged and killed
+swift test                     # 91 tests, including a real CPU burner that must be flagged and killed
 swift build                    # debug build
 bash scripts/build-app.sh      # test, build, bundle, install, launch
 bash scripts/release.sh        # zip for a GitHub release in dist/; signs and notarises

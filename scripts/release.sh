@@ -30,6 +30,7 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" dist
 cp "$BIN" "$APP/Contents/MacOS/CPUSentinel"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
+cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 
 if [[ -n "${DEVELOPER_ID:-}" ]]; then
     echo "== sign: $DEVELOPER_ID"

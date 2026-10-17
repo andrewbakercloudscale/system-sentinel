@@ -6,6 +6,10 @@
 	<string>CPU Sentinel</string>
 	<key>CFBundleExecutable</key>
 	<string>CPUSentinel</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
+	<key>CFBundleIconName</key>
+	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
 	<string>consulting.cloudscale.cpusentinel</string>
 	<key>CFBundleName</key>
