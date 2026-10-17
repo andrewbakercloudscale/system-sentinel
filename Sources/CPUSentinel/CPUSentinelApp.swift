@@ -116,6 +116,7 @@ struct MenuView: View {
         case .overview: OverviewView(model: model)
         case .processes: ProcessesView(model: model)
         case .trends: TrendsView(model: model)
+        case .memory: MemoryView(model: model)
         case .battery: BatteryView(model: model)
         case .events: EventsView(model: model)
         case .rules: RulesView(model: model)
@@ -144,6 +145,7 @@ struct MenuView: View {
                 model.sentinel.dailyUsage.save()
                 model.sentinel.recentUsage.save()
                 model.powerHistory.save()
+                model.memoryHistory.save()
                 model.energyUsage.save()
                 NSApplication.shared.terminate(nil)
             }

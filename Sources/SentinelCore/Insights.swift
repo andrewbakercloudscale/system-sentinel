@@ -179,7 +179,7 @@ public struct Insight: Equatable, Sendable, Identifiable {
     /// An SF Symbol name.
     public let symbol: String
     public let title: String
-    public let detail: String
+    public var detail: String
     /// What the process at the heart of it is, for insights about one process.
     public var about: String?
     /// The longer explanation shown when the insight is expanded.

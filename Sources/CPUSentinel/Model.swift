@@ -33,6 +33,21 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
     @Published var energy: [EnergyRow] = []
     @Published var backgroundItems: [BackgroundItem] = []
     @Published var memory: MemoryStatus?
+    /// Memory by app, largest first, refreshed every tick.
+    @Published var memoryApps: [MemoryApp] = []
+    /// Findings from the memory timeline, for the Memory tab.
+    @Published var memoryInsights: [Insight] = []
+    let memoryHistory: MemoryHistory
+
+    struct MemoryApp: Identifiable {
+        let key: String
+        let name: String
+        let bytes: UInt64
+        let pids: [Int32]
+        /// The largest process, for the icon and the Quit button.
+        let sample: ProcessSample
+        var id: String { key }
+    }
     /// Graphics chip busy share, 0 to 100.
     @Published var gpu: Double?
     /// Sleep over the last 24 hours, from the power log; refreshed every 15 minutes.
@@ -116,6 +131,7 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
         // Energy is read every 30 s, so a tick may stand for up to 45 s.
         energyUsage = DailyUsage(fileURL: Model.supportDir.appendingPathComponent("energy-7d.json"), maxStep: 45,
                                  saveEvery: 300, readOnly: Model.snapshotDir != nil)
+        memoryHistory = MemoryHistory(fileURL: Model.supportDir.appendingPathComponent("memory-7d.json"), readOnly: Model.snapshotDir != nil)
         healthLog = HealthLog(fileURL: Model.supportDir.appendingPathComponent("battery-health.json"), readOnly: Model.snapshotDir != nil)
         super.init()
         sentinel.onBattery = { [weak self] in MainActor.assumeIsolated { self?.battery?.onBattery ?? false } }
@@ -159,6 +175,7 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
             readPower()
             thermal = ProcessInfo.processInfo.thermalState
             insights = Insights.generate(insightInput())
+                + memoryInsights.filter { $0.id == "mem-thrash" || $0.id.hasPrefix("mem-grow-") }
         } catch {
             lastError = "Could not read processes: \(error)"
         }
@@ -175,6 +192,7 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
         }
         coreLoad = coreSampler.sample() ?? coreLoad
         memory = MemoryStatus.read()
+        readMemory(now)
         gpu = GPUReader.utilization()
         checkHeat(now)
         checkWeeklyReport(now)
@@ -220,6 +238,42 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
         energyUsage.record(samples.compactMap { e in
             paths[e.pid].map { ProcessSample(pid: e.pid, uid: $0.uid, cpu: e.power, path: $0.path) }
         }, at: now)
+    }
+
+    /// Memory by app (footprints where macOS gives them), the timeline and its findings.
+    private func readMemory(_ now: Date) {
+        guard let m = memory else { return }
+        var groups: [String: (bytes: UInt64, pids: [Int32], top: ProcessSample, topBytes: UInt64)] = [:]
+        for s in sentinel.latest where s.rssKB >= 10_240 {
+            let b = MemoryStatus.footprint(s.pid) ?? UInt64(s.rssKB) * 1024
+            let k = Model.appKey(s.path)
+            if var g = groups[k] {
+                g.bytes += b
+                g.pids.append(s.pid)
+                if b > g.topBytes { g.top = s; g.topBytes = b }
+                groups[k] = g
+            } else {
+                groups[k] = (b, [s.pid], s, b)
+            }
+        }
+        memoryApps = groups.map { MemoryApp(key: $0.key, name: Model.appName($0.key), bytes: $0.value.bytes, pids: $0.value.pids, sample: $0.value.top) }
+            .sorted { $0.bytes > $1.bytes }
+        memoryHistory.record(m, apps: memoryApps.prefix(MemoryHistory.appsKept).map { .init(key: $0.key, name: $0.name, bytes: $0.bytes) }, at: now)
+        var found = MemoryAnalysis.insights(points: memoryHistory.since(now.addingTimeInterval(-86_400)), current: m,
+                                            uptime: MemoryStatus.uptime(at: now), at: now)
+        // Growing apps get a Quit button for the app that is climbing.
+        for i in found.indices where found[i].id.hasPrefix("mem-grow-") {
+            let key = String(found[i].id.dropFirst("mem-grow-".count))
+            if let a = memoryApps.first(where: { $0.key == key }), a.sample.pid != getpid(), Safety.canKillManually(a.sample) {
+                found[i].fixes = [.quit(pids: a.pids, name: a.name)]
+            }
+        }
+        if let a = memoryApps.first(where: { $0.sample.pid != getpid() && Safety.canKillManually($0.sample) }) {
+            for i in found.indices where ["mem-thrash", "mem-swapgrow", "mem-pressure24"].contains(found[i].id) {
+                found[i].fixes = [.quit(pids: a.pids, name: a.name)]
+            }
+        }
+        memoryInsights = found
     }
 
     /// Energy Impact by app over the last `hours`.

@@ -454,24 +454,28 @@ struct FlowLayout: Layout {
 }
 
 /// The plain-English findings, most urgent first.
-private struct InsightList: View {
+struct InsightList: View {
     @ObservedObject var model: Model
+    /// Show these instead of the Overview's list.
+    var only: [Insight]?
+    var title = "Insights"
+    private var items: [Insight] { only ?? model.insights }
     /// Which insights are open. Kept by id, since the list is rebuilt every 5 seconds.
     @State private var open: Set<String> = []
     /// Snapshots open the first `--expand` insights (all by default), to review the full text.
     private func expandAll(_ i: Insight) -> Bool {
         guard Model.snapshotDir != nil else { return false }
-        return (model.insights.firstIndex { $0.id == i.id } ?? 0) < Model.snapshotExpand
+        return (items.firstIndex { $0.id == i.id } ?? 0) < Model.snapshotExpand
     }
 
     var body: some View {
-        Card(title: "Insights", symbol: "sparkles", tint: Tab.trends.color) {
-            if model.insights.isEmpty {
+        Card(title: title, symbol: "sparkles", tint: Tab.trends.color) {
+            if items.isEmpty {
                 Text("Nothing to report yet. Insights appear as CPU Sentinel learns this Mac's patterns.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             VStack(spacing: 8) {
-                ForEach(model.insights) { i in
+                ForEach(items) { i in
                     InsightCard(model: model, insight: i, expanded: Binding(
                         get: { expandAll(i) || open.contains(i.id) },
                         set: { if $0 { open.insert(i.id) } else { open.remove(i.id) } }))

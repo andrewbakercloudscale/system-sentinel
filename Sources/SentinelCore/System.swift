@@ -36,6 +36,17 @@ public struct MemoryStatus: Equatable, Sendable {
     public var compressed: UInt64
     public var swapUsed: UInt64
     public var swapTotal: UInt64
+    /// Activity Monitor's breakdown, in bytes: app memory, wired (the kernel's own, never
+    /// moved), cached files macOS can drop at once, and truly free.
+    public var app: UInt64 = 0
+    public var wired: UInt64 = 0
+    public var cached: UInt64 = 0
+    public var free: UInt64 = 0
+    /// What the compressed memory would take uncompressed.
+    public var compressedOriginal: UInt64 = 0
+    /// Bytes moved to and from the swap file since the Mac started (running counters).
+    public var swapIns: UInt64 = 0
+    public var swapOuts: UInt64 = 0
 
     public init(pressure: Pressure, total: UInt64, used: UInt64, compressed: UInt64, swapUsed: UInt64, swapTotal: UInt64) {
         self.pressure = pressure
@@ -66,9 +77,36 @@ public struct MemoryStatus: Equatable, Sendable {
         let app = UInt64(stats.internal_page_count) - min(UInt64(stats.purgeable_count), UInt64(stats.internal_page_count))
         let wired = UInt64(stats.wire_count)
         let compressed = UInt64(stats.compressor_page_count)
-        return MemoryStatus(pressure: Pressure(level: Int(level)), total: ProcessInfo.processInfo.physicalMemory,
-                            used: (app + wired + compressed) * page, compressed: compressed * page,
-                            swapUsed: swap.xsu_used, swapTotal: swap.xsu_total)
+        var m = MemoryStatus(pressure: Pressure(level: Int(level)), total: ProcessInfo.processInfo.physicalMemory,
+                             used: (app + wired + compressed) * page, compressed: compressed * page,
+                             swapUsed: swap.xsu_used, swapTotal: swap.xsu_total)
+        m.app = app * page
+        m.wired = wired * page
+        m.cached = (UInt64(stats.external_page_count) + UInt64(stats.purgeable_count)) * page
+        m.free = UInt64(stats.free_count) * page
+        m.compressedOriginal = UInt64(stats.total_uncompressed_pages_in_compressor) * page
+        m.swapIns = UInt64(stats.swapins) * page
+        m.swapOuts = UInt64(stats.swapouts) * page
+        return m
+    }
+
+    /// Seconds since the Mac started. Swap only empties on a restart.
+    public static func uptime(at now: Date = Date()) -> TimeInterval? {
+        var tv = timeval()
+        var size = MemoryLayout<timeval>.size
+        guard sysctlbyname("kern.boottime", &tv, &size, nil, 0) == 0, tv.tv_sec > 0 else { return nil }
+        return now.timeIntervalSince1970 - Double(tv.tv_sec)
+    }
+
+    /// A process's memory as Activity Monitor counts it (its footprint), which unlike the
+    /// resident size does not count shared libraries in every process. nil for processes
+    /// of other users, which macOS will not describe.
+    public static func footprint(_ pid: Int32) -> UInt64? {
+        var info = rusage_info_v2()
+        let r = withUnsafeMutablePointer(to: &info) {
+            $0.withMemoryRebound(to: rusage_info_t?.self, capacity: 1) { proc_pid_rusage(pid, RUSAGE_INFO_V2, $0) }
+        }
+        return r == 0 ? info.ri_phys_footprint : nil
     }
 }
 
