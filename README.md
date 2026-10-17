@@ -24,7 +24,7 @@ cat > ~/install-system-sentinel.sh <<'EOF'
 #!/bin/bash
 # Installs (or updates to) the latest System Sentinel release in /Applications.
 set -euo pipefail
-REPO="andrewbakercloudscale/cpu-sentinel"
+REPO="andrewbakercloudscale/system-sentinel"
 APP="${SYSTEM_SENTINEL_APP:-/Applications/System Sentinel.app}"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
@@ -68,8 +68,8 @@ Look for the red chip ![menu bar icon](docs/images/menubar-normal.png) in the me
 **Build from source instead** (needs Xcode or its command line tools, `xcode-select --install`):
 
 ```bash
-git clone https://github.com/andrewbakercloudscale/cpu-sentinel.git
-cd cpu-sentinel
+git clone https://github.com/andrewbakercloudscale/system-sentinel.git
+cd system-sentinel
 bash scripts/build-app.sh      # runs the tests, builds, installs to ~/Applications, launches
 ```
 
