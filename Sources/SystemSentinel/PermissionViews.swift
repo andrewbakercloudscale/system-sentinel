@@ -76,7 +76,12 @@ final class Permissions: ObservableObject {
 
     /// Asks for everything that can be asked for in place, then opens Full Disk Access.
     func requestAll() {
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
+        // Once turned down, macOS never asks again: only System Settings can turn it back on.
+        switch items.first(where: { $0.id == "notifications" })?.state {
+        case .denied: Permissions.showNotificationSettings()
+        case .granted: break
+        default: askNotifications()
+        }
         let ids = items.filter { $0.id.contains(".") && $0.state != .granted }.map(\.id)
         Task.detached {
             for id in ids { await Permissions.askAutomation(id) }
@@ -91,13 +96,7 @@ final class Permissions: ObservableObject {
         switch item.id {
         case "fda": openFullDiskAccess()
         case "notifications":
-            if item.state == .denied {
-                NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension")!)
-            } else {
-                UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in
-                    Task { @MainActor in self.refresh() }
-                }
-            }
+            if item.state == .denied { Permissions.showNotificationSettings() } else { askNotifications() }
         default:
             if item.state == .denied {
                 NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation")!)
@@ -116,7 +115,27 @@ final class Permissions: ObservableObject {
     /// Opens System Settings at the Full Disk Access list, in front. System Sentinel is already
     /// in that list (it looked for its access at launch), so turning on its switch is all it takes.
     static func showFullDiskAccess() {
-        NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles")!)
+        showSettings("x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles")
+    }
+
+    /// System Sentinel's own page in Notifications settings.
+    static func showNotificationSettings() {
+        let id = Bundle.main.bundleIdentifier ?? "consulting.cloudscale.systemsentinel"
+        showSettings("x-apple.systempreferences:com.apple.Notifications-Settings.extension?id=\(id)")
+    }
+
+    /// Asks macOS; if it will not show its prompt (turned down before), opens the settings.
+    func askNotifications() {
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { ok, _ in
+            Task { @MainActor in
+                self.refresh()
+                if !ok { Permissions.showNotificationSettings() }
+            }
+        }
+    }
+
+    static func showSettings(_ url: String) {
+        NSWorkspace.shared.open(URL(string: url)!)
         // Opening a URL leaves System Settings behind this app's window; bring it forward.
         for delay in [0.5, 1.5] {
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
