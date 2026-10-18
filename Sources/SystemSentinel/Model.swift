@@ -73,6 +73,8 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
     /// What recent kills and quits changed, newest first.
     @Published var impacts: [Impact] = []
     let healthLog: HealthLog
+    let storage: StorageStore
+    let permissions = Permissions()
     private let ioTracker = IOTracker()
     private var lastSleepRead: Date?
     private var typicalCache: (at: Date, values: [String: Double])?
@@ -122,6 +124,19 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
     /// The version already announced in a notification, so each one is announced once.
     @AppStorage("notifiedUpdate") var notifiedUpdate = ""
     @Published var update: Updates.Release?
+    /// Resource alarms: each on/off with its limit, set in Settings.
+    @AppStorage("alarmCPU") var alarmCPU = true
+    @AppStorage("alarmCPUPercent") var alarmCPUPercent: Double = 85
+    @AppStorage("alarmCPUMinutes") var alarmCPUMinutes: Double = 10
+    @AppStorage("alarmSwap") var alarmSwap = true
+    @AppStorage("alarmSwapGB") var alarmSwapGB: Double = 8
+    @AppStorage("alarmPressure") var alarmPressure = true
+    @AppStorage("alarmPressureMinutes") var alarmPressureMinutes: Double = 5
+    @AppStorage("alarmDisk") var alarmDisk = true
+    @AppStorage("alarmDiskGB") var alarmDiskGB: Double = 20
+    var alarmWatches: [ResourceAlarm: AlarmWatch] = [:]
+    /// The alarms that went off, newest first.
+    @Published var alarmLog: [(alarm: ResourceAlarm, at: Date, text: String)] = []
     @Published var updateState: UpdateState = .idle
     var updateTimer: Timer?
 
@@ -160,8 +175,10 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
         energyUsage.dropOutliers(above: EnergySampler.maxImpact)
         memoryHistory = MemoryHistory(fileURL: Model.supportDir.appendingPathComponent("memory-7d.json"), readOnly: Model.snapshotDir != nil)
         healthLog = HealthLog(fileURL: Model.supportDir.appendingPathComponent("battery-health.json"), readOnly: Model.snapshotDir != nil)
+        storage = StorageStore(supportDir: Model.supportDir, readOnly: Model.snapshotDir != nil)
         super.init()
         Model.current = self
+        storage.toast = { [weak self] in self?.showToast($0) }
         sentinel.onBattery = { [weak self] in MainActor.assumeIsolated { self?.battery?.onBattery ?? false } }
         sentinel.batteryPercent = { [weak self] in MainActor.assumeIsolated { self?.battery?.percent } }
         backgroundItems = BackgroundItems.scan()
@@ -205,7 +222,8 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
             readPower()
             thermal = ProcessInfo.processInfo.thermalState
             insights = (Insights.generate(insightInput())
-                + memoryInsights.filter { $0.id == "mem-thrash" || $0.id.hasPrefix("mem-grow-") })
+                + memoryInsights.filter { $0.id == "mem-thrash" || $0.id.hasPrefix("mem-grow-") }
+                + storage.insights.filter { $0.tone >= .warning })
                 .map { $0.id == "memory" ? explainQuit($0) : $0 }
         } catch {
             lastError = "Could not read processes: \(error)"
@@ -227,6 +245,7 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
         readMemory(now)
         gpu = GPUReader.utilization()
         checkHeat(now)
+        checkAlarms(now)
         checkWeeklyReport(now)
         if lastSleepRead.map({ now.timeIntervalSince($0) >= 900 }) ?? true {
             lastSleepRead = now
@@ -1098,7 +1117,7 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
         let action = response.actionIdentifier
         Task { @MainActor in
             defer { done() }
-            if id.hasPrefix("update-") { PopOut.show(self); return }
+            if id.hasPrefix("update-") || id.hasPrefix("alarm-") { PopOut.show(self); return }
             guard let s = self.pending.removeValue(forKey: id) else { return }
             switch action {
             case "kill": self.kill(s)

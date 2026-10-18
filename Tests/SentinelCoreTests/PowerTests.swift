@@ -163,6 +163,26 @@ final class EnergyTests: XCTestCase {
         XCTAssertEqual(rows[1].pids, [1, 3])
     }
 
+    func testHealthRAGTakesTheWorstRisk() {
+        var s = HealthRAG.Signals()
+        XCTAssertEqual(HealthRAG.of(s).rag, .green)
+        s.load = 10
+        s.disk = 1
+        s.diskFree = 20 << 30
+        XCTAssertEqual(HealthRAG.of(s).rag, .amber)
+        XCTAssertEqual(HealthRAG.of(s).reasons.first?.symbol, "internaldrive")
+        s.pressure = 2
+        let h = HealthRAG.of(s)
+        XCTAssertEqual(h.rag, .red)
+        XCTAssertEqual(h.reasons.map(\.rag), [.red, .amber], "red first")
+        s = HealthRAG.Signals()
+        s.onBattery = true
+        s.battery = 8
+        XCTAssertEqual(HealthRAG.of(s).rag, .red)
+        s.onBattery = false
+        XCTAssertEqual(HealthRAG.of(s).rag, .green, "low battery on the charger is fine")
+    }
+
     func testLoadRAG() {
         XCTAssertEqual(LoadRAG.of(load: 15, flagged: false), .green)
         XCTAssertEqual(LoadRAG.of(load: 40, flagged: false), .amber)

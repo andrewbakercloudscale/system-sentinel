@@ -1,4 +1,5 @@
 import Foundation
+import Security
 
 /// Finds newer releases on GitHub. The repository is private, so the GitHub CLI (`gh`, signed
 /// in) is tried first; plain HTTPS works once the repository is public.
@@ -24,14 +25,47 @@ public enum Updates {
     /// Parses `GET /repos/{repo}/releases/latest`.
     public static func parse(_ data: Data) -> Release? {
         guard let o = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let tag = o["tag_name"] as? String else { return nil }
+              let tag = o["tag_name"] as? String, isVersionTag(tag) else { return nil }
         let assets = o["assets"] as? [[String: Any]] ?? []
         let zip = assets.first { ($0["name"] as? String)?.hasSuffix(".zip") == true }
-            .flatMap { $0["browser_download_url"] as? String }.flatMap(URL.init(string:))
+            .flatMap { $0["browser_download_url"] as? String }.flatMap(gitHubURL)
         let date = (o["published_at"] as? String).flatMap { ISO8601DateFormatter().date(from: $0) }
         return Release(version: tag.hasPrefix("v") ? String(tag.dropFirst()) : tag, tag: tag,
-                       notes: o["body"] as? String ?? "", page: (o["html_url"] as? String).flatMap(URL.init(string:)),
+                       notes: o["body"] as? String ?? "", page: (o["html_url"] as? String).flatMap(gitHubURL),
                        zip: zip, published: date)
+    }
+
+    /// "v0.7.1": the tag ends up in a folder name and a command line, so nothing else passes.
+    public static func isVersionTag(_ t: String) -> Bool {
+        t.range(of: #"^v?[0-9]{1,4}(\.[0-9]{1,4}){1,3}$"#, options: .regularExpression) != nil
+    }
+
+    /// Only https links on GitHub are opened or downloaded.
+    static func gitHubURL(_ s: String) -> URL? {
+        guard let u = URL(string: s), u.scheme == "https", let host = u.host?.lowercased(),
+              host == "github.com" || host.hasSuffix(".github.com") || host.hasSuffix(".githubusercontent.com") else { return nil }
+        return u
+    }
+
+    /// Checks a downloaded app before it replaces this one: valid signature from the same
+    /// signer as the running app (its designated requirement), same bundle id, the version
+    /// the release says. Returns why it was refused, or nil when it is fine.
+    public static func verify(_ app: URL, version: String, bundleID: String) -> String? {
+        guard let info = NSDictionary(contentsOf: app.appendingPathComponent("Contents/Info.plist")) else { return "The download has no Info.plist." }
+        guard info["CFBundleIdentifier"] as? String == bundleID else { return "The download is a different app." }
+        guard info["CFBundleShortVersionString"] as? String == version else { return "The download's version does not match the release." }
+        var me: SecCode?, mine: SecStaticCode?, req: SecRequirement?, theirs: SecStaticCode?
+        guard SecCodeCopySelf([], &me) == errSecSuccess, let me,
+              SecCodeCopyStaticCode(me, [], &mine) == errSecSuccess, let mine,
+              SecCodeCopyDesignatedRequirement(mine, [], &req) == errSecSuccess, let req,
+              SecStaticCodeCreateWithPath(app as CFURL, [], &theirs) == errSecSuccess, let theirs else {
+            return "The signatures could not be read."
+        }
+        let flags = SecCSFlags(rawValue: kSecCSCheckAllArchitectures | kSecCSStrictValidate | kSecCSCheckNestedCode)
+        guard SecStaticCodeCheckValidity(theirs, flags, req) == errSecSuccess else {
+            return "The download is not signed by the same developer as this copy, so it was not installed."
+        }
+        return nil
     }
 
     /// True when `a` is a later version than `b`: "0.10.0" is newer than "0.9.3".
@@ -77,7 +111,7 @@ public enum Updates {
             let r = run(gh, ["api", "repos/\(repo)/releases/latest"])
             if r.status == 0, let rel = parse(r.out) { return .success(rel) }
         }
-        let r = run("/usr/bin/curl", ["-fsSL", "--max-time", "15", "https://api.github.com/repos/\(repo)/releases/latest"])
+        let r = run("/usr/bin/curl", ["-fsSL", "--proto", "=https", "--max-time", "15", "https://api.github.com/repos/\(repo)/releases/latest"])
         if r.status == 0, let rel = parse(r.out) { return .success(rel) }
         return .failure(.message(gh == nil
             ? "Could not reach GitHub. The repository is private: install GitHub CLI (brew install gh) and run gh auth login."
@@ -86,14 +120,15 @@ public enum Updates {
 
     /// Downloads the release zip and unpacks it; returns the .app inside.
     public static func download(_ rel: Release) -> Result<URL, CheckError> {
-        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("system-sentinel-\(rel.version)-\(UUID().uuidString.prefix(6))")
-        try? FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        guard isVersionTag(rel.tag) else { return .failure(.message("The release tag is not a version.")) }
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("system-sentinel-update-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         var ok = false
         if let gh {
-            ok = run(gh, ["release", "download", rel.tag, "--repo", repo, "--pattern", "*.zip", "--dir", tmp.path]).status == 0
+            ok = run(gh, ["release", "download", "--", rel.tag, "--repo", repo, "--pattern", "*.zip", "--dir", tmp.path]).status == 0
         }
         if !ok, let z = rel.zip {
-            ok = run("/usr/bin/curl", ["-fsSL", "--max-time", "120", "-o", tmp.appendingPathComponent("app.zip").path, z.absoluteString]).status == 0
+            ok = run("/usr/bin/curl", ["-fsSL", "--proto", "=https", "--max-time", "120", "-o", tmp.appendingPathComponent("app.zip").path, z.absoluteString]).status == 0
         }
         guard ok, let zip = (try? FileManager.default.contentsOfDirectory(atPath: tmp.path))?.first(where: { $0.hasSuffix(".zip") }) else {
             return .failure(.message("The download failed. Run gh auth login in Terminal, or download it from the release page."))
@@ -106,15 +141,19 @@ public enum Updates {
         return .success(out.appendingPathComponent(app))
     }
 
-    /// The script that waits for this app to quit, swaps in the new copy and opens it.
+    /// The script that waits for this app to quit, swaps in the new copy and opens it. The
+    /// new copy is staged next to the old one first, so a failed copy leaves the old app.
     public static func swapScript(pid: Int32, newApp: String, installedAt: String) -> String {
         let q = { (s: String) in "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'" }
+        let staged = installedAt + ".update", old = installedAt + ".previous"
         return """
         #!/bin/bash
+        set -euo pipefail
         while kill -0 \(pid) 2>/dev/null; do sleep 0.2; done
-        rm -rf \(q(installedAt))
-        /usr/bin/ditto \(q(newApp)) \(q(installedAt))
-        /usr/bin/xattr -cr \(q(installedAt))
+        rm -rf \(q(staged)) \(q(old))
+        /usr/bin/ditto \(q(newApp)) \(q(staged))
+        mv \(q(installedAt)) \(q(old))
+        if mv \(q(staged)) \(q(installedAt)); then rm -rf \(q(old)); else mv \(q(old)) \(q(installedAt)); fi
         /usr/bin/open \(q(installedAt))
         """
     }

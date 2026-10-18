@@ -45,7 +45,8 @@ enum ChromeTabs {
         case .success(let text):
             let tabs = text.split(separator: "\n").compactMap { line -> ChromeTab? in
                 let f = line.split(separator: "\t", omittingEmptySubsequences: false).map(String.init)
-                guard f.count >= 5 else { return nil }
+                // Ids go back into AppleScript source, so only plain numbers are accepted.
+                guard f.count >= 5, Int(f[0]) != nil, Int(f[1]) != nil else { return nil }
                 return ChromeTab(windowID: f[0], tabID: f[1], title: f[3].isEmpty ? f[4] : f[3], url: f[4], active: f[2] == "true")
             }
             return .success(tabs)

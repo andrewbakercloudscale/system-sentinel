@@ -144,7 +144,7 @@ struct SymbolTile: View {
 }
 
 enum Tab: Int, CaseIterable, Identifiable {
-    case overview, processes, trends, memory, battery, events, rules, settings
+    case overview, processes, trends, memory, storage, battery, events, rules, settings
     var id: Int { rawValue }
 
     var title: String {
@@ -153,6 +153,7 @@ enum Tab: Int, CaseIterable, Identifiable {
         case .processes: return "Processes"
         case .trends: return "Trends"
         case .memory: return "Memory"
+        case .storage: return "Storage"
         case .battery: return "Energy"
         case .events: return "Events"
         case .rules: return "Rules"
@@ -166,6 +167,7 @@ enum Tab: Int, CaseIterable, Identifiable {
         case .processes: return "list.bullet.rectangle.fill"
         case .trends: return "chart.bar.xaxis"
         case .memory: return "memorychip.fill"
+        case .storage: return "internaldrive.fill"
         case .battery: return "bolt.batteryblock.fill"
         case .events: return "bell.badge.fill"
         case .rules: return "slider.horizontal.3"
@@ -179,6 +181,7 @@ enum Tab: Int, CaseIterable, Identifiable {
         case .processes: return Color(light: "#2563eb", dark: "#60a5fa")
         case .trends: return Color(light: "#9333ea", dark: "#c084fc")
         case .memory: return Color(light: "#0891b2", dark: "#22d3ee")
+        case .storage: return Color(light: "#b45309", dark: "#fbbf24")
         case .battery: return Color(light: "#16a34a", dark: "#4ade80")
         case .events: return Color(light: "#ea580c", dark: "#fb923c")
         case .rules: return Color(light: "#0d9488", dark: "#2dd4bf")

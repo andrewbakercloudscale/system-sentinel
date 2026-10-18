@@ -25,8 +25,16 @@
 	<key>LSUIElement</key>
 	<true/>
 	<key>NSAppleEventsUsageDescription</key>
-	<string>System Sentinel opens a Terminal sudo shell and lists and closes Chrome tabs you choose.</string>
+	<string>System Sentinel empties the Trash through Finder, opens a Terminal sudo shell for protected processes, and lists and closes Chrome tabs you choose.</string>
+	<key>NSDesktopFolderUsageDescription</key>
+	<string>System Sentinel measures folder sizes to show where disk space goes and to offer cleanups. Nothing leaves your Mac.</string>
+	<key>NSDocumentsFolderUsageDescription</key>
+	<string>System Sentinel measures folder sizes to show where disk space goes and to offer cleanups. Nothing leaves your Mac.</string>
+	<key>NSDownloadsFolderUsageDescription</key>
+	<string>System Sentinel measures folder sizes to show where disk space goes and to offer cleanups. Nothing leaves your Mac.</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>CloudScale Consulting</string>
+	<key>NSRemovableVolumesUsageDescription</key>
+	<string>System Sentinel measures folder sizes to show where disk space goes and to offer cleanups. Nothing leaves your Mac.</string>
 </dict>
 </plist>

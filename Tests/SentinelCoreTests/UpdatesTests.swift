@@ -17,20 +17,38 @@ final class UpdatesTests: XCTestCase {
          "published_at": "2026-10-18T09:00:00Z",
          "body": "## New in 0.7.1\\n\\n- **Updates**: checks for new versions.\\n- Fixes `xattr`.\\n\\n## Install\\n\\n- not this",
          "assets": [{"name": "notes.txt", "browser_download_url": "https://e/n.txt"},
-                    {"name": "System-Sentinel-0.7.1.zip", "browser_download_url": "https://e/s.zip"}]}
+                    {"name": "System-Sentinel-0.7.1.zip", "browser_download_url": "https://github.com/x/y/releases/download/v0.7.1/s.zip"}]}
         """
         let r = Updates.parse(Data(json.utf8))
         XCTAssertEqual(r?.version, "0.7.1")
         XCTAssertEqual(r?.tag, "v0.7.1")
-        XCTAssertEqual(r?.zip?.absoluteString, "https://e/s.zip")
+        XCTAssertEqual(r?.zip?.lastPathComponent, "s.zip")
         XCTAssertNotNil(r?.published)
         XCTAssertEqual(Updates.highlights(r?.notes ?? ""), ["Updates: checks for new versions.", "Fixes xattr."])
         XCTAssertNil(Updates.parse(Data("{\"message\": \"Not Found\"}".utf8)))
+        XCTAssertNil(Updates.parse(Data(#"{"tag_name": "v../../x"}"#.utf8)), "a tag that is not a version is refused")
+        XCTAssertNil(Updates.parse(Data(#"{"tag_name": "-v1.0"}"#.utf8)))
+        let evil = Updates.parse(Data(#"{"tag_name": "v1.0.0", "html_url": "file:///etc", "assets": [{"name": "a.zip", "browser_download_url": "http://e/a.zip"}]}"#.utf8))
+        XCTAssertNil(evil?.page, "only https GitHub links")
+        XCTAssertNil(evil?.zip)
+    }
+
+    func testVerifyRefusesAnythingButTheSameApp() {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("v-\(UUID().uuidString)/X.app/Contents")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        NSDictionary(dictionary: ["CFBundleIdentifier": "other.app", "CFBundleShortVersionString": "1.0"])
+            .write(to: dir.appendingPathComponent("Info.plist"), atomically: true)
+        let app = dir.deletingLastPathComponent()
+        XCTAssertEqual(Updates.verify(app, version: "1.0", bundleID: "consulting.cloudscale.systemsentinel"), "The download is a different app.")
+        XCTAssertEqual(Updates.verify(app, version: "2.0", bundleID: "other.app"), "The download's version does not match the release.")
+        XCTAssertNotNil(Updates.verify(app, version: "1.0", bundleID: "other.app"), "unsigned is refused")
     }
 
     func testSwapScriptQuotesPaths() {
         let s = Updates.swapScript(pid: 42, newApp: "/tmp/a b/System Sentinel.app", installedAt: "/Applications/O'Brien.app")
         XCTAssertTrue(s.contains("kill -0 42"))
+        XCTAssertTrue(s.contains("set -euo pipefail"))
+        XCTAssertFalse(s.contains("xattr"))
         XCTAssertTrue(s.contains("'/tmp/a b/System Sentinel.app'"))
         XCTAssertTrue(s.contains("'/Applications/O'\\''Brien.app'"))
     }

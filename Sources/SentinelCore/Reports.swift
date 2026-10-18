@@ -378,3 +378,55 @@ public enum LoadRAG: String, Sendable {
         return load >= 40 ? .amber : .green
     }
 }
+
+/// The menu bar colour from every material risk, not just CPU: the worst one wins, and each
+/// one that is not green says why.
+public struct HealthRAG: Equatable, Sendable {
+    public struct Reason: Equatable, Sendable {
+        public let rag: LoadRAG
+        public let symbol: String
+        public let text: String
+    }
+
+    public struct Signals: Sendable {
+        /// 100 for every core busy, over the last minute.
+        public var load: Double = 0
+        public var flagged = 0
+        /// `MemoryStatus.Pressure.rawValue`: 0 normal, 1 warning, 2 critical.
+        public var pressure = 0
+        public var swapBytes: UInt64 = 0
+        /// `DiskSpace.Level.rawValue`.
+        public var disk = 0
+        public var diskFree: UInt64 = 0
+        /// ProcessInfo.ThermalState raw value.
+        public var thermal = 0
+        public var battery: Double?
+        public var onBattery = false
+        public init() {}
+    }
+
+    public let rag: LoadRAG
+    public let reasons: [Reason]
+
+    public static func of(_ s: Signals) -> HealthRAG {
+        var r: [Reason] = []
+        if s.flagged > 0 { r.append(.init(rag: .red, symbol: "exclamationmark.triangle.fill", text: "\(s.flagged) runaway process\(s.flagged == 1 ? "" : "es")")) }
+        if s.load >= 70 { r.append(.init(rag: .red, symbol: "cpu", text: "CPU \(Int(s.load))%")) }
+        else if s.load >= 40 { r.append(.init(rag: .amber, symbol: "cpu", text: "CPU \(Int(s.load))%")) }
+        if s.pressure >= 2 { r.append(.init(rag: .red, symbol: "memorychip", text: "memory pressure critical")) }
+        else if s.pressure == 1 { r.append(.init(rag: .amber, symbol: "memorychip", text: "memory pressure")) }
+        if s.swapBytes >= 8 << 30, s.pressure < 2 {
+            r.append(.init(rag: .amber, symbol: "memorychip", text: "\(ReportDocument.bytes(s.swapBytes)) in swap"))
+        }
+        if s.disk >= 2 { r.append(.init(rag: .red, symbol: "internaldrive", text: "disk almost full, \(ReportDocument.bytes(s.diskFree)) free")) }
+        else if s.disk == 1 { r.append(.init(rag: .amber, symbol: "internaldrive", text: "disk low, \(ReportDocument.bytes(s.diskFree)) free")) }
+        if s.thermal >= 3 { r.append(.init(rag: .red, symbol: "thermometer.high", text: "Mac is very hot")) }
+        else if s.thermal == 2 { r.append(.init(rag: .amber, symbol: "thermometer.medium", text: "Mac is hot")) }
+        if s.onBattery, let b = s.battery {
+            if b <= 10 { r.append(.init(rag: .red, symbol: "battery.0percent", text: "battery \(Int(b))%")) }
+            else if b <= 20 { r.append(.init(rag: .amber, symbol: "battery.25percent", text: "battery \(Int(b))%")) }
+        }
+        let sorted = r.enumerated().sorted { ($0.element.rag == .red ? 0 : 1, $0.offset) < ($1.element.rag == .red ? 0 : 1, $1.offset) }.map(\.element)
+        return HealthRAG(rag: sorted.first?.rag ?? .green, reasons: sorted)
+    }
+}

@@ -47,8 +47,9 @@ if [[ -n "${DEVELOPER_ID:-}" ]]; then
         echo "!! NOTARY_PROFILE not set: signed but not notarised, Gatekeeper will still warn"
     fi
 else
-    echo "== ad-hoc sign (no DEVELOPER_ID): users need xattr -cr"
-    codesign --force --sign - "$APP"
+    source "$(dirname "$0")/sign-id.sh"
+    echo "== sign: $SENTINEL_SIGN_ID (no DEVELOPER_ID: users need xattr -cr)"
+    codesign --force --sign "$SENTINEL_SIGN_ID" "$APP"
     codesign --verify "$APP"
 fi
 

@@ -27,7 +27,9 @@ struct SystemSentinelApp: App {
 
     private var menuIcon: NSImage {
         let alert = model.level == .alert
-        return Self.menuIcon(alert: alert, rag: LoadRAG.of(load: model.machineAverage(60), flagged: alert), update: model.update != nil)
+        let h = model.health
+        // The glyph names the worst risk: chip, memory, disk, heat or battery.
+        return Self.menuIcon(alert: alert, rag: h.rag, update: model.update != nil, symbol: h.reasons.first?.symbol)
     }
 
     /// Green under 40% of the Mac over the last minute, amber to 70%, red above or when
@@ -42,11 +44,11 @@ struct SystemSentinelApp: App {
 
     /// A solid coloured badge with a white chip glyph (a warning triangle when something is
     /// flagged): readable on light and dark menu bars, which a thin coloured outline symbol was not.
-    static func menuIcon(alert: Bool, rag: LoadRAG? = nil, update: Bool = false) -> NSImage {
+    static func menuIcon(alert: Bool, rag: LoadRAG? = nil, update: Bool = false, symbol: String? = nil) -> NSImage {
         // A blue dot on the top right corner while an update is waiting.
         let size = NSSize(width: update ? 28 : 24, height: 18)
         let fill = color(rag ?? (alert ? .red : .green))
-        let glyph = NSImage(systemSymbolName: alert ? "exclamationmark.triangle.fill" : "cpu", accessibilityDescription: "System Sentinel")?
+        let glyph = NSImage(systemSymbolName: alert ? "exclamationmark.triangle.fill" : (symbol ?? "cpu"), accessibilityDescription: "System Sentinel")?
             .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 13, weight: .bold)
                 .applying(NSImage.SymbolConfiguration(paletteColors: [.white])))
         let img = NSImage(size: size, flipped: false) { rect in
@@ -87,13 +89,15 @@ struct MenuView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             header
-            if let rel = model.update { UpdateBanner(model: model, rel: rel) }
             TabBar(selection: $tab, badges: [.events: model.flagged.count])
             Group {
                 if fullLength {
+                    banners
                     page
                 } else {
-                    ScrollView(.vertical) { page.padding(.trailing, 2) }
+                    // Banners scroll with the page: a window that changes height while open
+                    // can make AppKit abort mid-layout.
+                    ScrollView(.vertical) { VStack(spacing: 10) { banners; page }.padding(.trailing, 2) }
                         .frame(height: Self.contentHeight)
                 }
             }
@@ -115,6 +119,7 @@ struct MenuView: View {
                 Text("v\(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev")  ·  \(Int(model.cores)) cores  ·  sampled every 5 s").font(.caption2).foregroundStyle(.secondary)
             }
             Spacer()
+            HealthChip(health: model.health)
             let load = model.machineLoad
             HStack(spacing: 6) {
                 Circle().fill(Theme.machineHeat(load)).frame(width: 8, height: 8)
@@ -127,12 +132,19 @@ struct MenuView: View {
     }
 
     @ViewBuilder
+    private var banners: some View {
+        if let rel = model.update { UpdateBanner(model: model, rel: rel) }
+        if Model.snapshotDir == nil { PermissionsGate(permissions: model.permissions) }
+    }
+
+    @ViewBuilder
     private var page: some View {
         switch tab {
         case .overview: OverviewView(model: model)
         case .processes: ProcessesView(model: model)
         case .trends: TrendsView(model: model)
         case .memory: MemoryView(model: model)
+        case .storage: StorageView(model: model, store: model.storage)
         case .battery: BatteryView(model: model)
         case .events: EventsView(model: model)
         case .rules: RulesView(model: model)
@@ -143,9 +155,9 @@ struct MenuView: View {
     private var footer: some View {
         HStack(spacing: 8) {
             if let err = model.lastError {
-                Label(err, systemImage: "exclamationmark.circle.fill").font(.caption).foregroundStyle(Theme.heat(100)).lineLimit(2)
+                Label(err, systemImage: "exclamationmark.circle.fill").font(.caption).foregroundStyle(Theme.heat(100)).lineLimit(1)
             } else if let msg = model.lastAction {
-                Label(msg, systemImage: "checkmark.circle.fill").font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                Label(msg, systemImage: "checkmark.circle.fill").font(.caption).foregroundStyle(.secondary).lineLimit(1)
             }
             Spacer()
             if !inWindow {
@@ -254,12 +266,20 @@ struct SettingsDraft: Equatable {
     var blockerHours: Double
     var weeklyReport: Bool
     var autoUpdateCheck: Bool
+    var alarmCPU: Bool, alarmCPUPercent: Double, alarmCPUMinutes: Double
+    var alarmSwap: Bool, alarmSwapGB: Double
+    var alarmPressure: Bool, alarmPressureMinutes: Double
+    var alarmDisk: Bool, alarmDiskGB: Double
 
     @MainActor init(_ m: Model) {
         threshold = m.threshold; window = m.windowSeconds; login = m.launchAtLogin
         menuBarShows = m.menuBarShows; alertHeat = m.alertHeat; heatWatts = m.heatWatts; heatMinutes = m.heatMinutes
         alertBlockers = m.alertBlockers; blockerHours = m.blockerHours; weeklyReport = m.weeklyReport
         autoUpdateCheck = m.autoUpdateCheck
+        alarmCPU = m.alarmCPU; alarmCPUPercent = m.alarmCPUPercent; alarmCPUMinutes = m.alarmCPUMinutes
+        alarmSwap = m.alarmSwap; alarmSwapGB = m.alarmSwapGB
+        alarmPressure = m.alarmPressure; alarmPressureMinutes = m.alarmPressureMinutes
+        alarmDisk = m.alarmDisk; alarmDiskGB = m.alarmDiskGB
     }
 
     @MainActor func apply(to m: Model) {
@@ -268,6 +288,10 @@ struct SettingsDraft: Equatable {
         m.menuBarShows = menuBarShows; m.alertHeat = alertHeat; m.heatWatts = heatWatts; m.heatMinutes = heatMinutes
         m.alertBlockers = alertBlockers; m.blockerHours = blockerHours; m.weeklyReport = weeklyReport
         m.autoUpdateCheck = autoUpdateCheck
+        m.alarmCPU = alarmCPU; m.alarmCPUPercent = alarmCPUPercent; m.alarmCPUMinutes = alarmCPUMinutes
+        m.alarmSwap = alarmSwap; m.alarmSwapGB = alarmSwapGB
+        m.alarmPressure = alarmPressure; m.alarmPressureMinutes = alarmPressureMinutes
+        m.alarmDisk = alarmDisk; m.alarmDiskGB = alarmDiskGB
     }
 }
 
@@ -314,12 +338,14 @@ struct SettingsView: View {
                     .font(.caption2).foregroundStyle(.secondary)
             }
             MenuBarSettingsCard(model: model, draft: draft)
+            AlarmsSettingsCard(model: model, draft: draft)
             Card(title: "Reports", symbol: "calendar.badge.clock", tint: Tab.events.color) {
                 Toggle("Weekly report notification, Monday morning", isOn: draft.weeklyReport).toggleStyle(.switch)
                 Text("Top apps, CPU hours, time on battery and average power draw for the last 7 days. The same report is always on the Events tab.")
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
             UpdatesCard(model: model, auto: draft.autoUpdateCheck)
+            PermissionsCard(permissions: model.permissions)
             HStack(spacing: 8) {
                 if dirty {
                     Label("Unsaved changes", systemImage: "pencil.circle.fill").font(.caption.weight(.semibold)).foregroundStyle(Tab.events.color)

@@ -22,6 +22,19 @@ public enum Killer {
         return !isZombie(pid)
     }
 
+    /// The pid still belongs to the process that was sampled: same owner and same program.
+    /// A pid can be reused once a process exits, so a stale Kill must not hit a newcomer.
+    public static func isSameProcess(_ s: ProcessSample) -> Bool {
+        var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, s.pid]
+        var info = kinfo_proc()
+        var size = MemoryLayout<kinfo_proc>.stride
+        guard sysctl(&mib, 4, &info, &size, nil, 0) == 0, size > 0, info.kp_eproc.e_ucred.cr_uid == s.uid else { return false }
+        var buf = [CChar](repeating: 0, count: 4 * Int(MAXPATHLEN))
+        guard proc_pidpath(s.pid, &buf, UInt32(buf.count)) > 0 else { return true } // other users' paths can be hidden
+        let now = String(cString: buf)
+        return s.path.contains("/") ? now == s.path : (now as NSString).lastPathComponent.hasPrefix(s.path)
+    }
+
     static func isZombie(_ pid: Int32) -> Bool {
         var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, pid]
         var info = kinfo_proc()
@@ -35,7 +48,7 @@ public enum Killer {
     /// and this app stay refused.
     public static func forceKill(_ s: ProcessSample) -> KillOutcome {
         guard s.pid > 1, s.pid != getpid() else { return .refused("\(s.name) cannot be killed") }
-        guard isAlive(s.pid) else { return .alreadyGone }
+        guard isAlive(s.pid), isSameProcess(s) else { return .alreadyGone }
         if s.uid != getuid() {
             let task = Process()
             task.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
@@ -56,7 +69,7 @@ public enum Killer {
     /// Kills a process owned by this user. Blocks for up to `grace` seconds.
     public static func kill(_ s: ProcessSample, grace: TimeInterval = 5) -> KillOutcome {
         guard Safety.canKillManually(s) else { return .refused("\(s.name) is protected") }
-        guard isAlive(s.pid) else { return .alreadyGone }
+        guard isAlive(s.pid), isSameProcess(s) else { return .alreadyGone }
         if s.uid != getuid() { return killAsAdmin(s) }
         guard Darwin.kill(s.pid, SIGTERM) == 0 else {
             return .failed(String(cString: strerror(errno)))
@@ -73,7 +86,7 @@ public enum Killer {
     /// refused: there is no outcome of killing those that anyone wants.
     public static func killProtectedAsAdmin(_ s: ProcessSample) -> KillOutcome {
         guard s.pid > 1, s.pid != getpid() else { return .refused("\(s.name) cannot be killed") }
-        guard isAlive(s.pid) else { return .alreadyGone }
+        guard isAlive(s.pid), isSameProcess(s) else { return .alreadyGone }
         return killAsAdmin(s)
     }
 
