@@ -100,6 +100,8 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
     let sentinel: Sentinel
     /// The running model, for the app delegate (which SwiftUI creates before the scene's state).
     static weak var current: Model?
+    /// Kept alive so SIGTERM saves before quitting.
+    static var termSource: DispatchSourceSignal?
     let cores = Double(ProcessInfo.processInfo.activeProcessorCount)
     private var timer: Timer?
     /// Processes named in a pending notification, so its Kill button acts on the right one.
@@ -197,6 +199,7 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
         if let dir = Model.snapshotDir {
             DispatchQueue.main.asyncAfter(deadline: .now() + Model.snapshotDelay) { Snapshot.run(self, into: dir) }
         } else {
+            saveOnQuit()
             scheduleUpdateChecks()
         }
     }
@@ -1156,5 +1159,36 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
             }
             objectWillChange.send()
         }
+    }
+}
+
+// MARK: Saving on quit
+
+extension Model {
+    /// The stores write every few minutes; without this a quit or an update loses the minutes
+    /// since the last write, which shows as a hole in the charts.
+    func saveAll() {
+        sentinel.dailyUsage.save()
+        sentinel.recentUsage.save()
+        energyUsage.save()
+        powerHistory.save()
+        memoryHistory.save()
+        storage.history.save()
+    }
+
+    /// Quit from the menu, logout and restart arrive as willTerminate; an installer or `kill`
+    /// sends SIGTERM, which otherwise ends the app on the spot.
+    func saveOnQuit() {
+        NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: .main) { _ in
+            MainActor.assumeIsolated { Model.current?.saveAll() }
+        }
+        signal(SIGTERM, SIG_IGN)
+        let source = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
+        source.setEventHandler {
+            MainActor.assumeIsolated { Model.current?.saveAll() }
+            exit(0)
+        }
+        source.resume()
+        Model.termSource = source
     }
 }

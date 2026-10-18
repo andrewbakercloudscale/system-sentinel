@@ -212,7 +212,7 @@ struct LastHourChart: View {
 
     /// The stacked series: live history where there is some, before it the saved per-minute
     /// store, so a relaunch does not blank the chart.
-    private func series(zoomed: Bool) -> (points: [Point], topKeys: [String]) {
+    private func series(zoomed: Bool) -> (points: [Point], topKeys: [String], gaps: [ClosedRange<Date>]) {
         let now = Date()
         let buckets = zoomed ? 120 : 60
         let window: TimeInterval = 3600
@@ -231,7 +231,7 @@ struct LastHourChart: View {
         let minuteTotals = minuteStarts.indices.map { m in minuteRows.reduce(0) { $0 + $1.hourly[m] } }
         let minuteCoverage = minutes.coverage(at: now, buckets: 61)
         func savedMinute(_ t: Date) -> Int? {
-            guard t < recordedFrom, let m = minuteStarts.firstIndex(of: minutes.start(t)), minuteCoverage[m] > 0 else { return nil }
+            guard t < recordedFrom, let m = minuteStarts.firstIndex(of: minutes.start(t)), minuteCoverage[m] >= 15 else { return nil }
             return m
         }
         func value(_ k: String, _ i: Int, _ t: Date) -> Double {
@@ -242,10 +242,28 @@ struct LastHourChart: View {
         let keys = Set(stacked.keys).union(minuteByKey.keys)
         let weight = Dictionary(keys.map { k in (k, times.indices.reduce(0) { $0 + value(k, $1, times[$1]) }) }, uniquingKeysWith: +)
         let topKeys = weight.filter { $0.value > 0 }.sorted { $0.value > $1.value }.prefix(zoomed ? 7 : 5).map(\.key)
+        let measured = times.map { savedMinute($0) != nil || $0 >= recordedFrom.addingTimeInterval(-width) }
+        // Stretches with nothing recorded (the app was not running, or the Mac was asleep).
+        // The area drops to zero across them rather than bridging the gap with a made-up curve.
+        var gaps: [ClosedRange<Date>] = []
+        var edges = Set<Int>()
+        var i = 0
+        while i < buckets {
+            guard !measured[i] else { i += 1; continue }
+            var j = i
+            while j + 1 < buckets, !measured[j + 1] { j += 1 }
+            gaps.append(times[i].addingTimeInterval(-width / 2)...times[j].addingTimeInterval(width / 2))
+            if i > 0 { edges.insert(i) }
+            if j + 1 < buckets { edges.insert(j) }
+            i = j + 1
+        }
         let points: [Point] = (0..<buckets).flatMap { i -> [Point] in
             let t = times[i]
             let saved = savedMinute(t)
-            guard saved != nil || t >= recordedFrom.addingTimeInterval(-width) else { return [] }
+            if edges.contains(i) {
+                return (topKeys + ["other"]).map { Point(time: t, key: $0, name: $0 == "other" ? "Other" : Model.appName($0), value: 0) }
+            }
+            guard measured[i] else { return [] }
             var used = 0.0
             var row = topKeys.map { k -> Point in
                 let v = value(k, i, t)
@@ -256,11 +274,23 @@ struct LastHourChart: View {
             row.append(Point(time: t, key: "other", name: "Other", value: max(total - used, 0) / cores))
             return row
         }
-        return (points, topKeys)
+        return (points, topKeys, gaps.filter { $0.upperBound.timeIntervalSince($0.lowerBound) >= 3 * 60 })
+    }
+
+    /// Whole times every `every` minutes, leaving out any within a few minutes of now.
+    private func axisTimes(start: Date, now: Date, every: Int) -> [Date] {
+        let cal = Calendar.current
+        var t = cal.dateInterval(of: .hour, for: start)?.start ?? start
+        var out: [Date] = []
+        while t <= now {
+            if t >= start, now.timeIntervalSince(t) >= Double(every) * 60 / 3 { out.append(t) }
+            t = t.addingTimeInterval(Double(every) * 60)
+        }
+        return out
     }
 
     var body: some View {
-        let (points, topKeys) = series(zoomed: zoomed)
+        let (points, topKeys, gaps) = series(zoomed: zoomed)
         let now = Date()
         let window: TimeInterval = 3600
         let start = now.addingTimeInterval(-window)
@@ -281,6 +311,15 @@ struct LastHourChart: View {
                     .font(.caption).foregroundStyle(.secondary).frame(height: zoomed ? 400 : 120)
             } else {
                 Chart {
+                    ForEach(gaps, id: \.lowerBound) { g in
+                        RectangleMark(xStart: .value("From", g.lowerBound), xEnd: .value("To", g.upperBound))
+                            .foregroundStyle(Color.primary.opacity(0.05))
+                            .annotation(position: .overlay, alignment: .center) {
+                                if g.upperBound.timeIntervalSince(g.lowerBound) >= (zoomed ? 6 : 12) * 60 {
+                                    Text("Not recording").font(.caption).foregroundStyle(.secondary)
+                                }
+                            }
+                    }
                     ForEach(points) { p in
                         AreaMark(x: .value("Time", p.time), y: .value("CPU", p.value), stacking: .standard)
                             .foregroundStyle(by: .value("App", p.key))
@@ -321,7 +360,8 @@ struct LastHourChart: View {
                     }
                 }
                 .chartXAxis {
-                    AxisMarks(values: .stride(by: .minute, count: zoomed ? 5 : 15)) { _ in
+                    // No label hard against the right edge, where it would be cut to "…".
+                    AxisMarks(values: axisTimes(start: start, now: now, every: zoomed ? 5 : 15)) { _ in
                         if zoomed { AxisGridLine().foregroundStyle(Color.primary.opacity(0.05)) }
                         AxisValueLabel(format: .dateTime.hour().minute()).font(.system(size: zoomed ? 11 : 9))
                     }
