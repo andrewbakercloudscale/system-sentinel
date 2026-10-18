@@ -128,6 +128,22 @@ final class StorageTests: XCTestCase {
         XCTAssertFalse(FixAction.review(card: "downloads", label: "Review").acts)
     }
 
+    func testMovedFilesLeaveTheInsights() {
+        let now = Date()
+        var found = StorageAnalysis.Found()
+        found.installers = [FoundItem(path: "/d/a.dmg", bytes: gb), FoundItem(path: "/d/b.pkg", bytes: gb)]
+        found.downloads = [FoundItem(path: "/d/a.dmg", bytes: gb)]
+        let disk = DiskSpace(total: 500 * gb, free: 200 * gb, available: 200 * gb)
+        XCTAssertTrue(StorageAnalysis.insights(disk: disk, points: [], scans: [], found: found, at: now).contains { $0.id == "disk-installers" })
+        var after = StorageAnalysis.removing(["/d/a.dmg", "/d/b.pkg"], from: found)
+        XCTAssertTrue(after.installers.isEmpty)
+        XCTAssertTrue(after.downloads.isEmpty, "gone from every list")
+        after.places["trash", default: 0] += 2 * gb
+        let ids = StorageAnalysis.insights(disk: disk, points: [], scans: [], found: after, at: now).map(\.id)
+        XCTAssertFalse(ids.contains("disk-installers"))
+        XCTAssertTrue(ids.contains("disk-trash"), "the Trash now offers to be emptied")
+    }
+
     func testAlarmWatch() {
         var w = AlarmWatch()
         let t0 = Date(timeIntervalSince1970: 0)

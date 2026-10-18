@@ -26,6 +26,8 @@ final class StorageStore: ObservableObject {
     var toast: (Model.Toast) -> Void = { _ in }
     /// Tells the model a scan finished, for the Diagnostics card.
     var ran: (TaskHealth.Job) -> Void = { _ in }
+    /// Bytes this app moved to the Trash since it was last emptied.
+    private var trashedHere: UInt64 = 0
     let home = FileManager.default.homeDirectoryForCurrentUser
 
     init(supportDir: URL, readOnly: Bool) {
@@ -75,6 +77,8 @@ final class StorageStore: ObservableObject {
             let result = StorageStore.findEverything(home: home)
             await MainActor.run {
                 self.found = result.found
+                // The Trash cannot be measured without Full Disk Access: count what was put there.
+                if self.found.places["trash"] == nil, self.trashedHere > 0 { self.found.places["trash"] = self.trashedHere }
                 self.largeFiles = result.large
                 self.fullAccess = result.fullAccess
                 self.foundAt = Date()
@@ -199,6 +203,19 @@ final class StorageStore: ObservableObject {
         scan()
     }
 
+    /// Shows the result straight away instead of after the next scan (minutes away): the moved
+    /// files leave their lists, and the Trash grows by their size, so its insight offers to
+    /// empty it. Without Full Disk Access the Trash cannot be measured, so this is the only
+    /// way its size is known.
+    func movedToTrash(_ paths: Set<String>, bytes: UInt64) {
+        guard !paths.isEmpty else { return }
+        found = StorageAnalysis.removing(paths, from: found)
+        found.places["trash", default: 0] += bytes
+        trashedHere += bytes
+        largeFiles.removeAll { paths.contains($0.path) }
+        refreshInsights()
+    }
+
     func emptyTrash() {
         guard !working.contains("trash") else { return }
         working.insert("trash")
@@ -209,7 +226,11 @@ final class StorageStore: ObservableObject {
             try? await Task.sleep(nanoseconds: 3_000_000_000)
             await MainActor.run {
                 self.working.remove("trash")
-                if ok { self.afterCleanup("Trash emptied", before: before) }
+                if ok {
+                    self.found.places["trash"] = 0
+                    self.trashedHere = 0
+                    self.afterCleanup("Trash emptied", before: before)
+                }
                 else { self.toast(Model.Toast(ok: false, title: "The Trash was not emptied", detail: "Allow System Sentinel to control Finder in System Settings, Privacy & Security, Automation.")) }
             }
         }
@@ -221,16 +242,19 @@ final class StorageStore: ObservableObject {
         Task.detached {
             var moved: UInt64 = 0, n = 0
             var failed: [String] = []
+            var gone = Set<String>()
             for i in items {
                 do {
                     try FileManager.default.trashItem(at: URL(fileURLWithPath: i.path), resultingItemURL: nil)
                     moved += i.bytes; n += 1
+                    gone.insert(i.path)
                 } catch { failed.append(i.name) }
             }
-            let (m, count, bad) = (moved, n, failed)
+            let (m, count, bad, done) = (moved, n, failed, gone)
             await MainActor.run {
                 let (moved, n, failed) = (m, count, bad)
                 self.working.remove(key)
+                self.movedToTrash(done, bytes: moved)
                 let detail = failed.isEmpty ? "Empty the Trash to get the space back."
                     : "Could not move \(failed.prefix(3).joined(separator: ", ")): it needs an administrator. Drag it to the Trash in Finder."
                 self.toast(Model.Toast(ok: failed.isEmpty, title: "Moved \(n) item\(n == 1 ? "" : "s") (\(ReportDocument.bytes(moved))) to the Trash", detail: detail))

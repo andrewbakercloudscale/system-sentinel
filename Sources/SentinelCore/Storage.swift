@@ -570,6 +570,18 @@ public enum StorageAnalysis {
         }
     }
 
+    /// The scan's findings without these paths (moved away since).
+    public static func removing(_ paths: Set<String>, from f: Found) -> Found {
+        var f = f
+        let keep: (FoundItem) -> Bool = { !paths.contains($0.path) }
+        f.downloads = f.downloads.filter(keep)
+        f.installers = f.installers.filter(keep)
+        f.movies = f.movies.filter(keep)
+        f.unusedApps = f.unusedApps.filter(keep)
+        f.nodeModules = f.nodeModules.filter(keep)
+        return f
+    }
+
     /// Rebuildable developer caches worth cleaning, biggest first.
     static let devPlaces = ["derivedData", "deviceSupport", "simulators", "npm", "pip", "yarn", "gradle", "maven", "cargo", "homebrew"]
 
