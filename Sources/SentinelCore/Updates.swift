@@ -22,6 +22,55 @@ public enum Updates {
         public var text: String { if case .message(let m) = self { return m }; return "" }
     }
 
+    /// What changed on GitHub since this version: commits on main after its tag.
+    public struct Changes: Equatable, Sendable {
+        public struct Commit: Equatable, Sendable, Identifiable {
+            public let sha: String
+            /// The first line of the message.
+            public let title: String
+            public let date: Date?
+            public var id: String { sha }
+        }
+
+        public let ahead: Int
+        /// Newest first, at most the 250 GitHub returns.
+        public let commits: [Commit]
+        public let files: Int
+        /// The compare page on GitHub.
+        public let page: URL?
+    }
+
+    public static let latestFiles = URL(string: "https://github.com/\(repo)/tree/main")!
+    public static let releasesPage = URL(string: "https://github.com/\(repo)/releases")!
+
+    /// Parses `GET /repos/{repo}/compare/{base}...{head}`.
+    public static func parseChanges(_ data: Data) -> Changes? {
+        guard let o = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let ahead = o["ahead_by"] as? Int else { return nil }
+        let iso = ISO8601DateFormatter()
+        let commits = (o["commits"] as? [[String: Any]] ?? []).compactMap { c -> Changes.Commit? in
+            guard let sha = c["sha"] as? String, let info = c["commit"] as? [String: Any] else { return nil }
+            let msg = (info["message"] as? String ?? "").split(separator: "\n").first.map(String.init) ?? ""
+            let date = ((info["author"] as? [String: Any])?["date"] as? String).flatMap { iso.date(from: $0) }
+            return .init(sha: String(sha.prefix(7)), title: msg, date: date)
+        }
+        return Changes(ahead: ahead, commits: commits.reversed(), files: (o["files"] as? [Any])?.count ?? 0,
+                       page: (o["html_url"] as? String).flatMap(gitHubURL))
+    }
+
+    /// Commits on main since `version`'s tag. Blocks: run it off the main thread.
+    public static func changes(since version: String) -> Changes? {
+        let tag = "v" + version
+        guard isVersionTag(tag) else { return nil }
+        let path = "repos/\(repo)/compare/\(tag)...main"
+        if let gh {
+            let r = run(gh, ["api", path])
+            if r.status == 0, let c = parseChanges(r.out) { return c }
+        }
+        let r = run("/usr/bin/curl", ["-fsSL", "--proto", "=https", "--max-time", "15", "https://api.github.com/" + path])
+        return r.status == 0 ? parseChanges(r.out) : nil
+    }
+
     /// Parses `GET /repos/{repo}/releases/latest`.
     public static func parse(_ data: Data) -> Release? {
         guard let o = try? JSONSerialization.jsonObject(with: data) as? [String: Any],

@@ -44,6 +44,23 @@ final class UpdatesTests: XCTestCase {
         XCTAssertNotNil(Updates.verify(app, version: "1.0", bundleID: "other.app"), "unsigned is refused")
     }
 
+    func testParsesChangesNewestFirst() {
+        let json = #"""
+        {"ahead_by": 3, "html_url": "https://github.com/x/y/compare/v0.8.0...main",
+         "commits": [{"sha": "aaaaaaa111", "commit": {"message": "First\n\nbody", "author": {"date": "2026-10-18T09:00:00Z"}}},
+                     {"sha": "bbbbbbb222", "commit": {"message": "Second", "author": {"date": "2026-10-18T10:00:00Z"}}},
+                     {"sha": "ccccccc333", "commit": {"message": "Third", "author": {"date": "2026-10-18T11:00:00Z"}}}],
+         "files": [{"filename": "a"}, {"filename": "b"}]}
+        """#
+        let c = Updates.parseChanges(Data(json.utf8))
+        XCTAssertEqual(c?.ahead, 3)
+        XCTAssertEqual(c?.files, 2)
+        XCTAssertEqual(c?.commits.map(\.title), ["Third", "Second", "First"])
+        XCTAssertEqual(c?.commits.last?.sha, "aaaaaaa")
+        XCTAssertNotNil(c?.page)
+        XCTAssertNil(Updates.parseChanges(Data("{}".utf8)))
+    }
+
     func testSwapScriptQuotesPaths() {
         let s = Updates.swapScript(pid: 42, newApp: "/tmp/a b/System Sentinel.app", installedAt: "/Applications/O'Brien.app")
         XCTAssertTrue(s.contains("kill -0 42"))

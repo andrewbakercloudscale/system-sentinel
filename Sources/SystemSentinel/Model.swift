@@ -125,6 +125,8 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
     /// The version already announced in a notification, so each one is announced once.
     @AppStorage("notifiedUpdate") var notifiedUpdate = ""
     @Published var update: Updates.Release?
+    /// Commits on GitHub since this version, released or not.
+    @Published var changes: Updates.Changes?
     /// Resource alarms: each on/off with its limit, set in Settings.
     @AppStorage("alarmCPU") var alarmCPU = true
     @AppStorage("alarmCPUPercent") var alarmCPUPercent: Double = 85

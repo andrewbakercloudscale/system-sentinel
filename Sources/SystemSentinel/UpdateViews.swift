@@ -26,9 +26,12 @@ extension Model {
     func checkForUpdates(manual: Bool) {
         guard updateState != .checking, updateState != .installing else { return }
         updateState = .checking
+        let mine = Model.appVersion
         Task.detached {
             let result = Updates.latest()
+            let changes = Updates.changes(since: mine)
             await MainActor.run {
+                self.changes = changes
                 self.lastUpdateCheck = Date().timeIntervalSince1970
                 switch result {
                 case .success(let rel):
@@ -149,7 +152,8 @@ struct UpdateBanner: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Update available: v\(rel.version)").font(.headline).foregroundStyle(.white)
                 let new = Updates.highlights(rel.notes, max: 2)
-                Text(new.isEmpty ? "You have v\(Model.appVersion)." : "You have v\(Model.appVersion). New: " + new.joined(separator: " "))
+                let count = model.changes.map { " \($0.ahead) change\($0.ahead == 1 ? "" : "s") since yours." } ?? ""
+                Text((new.isEmpty ? "You have v\(Model.appVersion).\(count)" : "You have v\(Model.appVersion).\(count) New: " + new.joined(separator: " ")))
                     .font(.caption).foregroundStyle(.white.opacity(0.92)).lineLimit(2)
             }
             Spacer(minLength: 6)
@@ -222,6 +226,7 @@ struct UpdatesCard: View {
                 }
                 .disabled(model.updateState == .checking || model.updateState == .installing)
             }
+            ChangesList(changes: model.changes)
             if case .failed(let why) = model.updateState {
                 Text(why).font(.caption).foregroundStyle(Theme.heat(100)).fixedSize(horizontal: false, vertical: true)
             }
@@ -246,5 +251,64 @@ struct UpdatesCard: View {
         if model.update != nil { return Color(hex: "#2563eb") }
         if case .failed = model.updateState { return Theme.heat(100) }
         return .primary
+    }
+}
+
+/// "N changes on GitHub since your version", the newest few, and links to them and to the
+/// latest files.
+struct ChangesList: View {
+    let changes: Updates.Changes?
+    @State private var showAll = false
+    private let tint = Color(hex: "#2563eb")
+
+    var body: some View {
+        if let c = changes {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 8) {
+                    Text(c.ahead == 0 ? "No changes on GitHub since v\(Model.appVersion)"
+                                      : "\(c.ahead) change\(c.ahead == 1 ? "" : "s") on GitHub since v\(Model.appVersion), \(c.files) file\(c.files == 1 ? "" : "s")")
+                        .font(.callout.weight(.semibold)).foregroundStyle(c.ahead == 0 ? Color.primary : tint)
+                    Spacer()
+                    if c.ahead > 0, let page = c.page { link("See the changes", "plus.forwardslash.minus", page) }
+                    link("Latest files", "folder", Updates.latestFiles)
+                    link("All releases", "shippingbox", Updates.releasesPage)
+                }
+                ForEach(showAll ? c.commits : Array(c.commits.prefix(5))) { m in
+                    HStack(spacing: 8) {
+                        Text(m.sha).font(.caption.monospaced()).foregroundStyle(.secondary)
+                        Text(m.title).font(.caption).lineLimit(1).truncationMode(.tail)
+                        Spacer(minLength: 4)
+                        if let d = m.date {
+                            Text(RelativeDateTimeFormatter().localizedString(for: d, relativeTo: Date())).font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                if c.commits.count > 5 {
+                    Button(showAll ? "Show fewer" : "Show all \(c.commits.count)") { showAll.toggle() }.buttonStyle(.link).font(.caption)
+                }
+                if c.ahead > 0 {
+                    Text("Changes reach you when they are released; ones newer than the latest release are not in Install or Reinstall yet.")
+                        .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .padding(10)
+            .background(RoundedRectangle(cornerRadius: 8).fill(tint.opacity(0.07)))
+        } else {
+            HStack(spacing: 8) {
+                link("Latest files", "folder", Updates.latestFiles)
+                link("All releases", "shippingbox", Updates.releasesPage)
+            }
+        }
+    }
+
+    private func link(_ title: String, _ symbol: String, _ url: URL) -> some View {
+        Button { NSWorkspace.shared.open(url) } label: {
+            Label(title, systemImage: symbol).font(.caption.weight(.semibold)).foregroundStyle(tint)
+                .padding(.horizontal, 8).padding(.vertical, 3)
+                .background(Capsule().fill(tint.opacity(0.13)))
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .help(url.absoluteString)
     }
 }
