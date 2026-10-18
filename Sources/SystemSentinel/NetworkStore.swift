@@ -30,6 +30,7 @@ final class NetworkStore: ObservableObject {
     private var closeWait: [String: Int] = [:]
     private var looking: Set<String> = []
     private var busy = false
+    private var mtuAt: Date?
 
     init() {
         sample()
@@ -138,10 +139,15 @@ final class NetworkStore: ObservableObject {
     }
 
     /// Latency and loss to the router and to the internet, and how long a name lookup takes.
-    func test() {
+    func test(full: Bool = false) {
         guard !testing else { return }
+        if full { mtuAt = nil }
         testing = true
         let gateway = link.gateway
+        let iface = link.interface
+        // The packet-size sweep sends up to 9 pings; every half hour is plenty.
+        let sweep = mtuAt.map { Date().timeIntervalSince($0) >= 1800 } ?? true
+        let known = (health?.pathMTU, health?.interfaceMTU)
         Task.detached(priority: .utility) {
             async let router: (loss: Double, avg: Double?)? = gateway.flatMap { g in
                 g.contains(":") ? nil : CheckParse.ping(sh("/sbin/ping", ["-c", "8", "-i", "0.2", "-t", "5", g], timeout: 8))
@@ -151,9 +157,17 @@ final class NetworkStore: ObservableObject {
             let resolved = !sh("/usr/bin/dscacheutil", ["-q", "host", "-a", "name", "www.apple.com"], timeout: 6).isEmpty
             let dnsMs = Date().timeIntervalSince(t0) * 1000
             let (r, i) = await (router, internet)
+            var mtu = known
+            if sweep, let i, i.loss < 100, let iface, let ifMTU = CheckParse.mtu(sh("/sbin/ifconfig", [iface], timeout: 3)) {
+                let path = PathMTU.find(interfaceMTU: ifMTU) { size in
+                    (CheckParse.ping(sh("/sbin/ping", ["-D", "-c", "1", "-t", "2", "-s", String(size), "1.1.1.1"], timeout: 4))?.loss ?? 100) < 100
+                }
+                mtu = (path, ifMTU)
+            }
             let h = LinkHealth(routerMs: r?.avg, routerLoss: r?.loss, internetMs: i?.avg, internetLoss: i?.loss,
-                               dnsMs: resolved ? dnsMs : nil, dnsOK: resolved, at: Date())
+                               dnsMs: resolved ? dnsMs : nil, dnsOK: resolved, pathMTU: mtu.0, interfaceMTU: mtu.1, at: Date())
             await MainActor.run {
+                if sweep { self.mtuAt = Date() }
                 self.health = h
                 self.testing = false
                 self.refresh()

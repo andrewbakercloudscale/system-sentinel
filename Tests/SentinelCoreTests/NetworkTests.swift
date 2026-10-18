@@ -187,4 +187,24 @@ final class NetworkTests: XCTestCase {
         XCTAssertTrue(NetworkAnalysis.insights(link: NetworkLink(interface: "en0", gateway: "172.20.10.1"), health: nil, problems: [], apps: [], at: now)
             .contains { $0.id == "net-hotspot" })
     }
+
+    func testPathMTU() {
+        // A VPN that lets 1400-byte packets through, payload 1372.
+        var tries = 0
+        let p = PathMTU.find(interfaceMTU: 1500) { tries += 1; return $0 <= 1372 }
+        XCTAssertEqual(p, 1400)
+        XCTAssertLessThanOrEqual(tries, 9, "a binary search, not a scan")
+        XCTAssertEqual(PathMTU.find(interfaceMTU: 1500) { _ in true }, 1500)
+        XCTAssertNil(PathMTU.find(interfaceMTU: 1500) { _ in false })
+
+        let now = Date()
+        let h = LinkHealth(routerMs: 2, routerLoss: 0, internetMs: 20, internetLoss: 0, dnsMs: 20, pathMTU: 1380, interfaceMTU: 1500, at: now)
+        XCTAssertTrue(h.fragments)
+        let i = NetworkAnalysis.insights(link: NetworkLink(interface: "en0", vpn: "Zscaler"), health: h, problems: [], apps: [], at: now)
+        XCTAssertEqual(i.map(\.id), ["net-mtu"])
+        XCTAssertEqual(i[0].tone, .warning, "under 1400 hurts")
+        XCTAssertTrue(i[0].detail.contains("Zscaler"))
+        let fine = LinkHealth(pathMTU: 1500, interfaceMTU: 1500, at: now)
+        XCTAssertFalse(fine.fragments)
+    }
 }

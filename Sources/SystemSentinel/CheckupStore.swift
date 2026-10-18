@@ -264,13 +264,9 @@ final class CheckupStore: ObservableObject {
         }
         // Path MTU: the largest packet that crosses without being fragmented.
         if let i = internet, i.loss < 100, let ifMTU = CheckParse.mtu(sh("/sbin/ifconfig", [iface])) {
-            var lo = 1200, hi = min(ifMTU - 28, 1472), best = 0
-            while lo <= hi {
-                let mid = (lo + hi) / 2
-                let r = CheckParse.ping(sh("/sbin/ping", ["-D", "-c", "1", "-t", "2", "-s", String(mid), "1.1.1.1"], timeout: 4))
-                if let r, r.loss < 100 { best = mid; lo = mid + 1 } else { hi = mid - 1 }
-            }
-            let path = best > 0 ? best + 28 : 0
+            let path = PathMTU.find(interfaceMTU: ifMTU) { size in
+                (CheckParse.ping(sh("/sbin/ping", ["-D", "-c", "1", "-t", "2", "-s", String(size), "1.1.1.1"], timeout: 4))?.loss ?? 100) < 100
+            } ?? 0
             if path > 0 && path < ifMTU {
                 out.append(Check(id: "net-mtu", area: .network, title: "Packets over \(path) bytes get fragmented (interface MTU \(ifMTU))", status: path < 1400 ? .warning : .info,
                                  detail: "Usually a VPN or PPPoE link. Large transfers can stall or be slow when packets are split or dropped.",

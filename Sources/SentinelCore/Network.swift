@@ -415,11 +415,21 @@ public struct LinkHealth: Equatable, Sendable {
     public var internetLoss: Double?
     public var dnsMs: Double?
     public var dnsOK = true
+    /// The largest packet that crosses whole, and what the interface allows.
+    public var pathMTU: Int?
+    public var interfaceMTU: Int?
     public var at: Date
+
+    /// Packets bigger than the path allows get split or dropped.
+    public var fragments: Bool {
+        guard let p = pathMTU, let i = interfaceMTU else { return false }
+        return p < i
+    }
     public init(routerMs: Double? = nil, routerLoss: Double? = nil, internetMs: Double? = nil, internetLoss: Double? = nil,
-                dnsMs: Double? = nil, dnsOK: Bool = true, at: Date) {
+                dnsMs: Double? = nil, dnsOK: Bool = true, pathMTU: Int? = nil, interfaceMTU: Int? = nil, at: Date) {
         self.routerMs = routerMs; self.routerLoss = routerLoss; self.internetMs = internetMs
-        self.internetLoss = internetLoss; self.dnsMs = dnsMs; self.dnsOK = dnsOK; self.at = at
+        self.internetLoss = internetLoss; self.dnsMs = dnsMs; self.dnsOK = dnsOK
+        self.pathMTU = pathMTU; self.interfaceMTU = interfaceMTU; self.at = at
     }
 }
 
@@ -458,6 +468,23 @@ public struct NetworkLink: Equatable, Sendable {
     public static func vpn(processNames: [String]) -> String? {
         let found = processNames.compactMap { vpnClients[$0] }
         return found.first { $0 != "VPN" } ?? found.first
+    }
+}
+
+// MARK: Packet size
+
+/// The largest packet that crosses the path whole. Pings with the don't-fragment flag at
+/// decreasing sizes: the biggest that gets an answer, plus 28 bytes of IP and ICMP headers.
+public enum PathMTU {
+    /// Binary search between 1200 and the interface's own limit. `probe(payload)` says whether
+    /// a ping of that payload got through. Returns the path MTU, or nil if nothing got through.
+    public static func find(interfaceMTU: Int, probe: (Int) -> Bool) -> Int? {
+        var lo = 1200, hi = min(interfaceMTU - 28, 1472), best = 0
+        while lo <= hi {
+            let mid = (lo + hi) / 2
+            if probe(mid) { best = mid; lo = mid + 1 } else { hi = mid - 1 }
+        }
+        return best > 0 ? best + 28 : nil
     }
 }
 
@@ -530,6 +557,17 @@ public enum NetworkAnalysis {
                                 detail: link.vpn.map { "The router link is fine. \($0) routes everything through its servers, which often adds this." }
                                     ?? "The router link is fine, so it is the line or the provider.")
                 x.steps = link.vpn != nil ? ["Try with the VPN off, if allowed, to compare."] : ["Restart the router.", "If it persists, check with the provider."]
+                out.append(x)
+            }
+            if h.fragments, let p = h.pathMTU, let i = h.interfaceMTU {
+                var x = Insight(id: "net-mtu", tone: p < 1400 ? .warning : .info, symbol: "square.split.2x1",
+                                title: "Packets over \(p) bytes get split up (this Mac sends up to \(i))",
+                                detail: (link.vpn.map { "Usually the VPN: \($0) wraps each packet in its own, leaving less room. " } ?? "Usually a VPN or a PPPoE internet line. ")
+                                    + "Large downloads and uploads can stall, and some sites hang half-loaded.")
+                x.why = "Found by sending pings marked do-not-split at decreasing sizes: \(p) bytes is the largest that got through. When a full \(i)-byte packet does not fit, it is split in two or dropped; if the message saying so is blocked, connections freeze on big transfers while small requests work."
+                x.steps = ["If transfers stall on this network, set the MTU to \(p) in System Settings, Network, Details, Hardware (Configure: Manually).",
+                           "On a VPN, ask IT: the VPN normally handles this itself."]
+                x.fixes = [.openSettings(.network)]
                 out.append(x)
             }
             if !h.dnsOK || (h.dnsMs ?? 0) >= 300 {

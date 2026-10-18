@@ -192,7 +192,7 @@ private struct QualityCard: View {
         Card(title: "Quality", symbol: "waveform.path.ecg", tint: netTint,
              trailing: AnyView(Group {
                  if store.testing { BusyButton(title: "Testing…") }
-                 else { RowButton(title: "Test now", symbol: "arrow.clockwise", color: netTint) { store.test() } }
+                 else { RowButton(title: "Test now", symbol: "arrow.clockwise", color: netTint) { store.test(full: true) } }
              }), fill: true) {
             if let h {
                 metric("To the router", ms: h.routerMs, loss: h.routerLoss, good: 10, bad: 50,
@@ -205,7 +205,21 @@ private struct QualityCard: View {
                     Spacer()
                     Text(h.dnsOK ? "\(Int(h.dnsMs ?? 0)) ms" : "failing").font(.callout.weight(.bold)).monospacedDigit()
                 }
-                Text("Tested \(RelativeDateTimeFormatter().localizedString(for: h.at, relativeTo: Date())); again every 3 minutes.")
+                if let i = h.interfaceMTU {
+                    VStack(alignment: .leading, spacing: 1) {
+                        HStack {
+                            dot(h.pathMTU == nil ? .fair : (h.fragments ? ((h.pathMTU ?? 0) < 1400 ? .poor : .fair) : .good))
+                            Text("Largest packet").font(.callout.weight(.semibold))
+                            Spacer()
+                            Text(h.pathMTU.map { "\(String($0)) of \(String(i)) bytes" } ?? "not measured").font(.callout.weight(.bold)).monospacedDigit()
+                        }
+                        Text(h.pathMTU == nil ? "Pings marked do-not-split got no answer at any size."
+                             : h.fragments ? "Bigger packets get split or dropped on the way: big transfers can stall."
+                             : "Full-size packets cross whole: no fragmentation.")
+                            .font(.caption).foregroundStyle(.secondary).padding(.leading, 16)
+                    }
+                }
+                Text("Tested \(RelativeDateTimeFormatter().localizedString(for: h.at, relativeTo: Date())); again every 3 minutes (packet size every 30).")
                     .font(.caption).foregroundStyle(.secondary)
             } else {
                 Text("Testing latency and loss…").font(.caption).foregroundStyle(.secondary)
