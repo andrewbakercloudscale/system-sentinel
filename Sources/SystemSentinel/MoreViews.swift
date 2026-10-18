@@ -110,6 +110,8 @@ struct FixButtons: View {
         case .archiveFound: return "Moves them to a folder you pick, such as an external drive."
         case .review: return "Shows the list below, to pick item by item."
         case .openApp(_, let name): return "Opens \(name)."
+        case .openURL: return "Opens it in the browser."
+        case .leaveHotspot: return "Turns Wi-Fi off and on, so the Mac rejoins its usual network instead of the phone."
         }
     }
 }

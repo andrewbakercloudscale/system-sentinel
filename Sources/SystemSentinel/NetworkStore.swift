@@ -18,13 +18,32 @@ final class NetworkStore: ObservableObject {
     /// Reverse lookups: address to host name, filled in the background.
     @Published var names: [String: String] = [:]
 
+    // The doctor: DNS, HTTPS inspection, speed, phone hotspots (NetDoctorStore.swift).
+    @Published var dns: DNSReport?
+    @Published var dnsHistory = DNSHistory()
+    @Published var doctorRunning = false
+    @Published var speed: SpeedResult?
+    @Published var speedRunning = false
+    @Published var inspection: TLSInspection?
+    @Published var tools: [ToolTrust] = []
+    @Published var inspecting = false
+    /// The inspection certificate saved for tools to use, once exported.
+    @Published var exportedPEM: String?
+    @Published var hotspot = HotspotWatch()
+    /// Network.framework's view: a hotspot or a network marked as metered.
+    var expensive = false
+    /// Traffic per process when the Mac joined the hotspot, to say what used the data.
+    var hotspotBase: [Int32: AppTraffic] = [:]
+    var rootCertificate: Data?
+    let readOnly: Bool
+
     let tracker = ConnectionTracker()
     /// The model's processes, for names, icons and grouping by app.
     var processes: () -> [ProcessSample] = { [] }
     var ran: (TaskHealth.Job) -> Void = { _ in }
 
-    private var timers: [Timer] = []
-    private var traffic: [Int32: AppTraffic] = [:]
+    var timers: [Timer] = []
+    var traffic: [Int32: AppTraffic] = [:]
     private var rates: [Int32: (down: Double, up: Double)] = [:]
     private var lastTraffic: (at: Date, by: [Int32: AppTraffic])?
     private var closeWait: [String: Int] = [:]
@@ -32,9 +51,12 @@ final class NetworkStore: ObservableObject {
     private var busy = false
     private var mtuAt: Date?
 
-    init() {
+    init(readOnly: Bool) {
+        self.readOnly = readOnly
+        loadDoctor()
         sample()
         readLink()
+        startDoctor()
         timers = [
             Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in Task { @MainActor in self?.sample() } },
             Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in Task { @MainActor in self?.readTraffic() } },
@@ -62,6 +84,7 @@ final class NetworkStore: ObservableObject {
                 self.busy = false
                 self.tracker.update(conns, at: now)
                 self.throughput.record(rx: rx, tx: tx, at: now)
+                self.watchHotspot(rx: rx, tx: tx, at: now)
                 var wait: [String: Int] = [:]
                 for c in conns where c.state == "CLOSE_WAIT" { wait[self.appName(pid: c.pid, fallback: c.process), default: 0] += 1 }
                 self.closeWait = wait
@@ -168,6 +191,7 @@ final class NetworkStore: ObservableObject {
                                dnsMs: resolved ? dnsMs : nil, dnsOK: resolved, pathMTU: mtu.0, interfaceMTU: mtu.1, at: Date())
             await MainActor.run {
                 if sweep { self.mtuAt = Date() }
+                self.recordLookup(ok: h.dnsOK, ms: h.dnsMs)
                 self.health = h
                 self.testing = false
                 self.refresh()
@@ -176,6 +200,8 @@ final class NetworkStore: ObservableObject {
     }
 
     // MARK: Putting it together
+
+    func refreshAll() { refresh() }
 
     private func refresh() {
         let procs = processes()
@@ -207,6 +233,7 @@ final class NetworkStore: ObservableObject {
         problems = ConnectionProblem.group(events, since: now.addingTimeInterval(-3600))
         flows = tracker.flows(since: now.addingTimeInterval(-3600))
         insights = NetworkAnalysis.insights(link: link, health: health, problems: problems, apps: apps, closeWait: closeWait, at: now)
+            + doctorInsights(paths: paths, at: now)
         lookUp(Array(Set(flows.prefix(40).map(\.host) + tracker.events.suffix(60).map(\.host))))
     }
 

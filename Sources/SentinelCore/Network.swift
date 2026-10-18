@@ -622,12 +622,6 @@ public enum NetworkAnalysis {
                                title: "\(big.name) has sent \(gb(big.totalOut)) since it started",
                                detail: "Received \(gb(big.totalIn)). Backup, sync and security agents send a lot; anything else sending this much is worth knowing about."))
         }
-        if link.isHotspot {
-            let total = apps.reduce(UInt64(0)) { $0 + $1.totalIn + $1.totalOut }
-            out.append(Insight(id: "net-hotspot", tone: .info, symbol: "personalhotspot",
-                               title: "On a phone's Personal Hotspot",
-                               detail: "Data may be metered. Apps running now have moved \(gb(total)) since they started; pause big syncs and updates."))
-        }
         if let many = apps.filter({ $0.connections >= 300 }).max(by: { $0.connections < $1.connections }) {
             out.append(Insight(id: "net-manyconns", tone: .info, symbol: "point.3.connected.trianglepath.dotted",
                                title: "\(many.name) has \(many.connections) connections open",

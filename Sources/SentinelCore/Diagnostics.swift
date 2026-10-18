@@ -137,7 +137,7 @@ public enum Diagnostics {
 /// three of its intervals has stalled (a hung tool, a timer that stopped).
 public struct TaskHealth: Sendable {
     public enum Job: String, CaseIterable, Sendable {
-        case sampling, energy, storageScan, folderTree, checkup, updateCheck
+        case sampling, energy, storageScan, folderTree, checkup, updateCheck, networkDoctor
 
         /// How often it is meant to run.
         public var interval: TimeInterval {
@@ -146,6 +146,7 @@ public struct TaskHealth: Sendable {
             case .energy: return 15
             case .storageScan, .checkup, .updateCheck: return 6 * 3600
             case .folderTree: return 86_400
+            case .networkDoctor: return 600
             }
         }
 
@@ -157,6 +158,7 @@ public struct TaskHealth: Sendable {
             case .folderTree: return "Folder sizes"
             case .checkup: return "Checkup"
             case .updateCheck: return "Update check"
+            case .networkDoctor: return "DNS checks"
             }
         }
 
@@ -166,6 +168,7 @@ public struct TaskHealth: Sendable {
             case .sampling, .energy: return 60
             case .storageScan, .checkup, .updateCheck: return 1800
             case .folderTree: return 3 * 3600
+            case .networkDoctor: return 300
             }
         }
     }

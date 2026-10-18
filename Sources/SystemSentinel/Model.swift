@@ -146,6 +146,8 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
     @AppStorage("alarmPressure") var alarmPressure = true
     @AppStorage("alarmPressureMinutes") var alarmPressureMinutes: Double = 5
     @AppStorage("alarmDisk") var alarmDisk = true
+    @AppStorage("dnsWorkHost") var dnsWorkHost = ""
+    @AppStorage("hotspotAlerts") var hotspotAlerts = true
     @AppStorage("alarmDiskGB") var alarmDiskGB: Double = 20
     var alarmWatches: [ResourceAlarm: AlarmWatch] = [:]
     /// The alarms that went off, newest first.
@@ -191,7 +193,7 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
         healthLog = HealthLog(fileURL: Model.supportDir.appendingPathComponent("battery-health.json"), readOnly: Model.snapshotDir != nil)
         storage = StorageStore(supportDir: Model.supportDir, readOnly: Model.snapshotDir != nil)
         checkup = CheckupStore(readOnly: Model.snapshotDir != nil)
-        network = NetworkStore()
+        network = NetworkStore(readOnly: Model.snapshotDir != nil)
         super.init()
         Model.current = self
         storage.toast = { [weak self] in self?.showToast($0) }
@@ -199,6 +201,7 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
         storage.ran = { [weak self] in self?.taskHealth.ran($0) }
         checkup.ran = { [weak self] in self?.taskHealth.ran($0) }
         network.processes = { [weak self] in self?.sentinel.latest ?? [] }
+        network.ran = { [weak self] in self?.taskHealth.ran($0) }
         sentinel.onBattery = { [weak self] in MainActor.assumeIsolated { self?.battery?.onBattery ?? false } }
         sentinel.batteryPercent = { [weak self] in MainActor.assumeIsolated { self?.battery?.percent } }
         backgroundItems = BackgroundItems.scan()
@@ -533,6 +536,10 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
             if !items.isEmpty { storage.archive(items, key: "insight-\(kind.rawValue)") }
         case .review(let card, _):
             focus = card
+        case .openURL(let url, _):
+            if let u = URL(string: url) { NSWorkspace.shared.open(u) }
+        case .leaveHotspot:
+            network.leaveHotspot()
         case .openApp(let id, _):
             if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: id) {
                 NSWorkspace.shared.openApplication(at: url, configuration: .init())

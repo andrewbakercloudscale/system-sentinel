@@ -186,8 +186,6 @@ final class NetworkTests: XCTestCase {
         XCTAssertTrue(i[0].detail.contains("Zscaler"))
 
         XCTAssertEqual(NetworkAnalysis.insights(link: NetworkLink(), health: nil, problems: [], apps: [], at: now).map(\.id), ["net-offline"])
-        XCTAssertTrue(NetworkAnalysis.insights(link: NetworkLink(interface: "en0", gateway: "172.20.10.1"), health: nil, problems: [], apps: [], at: now)
-            .contains { $0.id == "net-hotspot" })
     }
 
     func testPathMTU() {

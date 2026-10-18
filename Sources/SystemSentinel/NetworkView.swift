@@ -19,6 +19,11 @@ struct NetworkView: View {
                 LinkCard(store: store)
                 QualityCard(store: store)
             }
+            DNSDoctorCard(store: store)
+            HStack(alignment: .top, spacing: 10) {
+                SpeedCard(store: store)
+                InspectionCard(store: store).id("inspection")
+            }
             TopApps(model: model, store: store)
             TopHosts(store: store)
             ProblemsCard(model: model, store: store)
@@ -65,7 +70,8 @@ private struct NetworkHero: View {
 
     private var summary: String {
         let l = store.link
-        var parts = [l.kind]
+        var parts = [store.onHotspot && !l.isHotspot ? "Metered connection" : l.kind]
+        if store.hotspot.on { parts.append("\(ReportDocument.bytes(store.hotspot.used)) of mobile data so far") }
         if let w = l.wifi { parts.append("\(w.quality.label.lowercased()) signal"); if let b = w.band { parts.append("\(b == 2.4 ? "2.4" : String(Int(b))) GHz") } }
         if let v = l.vpn { parts.append("via \(v)") }
         parts.append("\(store.openCount) connections")
@@ -406,6 +412,180 @@ private struct ProblemsCard: View {
             }
             Text("A secure (TLS) connection that closes before any data arrives usually means a refused handshake: an untrusted certificate (often a VPN or proxy inspecting traffic), a blocked address, a wrong clock, or a server turning the app away. One or two are normal; dozens to the same place are not.")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
+
+// MARK: The doctor
+
+private func good(_ ok: Bool?) -> Color { ok == nil ? .secondary : (ok! ? Tab.battery.color : Theme.heat(100)) }
+
+private struct DNSDoctorCard: View {
+    @ObservedObject var store: NetworkStore
+
+    var body: some View {
+        Card(title: "DNS doctor", symbol: "text.magnifyingglass", tint: netTint,
+             trailing: AnyView(Group {
+                 if store.doctorRunning { BusyButton(title: "Checking…") }
+                 else { RowButton(title: "Check now", symbol: "arrow.clockwise", color: netTint) { store.runDNSDoctor() } }
+             })) {
+            if let d = store.dns {
+                Text("EACH SERVER").font(.caption2.weight(.bold)).foregroundStyle(.secondary)
+                ForEach(Array(d.servers.enumerated()), id: \.offset) { i, s in
+                    HStack(spacing: 8) {
+                        Circle().fill(s.status == nil ? Theme.heat(100) : ((s.ms ?? 0) >= 300 ? Color(hex: "#d97706") : Tab.battery.color)).frame(width: 8, height: 8)
+                        Text(s.address).font(.callout.monospaced()).textSelection(.enabled)
+                        Text(s.domain.map { "only for \($0)" } ?? (i == 0 ? "asked first" : "fallback")).font(.caption).foregroundStyle(.secondary)
+                        Spacer()
+                        Text(s.status == nil ? "no answer" : "\(s.ms ?? 0) ms").font(.callout.weight(.semibold)).monospacedDigit()
+                            .foregroundStyle(s.status == nil ? Theme.heat(100) : .primary)
+                    }
+                }
+                Text("CHECKS").font(.caption2.weight(.bold)).foregroundStyle(.secondary).padding(.top, 4)
+                check(!d.captive, d.captive ? "A sign-in page is in the way" : "No sign-in page in the way")
+                check(d.madeUp.isEmpty, d.madeUp.isEmpty ? "Made-up names are refused, as they should be" : "Made-up names get an answer (\(d.madeUp.first ?? "")): lookups are redirected")
+                if let h = d.workHost {
+                    check(d.workResolved, d.workResolved == true ? "\(h) resolves (\(d.workMs ?? 0) ms)" : "\(h) does not resolve")
+                } else {
+                    Text("Add a work name to check (an intranet or Jira host) in Settings, Network.").font(.caption).foregroundStyle(.secondary)
+                }
+                if !d.splitDomains.isEmpty {
+                    Text("Sent to the VPN's servers: \(d.splitDomains.joined(separator: ", "))").font(.caption).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if !d.hosts.isEmpty {
+                    Text("/etc/hosts: " + d.hosts.map { "\($0.names.joined(separator: " ")) → \($0.address)" }.joined(separator: "; "))
+                        .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
+                }
+            } else {
+                Text("Checking every DNS server…").font(.caption).foregroundStyle(.secondary)
+            }
+            DNSHistoryChart(history: store.dnsHistory)
+        }
+    }
+
+    private func check(_ ok: Bool?, _ text: String) -> some View {
+        Label(text, systemImage: ok == true ? "checkmark.circle.fill" : (ok == nil ? "circle.dashed" : "exclamationmark.triangle.fill"))
+            .font(.caption).foregroundStyle(good(ok))
+    }
+}
+
+private struct DNSHistoryChart: View {
+    let history: DNSHistory
+    var body: some View {
+        let hours = history.hours(at: Date())
+        let fails = hours.reduce(0) { $0 + $1.failed }, slow = hours.reduce(0) { $0 + $1.slow }
+        let total = hours.reduce(0) { $0 + $1.lookups }
+        VStack(alignment: .leading, spacing: 4) {
+            Text("LAST 24 HOURS: \(total) LOOKUPS, \(fails) FAILED, \(slow) SLOW").font(.caption2.weight(.bold)).foregroundStyle(.secondary)
+            Chart(hours, id: \.start) { h in
+                BarMark(x: .value("Hour", h.start, unit: .hour), y: .value("Lookups", h.lookups - h.failed - h.slow))
+                    .foregroundStyle(Tab.battery.color.opacity(0.5))
+                BarMark(x: .value("Hour", h.start, unit: .hour), y: .value("Lookups", h.slow)).foregroundStyle(Color(hex: "#d97706"))
+                BarMark(x: .value("Hour", h.start, unit: .hour), y: .value("Lookups", h.failed)).foregroundStyle(Theme.heat(100))
+            }
+            .chartYAxis(.hidden)
+            .chartXAxis { AxisMarks(values: .stride(by: .hour, count: 6)) { _ in AxisValueLabel(format: .dateTime.hour()).font(.system(size: 9)) } }
+            .frame(height: 54)
+            Text("A lookup every 3 minutes through the Mac's own resolver. Red failed, amber took over a second.")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+        .padding(.top, 4)
+    }
+}
+
+private struct SpeedCard: View {
+    @ObservedObject var store: NetworkStore
+
+    var body: some View {
+        Card(title: "Speed test", symbol: "speedometer", tint: netTint,
+             trailing: AnyView(Group {
+                 if store.speedRunning { BusyButton(title: "Testing… 20 s") }
+                 else { RowButton(title: store.speed == nil ? "Run" : "Run again", symbol: "play.fill", color: netTint) { store.runSpeedTest() } }
+             }), fill: true) {
+            if let s = store.speed {
+                HStack(spacing: 14) {
+                    stat("arrow.down", SpeedResult.mbps(s.down), "download")
+                    stat("arrow.up", SpeedResult.mbps(s.up), "upload")
+                }
+                if let r = s.responsiveness {
+                    let color = r == .high ? Tab.battery.color : (r == .medium ? Color(hex: "#d97706") : Theme.heat(100))
+                    HStack {
+                        Circle().fill(color).frame(width: 9, height: 9)
+                        Text("Responsiveness: \(r.label)").font(.callout.weight(.semibold))
+                        Spacer()
+                        Text("\(Int(s.rpm ?? 0)) RPM").font(.callout.weight(.bold)).monospacedDigit()
+                    }
+                    Text(r == .high ? "Calls stay smooth even while something downloads."
+                         : "While the line is busy, each packet waits about \(Int(s.loadedDelay ?? 0)) ms (idle \(Int(s.idleRTT ?? 0)) ms): \(r == .low ? "calls will stutter" : "calls may stutter") during downloads.")
+                        .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }
+                Text("Tested \(RelativeDateTimeFormatter().localizedString(for: s.at, relativeTo: Date()))\(s.proxied ? ", through a proxy" : "") with macOS's networkQuality, against Apple's servers.")
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            } else {
+                Text("Measures download, upload and how responsive the line stays under load, which is what makes calls stutter. Takes about 20 seconds and moves a few hundred MB.")
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private func stat(_ symbol: String, _ value: String, _ label: String) -> some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Label(value, systemImage: symbol).font(.system(size: 18, weight: .bold, design: .rounded)).monospacedDigit()
+            Text(label).font(.caption).foregroundStyle(.secondary)
+        }
+    }
+}
+
+private struct InspectionCard: View {
+    @ObservedObject var store: NetworkStore
+    @State private var copied = false
+
+    var body: some View {
+        Card(title: "HTTPS inspection", symbol: "eye.fill", tint: netTint,
+             trailing: AnyView(Group {
+                 if store.inspecting { BusyButton(title: "Checking…") }
+                 else { RowButton(title: "Check", symbol: "arrow.clockwise", color: netTint) { store.checkInspection() } }
+             }), fill: true) {
+            if let i = store.inspection {
+                Label(i.intercepted ? "Inspected: \(i.host) is signed by \(i.root)" : "Not inspected: \(i.host) is signed by \(i.root)",
+                      systemImage: i.intercepted ? "eye.trianglebadge.exclamationmark.fill" : "checkmark.shield.fill")
+                    .font(.callout.weight(.semibold)).foregroundStyle(i.intercepted ? Color(hex: "#d97706") : Tab.battery.color)
+                    .fixedSize(horizontal: false, vertical: true)
+                if i.intercepted {
+                    Text("Tools with their own trust list need this certificate:").font(.caption).foregroundStyle(.secondary)
+                    ForEach(store.tools) { t in
+                        Label(t.tool + (t.configured ? ": \(t.how)" : ": not set up"), systemImage: t.configured ? "checkmark.circle.fill" : "xmark.circle.fill")
+                            .font(.caption).foregroundStyle(t.configured ? Tab.battery.color : Theme.heat(100))
+                    }
+                    if store.tools.contains(where: { !$0.configured }) {
+                        HStack {
+                            if store.exportedPEM == nil {
+                                RowButton(title: "Export certificate", symbol: "square.and.arrow.down", color: netTint, filled: true) { store.exportCertificate() }
+                            } else {
+                                RowButton(title: copied ? "Copied" : "Copy setup lines", symbol: copied ? "checkmark" : "doc.on.doc", color: netTint, filled: true) {
+                                    NSPasteboard.general.clearContents()
+                                    NSPasteboard.general.setString(store.setupLines, forType: .string)
+                                    copied = true
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) { copied = false }
+                                }
+                                RowButton(title: "Show file", symbol: "folder", color: netTint) {
+                                    NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: store.exportedPEM!)])
+                                }
+                            }
+                        }
+                        Text(store.exportedPEM == nil ? "Saves it as a .pem file the tools can read."
+                             : "Paste the lines into ~/.zshrc (git's runs once in Terminal), then open a new Terminal window.")
+                            .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    }
+                } else {
+                    Text("Checked github.com, npm and PyPI: they reach this Mac signed by authorities that ship with macOS, so nothing in between decrypts them.")
+                        .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }
+            } else {
+                Text("Checking who signs github.com, npm and PyPI…").font(.caption).foregroundStyle(.secondary)
+            }
         }
     }
 }

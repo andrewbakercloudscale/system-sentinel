@@ -282,6 +282,7 @@ struct SettingsDraft: Equatable {
     var alarmSwap: Bool, alarmSwapGB: Double
     var alarmPressure: Bool, alarmPressureMinutes: Double
     var alarmDisk: Bool, alarmDiskGB: Double
+    var dnsWorkHost: String, hotspotAlerts: Bool
 
     @MainActor init(_ m: Model) {
         threshold = m.threshold; window = m.windowSeconds; login = m.launchAtLogin
@@ -292,6 +293,7 @@ struct SettingsDraft: Equatable {
         alarmSwap = m.alarmSwap; alarmSwapGB = m.alarmSwapGB
         alarmPressure = m.alarmPressure; alarmPressureMinutes = m.alarmPressureMinutes
         alarmDisk = m.alarmDisk; alarmDiskGB = m.alarmDiskGB
+        dnsWorkHost = m.dnsWorkHost; hotspotAlerts = m.hotspotAlerts
     }
 
     @MainActor func apply(to m: Model) {
@@ -304,6 +306,9 @@ struct SettingsDraft: Equatable {
         m.alarmSwap = alarmSwap; m.alarmSwapGB = alarmSwapGB
         m.alarmPressure = alarmPressure; m.alarmPressureMinutes = alarmPressureMinutes
         m.alarmDisk = alarmDisk; m.alarmDiskGB = alarmDiskGB
+        let hostChanged = m.dnsWorkHost != dnsWorkHost
+        m.dnsWorkHost = dnsWorkHost.trimmingCharacters(in: .whitespaces); m.hotspotAlerts = hotspotAlerts
+        if hostChanged { m.network.runDNSDoctor() }
     }
 }
 
@@ -351,6 +356,15 @@ struct SettingsView: View {
             }
             MenuBarSettingsCard(model: model, draft: draft)
             AlarmsSettingsCard(model: model, draft: draft)
+            Card(title: "Network", symbol: "network", tint: Tab.network.color) {
+                HStack {
+                    Text("Work name to check")
+                    TextField("e.g. jira.corp.example.com", text: draft.dnsWorkHost).textFieldStyle(.roundedBorder)
+                }
+                Text("An internal name that only resolves on the office network or VPN. The DNS doctor checks it every 10 minutes and says when it stops resolving.")
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                Toggle("Notify when the Mac joins a phone's hotspot, and as mobile data adds up", isOn: draft.hotspotAlerts).toggleStyle(.switch)
+            }
             Card(title: "Reports", symbol: "calendar.badge.clock", tint: Tab.events.color) {
                 Toggle("Weekly report notification, Monday morning", isOn: draft.weeklyReport).toggleStyle(.switch)
                 Text("Top apps, CPU hours, time on battery and average power draw for the last 7 days. The same report is always on the Events tab.")
