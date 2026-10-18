@@ -112,6 +112,45 @@ final class Permissions: ObservableObject {
 
     func openFullDiskAccess() { Permissions.showFullDiskAccess() }
 
+    /// What the last Test said for each permission: passed, and what happened.
+    @Published var tested: [String: (ok: Bool, text: String)] = [:]
+
+    /// Uses the permission for real, harmlessly: a test notification, reading a folder only
+    /// Full Disk Access opens, asking an app for its name.
+    func test(_ item: Item) {
+        switch item.id {
+        case "notifications":
+            let content = UNMutableNotificationContent()
+            content.title = "System Sentinel test"
+            content.body = "Notifications work. Alarms, runaway processes and updates arrive like this."
+            content.sound = .default
+            UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "test-\(Date().timeIntervalSince1970)", content: content, trigger: nil)) { error in
+                Task { @MainActor in
+                    self.tested[item.id] = error == nil ? (true, "Sent: it should appear at the top right now.")
+                                                        : (false, "Not sent: \(error!.localizedDescription)")
+                }
+            }
+        case "fda":
+            let ok = Permissions.hasFullDiskAccess()
+            tested[item.id] = ok ? (true, "Read the Trash and Safari's folder: access works.")
+                                 : (false, "Still blocked. Turn System Sentinel on in Full Disk Access, then quit and reopen it.")
+        default:
+            let id = item.id
+            let name = Permissions.automated.first { $0.id == id }?.name ?? id
+            Task.detached {
+                let status = Permissions.automation(id, ask: false)
+                let result: (Bool, String)
+                switch status {
+                case noErr: result = (true, "\(name) answered: control works.")
+                case OSStatus(errAEEventNotPermitted): result = (false, "Refused. Turn it on in Privacy & Security, Automation.")
+                case OSStatus(errAEEventWouldRequireUserConsent): result = (false, "Not asked yet: click Allow.")
+                default: result = (false, "\(name) is not running, so macOS cannot say. Open it and test again.")
+                }
+                await MainActor.run { self.tested[id] = result }
+            }
+        }
+    }
+
     /// Opens System Settings at the Full Disk Access list, in front. System Sentinel is already
     /// in that list (it looked for its access at launch), so turning on its switch is all it takes.
     static func showFullDiskAccess() {
@@ -233,6 +272,13 @@ struct PermissionsCard: View {
                     if p.state != .granted {
                         Button(p.state == .denied || p.id == "fda" ? "Open settings" : "Allow") { permissions.request(p) }
                     }
+                    Button("Test") { permissions.test(p) }
+                        .help(p.id == "notifications" ? "Sends a test notification." : "Checks that the permission works now.")
+                }
+                if let t = permissions.tested[p.id] {
+                    Label(t.text, systemImage: t.ok ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                        .font(.caption).foregroundStyle(t.ok ? Tab.battery.color : Theme.heat(100))
+                        .padding(.leading, 34).frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
             Text("Admin password prompts (purge memory, Low Power Mode, killing root processes) cannot be granted in advance: macOS asks each time, by design. Permissions stay granted across updates as long as the app is signed with the same certificate.")
