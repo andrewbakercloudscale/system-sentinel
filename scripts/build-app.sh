@@ -34,6 +34,9 @@ mkdir -p "$HOME/Applications"
 WAS_RUNNING=0
 if pgrep -x SystemSentinel >/dev/null; then
     WAS_RUNNING=1
+    # Say so first, so the window vanishing is not a surprise.
+    osascript -e 'display notification "Installing a new build. Back in a few seconds." with title "System Sentinel" subtitle "Restarting to update"' 2>/dev/null || true
+    osascript -e 'delay 2'
     pkill -TERM -x SystemSentinel 2>/dev/null || true
     for _ in 1 2 3 4 5 6 7 8 9 10; do pgrep -x SystemSentinel >/dev/null || break; osascript -e 'delay 0.5'; done
     pkill -KILL -x SystemSentinel 2>/dev/null || true

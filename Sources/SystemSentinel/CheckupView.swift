@@ -194,18 +194,27 @@ struct SlownessCard: View {
         let hot = model.thermal.rawValue >= ProcessInfo.ThermalState.serious.rawValue
         let cpu = cpuRows()
         let mem = memoryRows()
-        let slow = load >= 60 || pressure != .normal || hot || !cpu.isEmpty
+        // Slow means the whole Mac is short of something. One app busy on one of ten cores
+        // is not that, so it is listed below without the verdict.
+        let reasons = [load >= 60 ? "CPU \(Int(load))% busy" : nil,
+                       pressure != .normal ? "memory \(pressure.label.lowercased())" : nil,
+                       hot ? "running hot" : nil].compactMap { $0 }
+        let slow = !reasons.isEmpty
         let color = slow ? Theme.heat(50) : Tab.battery.color
         Card(title: "Is the Mac slow?", symbol: "tortoise.fill", tint: Tab.checkup.color,
-             trailing: AnyView(Text(slow ? "something is busy" : "running freely").font(.caption.weight(.semibold)).foregroundStyle(color))) {
+             trailing: AnyView(Text(slow ? "Yes: " + reasons.joined(separator: ", ") : "No, it has room to spare")
+                .font(.caption.weight(.semibold)).foregroundStyle(color))) {
             HStack(spacing: 8) {
-                chip("CPU \(Int(load))% busy", load >= 60)
-                chip("Memory \(pressure.label.lowercased())", pressure != .normal)
-                chip("Swap \(ReportDocument.bytes(swap))", swap >= 4 << 30)
-                if hot { chip("Running hot", true) }
+                chip("CPU \(Int(load))% busy", load >= 60, ok: "under 60% is fine")
+                chip("Memory \(pressure.label.lowercased())", pressure != .normal, ok: "normal means apps fit in memory")
+                chip("Swap \(ReportDocument.bytes(swap))", swap >= 8 << 30, ok: "memory parked on disk; a few GB is normal")
+                if hot { chip("Running hot", true, ok: "") }
             }
-            section("Using the most CPU, last minute", cpu,
-                    empty: "No app is using more than a third of a core. CPU is not what is slowing things down.")
+            Text(slow ? "The apps below are the likely cause. Quitting the top one usually helps most."
+                      : "Nothing is short: if an app feels slow, it is that app, not the Mac. The busiest apps are listed anyway.")
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            section("Busiest apps, last minute", cpu,
+                    empty: "No app is using more than a third of a core.")
             section("Using the most memory", mem,
                     empty: "No app is using more than 2 GB.")
             Text("Quit lets the app save first. Force Quit stops it at once and loses anything unsaved. System processes are left alone.")
@@ -213,8 +222,9 @@ struct SlownessCard: View {
         }
     }
 
-    private func chip(_ text: String, _ bad: Bool) -> some View {
+    private func chip(_ text: String, _ bad: Bool, ok: String) -> some View {
         Text(text).font(.caption.weight(.semibold))
+            .help(bad ? "Higher than it should be" : "Fine: \(ok)")
             .foregroundStyle(bad ? Theme.heat(100) : .secondary)
             .padding(.horizontal, 8).padding(.vertical, 3)
             .background(Capsule().fill((bad ? Theme.heat(100) : Color.secondary).opacity(0.1)))

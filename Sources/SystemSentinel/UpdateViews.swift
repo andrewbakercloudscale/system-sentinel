@@ -124,8 +124,13 @@ extension Model {
                         self.showToast(Toast(ok: false, title: "Update not installed", detail: "Could not start the installer: \(error.localizedDescription)"))
                         return
                     }
-                    // Quitting saves the history (see saveOnQuit).
-                    NSApplication.shared.terminate(nil)
+                    let note = UNMutableNotificationContent()
+                    note.title = "System Sentinel"
+                    note.subtitle = "Restarting to update"
+                    note.body = "Installing v\(rel.version). Back in a few seconds."
+                    UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "restarting", content: note, trigger: nil))
+                    // A moment for the notification to show; quitting saves the history (see saveOnQuit).
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { NSApplication.shared.terminate(nil) }
                 }
             }
         }
