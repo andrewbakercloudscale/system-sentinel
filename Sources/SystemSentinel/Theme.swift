@@ -86,6 +86,8 @@ struct Card<Content: View>: View {
     var symbol: String?
     var tint: Color = Theme.accent
     var trailing: AnyView?
+    /// Right after the title, on the same line (an answer to a title that asks).
+    var besideTitle: AnyView? = nil
     /// Stretch to the height offered, so cards side by side line up.
     var fill = false
     @ViewBuilder var content: Content
@@ -98,6 +100,7 @@ struct Card<Content: View>: View {
                         Image(systemName: symbol).font(.caption.weight(.bold)).foregroundStyle(tint)
                     }
                     Text(title).font(.subheadline.weight(.semibold))
+                    if let besideTitle { besideTitle.padding(.leading, 4) }
                     Spacer()
                     trailing
                 }

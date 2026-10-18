@@ -201,9 +201,11 @@ struct SlownessCard: View {
                        hot ? "running hot" : nil].compactMap { $0 }
         let slow = !reasons.isEmpty
         let color = slow ? Theme.heat(50) : Tab.battery.color
+        // The answer straight after the question, not across the card from it.
         Card(title: "Is the Mac slow?", symbol: "tortoise.fill", tint: Tab.checkup.color,
-             trailing: AnyView(Text(slow ? "Yes: " + reasons.joined(separator: ", ") : "No, it has room to spare")
-                .font(.caption.weight(.semibold)).foregroundStyle(color))) {
+             besideTitle: AnyView(Label(slow ? "Yes: " + reasons.joined(separator: ", ") : "No, it has room to spare",
+                                        systemImage: slow ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
+                .font(.subheadline.weight(.semibold)).foregroundStyle(color))) {
             HStack(spacing: 8) {
                 chip("CPU \(Int(load))% busy", load >= 60, ok: "under 60% is fine")
                 chip("Memory \(pressure.label.lowercased())", pressure != .normal, ok: "normal means apps fit in memory")
