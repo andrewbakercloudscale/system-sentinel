@@ -18,15 +18,15 @@ struct StorageView: View {
                 InsightList(model: model, only: store.insights, title: "Storage insights")
             }
             StorageTimeline(store: store)
-            WhatGrew(store: store)
-            QuickCleanups(store: store)
-            DownloadsCard(store: store)
+            WhatGrew(store: store).id("grew")
+            QuickCleanups(store: store).id("cleanups")
+            DownloadsCard(store: store).id("downloads")
             WhereIsTheSpace(store: store)
             LargeFiles(store: store)
-            PackagesCard(store: store)
-            VideosCard(store: store)
-            PhotoFoldersCard(store: store)
-            KnownFolders(store: store)
+            PackagesCard(model: model, store: store).id("packages")
+            VideosCard(store: store).id("videos")
+            PhotoFoldersCard(store: store).id("photos")
+            KnownFolders(store: store).id("folders")
         }
     }
 }
@@ -589,6 +589,7 @@ private struct LargeFiles: View {
 // MARK: Packages, videos, photos
 
 private struct PackagesCard: View {
+    @ObservedObject var model: Model
     @ObservedObject var store: StorageStore
     @AppStorage("packagesKind") private var kind = "Unused apps"
     static let kinds = ["Unused apps", "Installers", "node_modules"]
@@ -607,6 +608,9 @@ private struct PackagesCard: View {
         Card(title: "Packages you can delete", symbol: "shippingbox.fill", tint: storageTint,
              trailing: AnyView(Text(total > 0 ? gb(total) : "").font(.callout.weight(.bold)).foregroundStyle(storageTint))) {
             ChipPicker(options: Self.kinds, selection: $kind, color: storageTint)
+                .onChange(of: model.focus) { _, f in
+                    if let f, f.hasPrefix("packages:") { kind = String(f.dropFirst("packages:".count)) }
+                }
             Text(explain).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             if stale.isEmpty {
                 Text(store.foundAt == nil ? "Searching…" : "None found.").font(.caption).foregroundStyle(.secondary)

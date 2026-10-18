@@ -97,8 +97,17 @@ struct MenuView: View {
                 } else {
                     // Banners scroll with the page: a window that changes height while open
                     // can make AppKit abort mid-layout.
-                    ScrollView(.vertical) { VStack(spacing: 10) { banners; page }.padding(.trailing, 2) }
-                        .frame(height: Self.contentHeight)
+                    ScrollViewReader { proxy in
+                        ScrollView(.vertical) { VStack(spacing: 10) { banners; page }.padding(.trailing, 2) }
+                            .frame(height: Self.contentHeight)
+                            .onChange(of: model.focus) { _, card in
+                                guard let card else { return }
+                                let id = String(card.split(separator: ":").first ?? "")
+                                withAnimation(.easeInOut(duration: 0.3)) { proxy.scrollTo(id, anchor: .top) }
+                                // Cleared after the card has picked its view, so the same button works again.
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { model.focus = nil }
+                            }
+                    }
                 }
             }
             .overlay(alignment: .top) {

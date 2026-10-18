@@ -82,6 +82,12 @@ struct FixButtons: View {
         case .lowPowerMode: return "Turns Low Power Mode on now. macOS asks for your password."
         case .openSettings(let s): return "Opens System Settings at \(s.title)."
         case .reveal: return "Shows the file in Finder."
+        case .emptyTrash: return "Deletes everything in the Trash for good. Asks first."
+        case .cleanPlaces: return "Deletes caches that are rebuilt when needed. Asks first."
+        case .trashFound: return "Moves them to the Trash, where you can still put them back. Asks first."
+        case .archiveFound: return "Moves them to a folder you pick, such as an external drive."
+        case .review: return "Shows the list below, to pick item by item."
+        case .openApp(_, let name): return "Opens \(name)."
         }
     }
 }

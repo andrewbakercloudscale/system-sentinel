@@ -102,6 +102,8 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
     static weak var current: Model?
     /// Kept alive so SIGTERM saves before quitting.
     static var termSource: DispatchSourceSignal?
+    /// A card to scroll to (and its view, after a colon), set by an insight's Review button.
+    @Published var focus: String?
     let cores = Double(ProcessInfo.processInfo.activeProcessorCount)
     private var timer: Timer?
     /// Processes named in a pending notification, so its Kill button acts on the right one.
@@ -490,6 +492,36 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
             if let url = URL(string: s.url) { NSWorkspace.shared.open(url) }
         case .reveal(let path):
             NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
+        case .emptyTrash:
+            let size = storage.found.places["trash"].map { " Frees about \(ReportDocument.bytes($0))." } ?? ""
+            if StorageStore.confirm("Empty the Trash?", "Everything in the Trash is deleted for good." + size, button: "Empty Trash") {
+                storage.emptyTrash()
+            }
+        case .cleanPlaces(let keys):
+            let places = keys.compactMap(StoragePlace.named).filter { $0.clean != nil }
+            let bytes = places.reduce(UInt64(0)) { $0 + (storage.found.places[$1.key] ?? 0) }
+            let names = places.map(\.name).joined(separator: ", ")
+            if StorageStore.confirm("Clean \(names)?", "These are rebuilt or downloaded again when needed. Frees about \(ReportDocument.bytes(bytes)).", button: "Clean") {
+                places.forEach(storage.clean)
+            }
+        case .trashFound(let kind, _):
+            let items = StorageAnalysis.items(kind, in: storage.found, at: Date())
+            guard !items.isEmpty else { return }
+            let bytes = items.reduce(UInt64(0)) { $0 + $1.bytes }
+            let names = items.prefix(4).map(\.name).joined(separator: ", ") + (items.count > 4 ? " and \(items.count - 4) more" : "")
+            if StorageStore.confirm("Move \(items.count) item\(items.count == 1 ? "" : "s") to the Trash?",
+                                    "\(ReportDocument.bytes(bytes)): \(names). You can put them back until the Trash is emptied.", button: "Move to Trash") {
+                storage.moveToTrash(items, key: "insight-\(kind.rawValue)")
+            }
+        case .archiveFound(let kind, _):
+            let items = StorageAnalysis.items(kind, in: storage.found, at: Date())
+            if !items.isEmpty { storage.archive(items, key: "insight-\(kind.rawValue)") }
+        case .review(let card, _):
+            focus = card
+        case .openApp(let id, _):
+            if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: id) {
+                NSWorkspace.shared.openApplication(at: url, configuration: .init())
+            }
         }
     }
 

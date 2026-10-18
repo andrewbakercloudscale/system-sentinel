@@ -551,6 +551,25 @@ public enum StorageAnalysis {
 
     static func gb(_ b: UInt64) -> String { ReportDocument.bytes(b) }
 
+    /// The groups of found files an insight can act on.
+    public enum Kind: String, Sendable {
+        case installers, oldDownloads, oldNodeModules, unusedApps, oldMovies
+    }
+
+    /// The files behind an insight, the same ones its headline counts.
+    public static func items(_ kind: Kind, in found: Found, at now: Date) -> [FoundItem] {
+        switch kind {
+        case .installers: return found.installers
+        case .oldDownloads: return found.downloads.filter { Clutter.isStale($0.used ?? $0.modified, days: 90, at: now) }
+        case .oldNodeModules: return found.nodeModules.filter { Clutter.isStale($0.modified, days: 90, at: now) }
+        case .unusedApps: return found.unusedApps
+        case .oldMovies: return found.movies.filter { Clutter.isStale($0.used ?? $0.modified, days: 180, at: now) }
+        }
+    }
+
+    /// Rebuildable developer caches worth cleaning, biggest first.
+    static let devPlaces = ["derivedData", "deviceSupport", "simulators", "npm", "pip", "yarn", "gradle", "maven", "cargo", "homebrew"]
+
     public static func insights(disk: DiskSpace, points: [StorageHistory.Point], scans: [StorageHistory.Scan],
                                 found: Found, at now: Date) -> [Insight] {
         var out: [Insight] = []
@@ -562,12 +581,14 @@ public enum StorageAnalysis {
                             detail: "\(Int(disk.usedShare * 100))% of \(gb(disk.total)) used. macOS needs free space for swap, updates and saving files.")
             x.why = "With little free space macOS cannot grow swap, so apps slow down or quit; updates refuse to install; apps can fail to save."
             x.steps = ["Empty the Trash.", "Move old downloads and installers to the Trash.", "Delete build caches and old simulators below.", "Move big videos and photo folders to an external drive."]
+            x.fixes = [.review(card: "cleanups", label: "Quick cleanups")]
             out.append(x)
         case .low:
             var x = Insight(id: "disk-low", tone: .warning, symbol: "externaldrive.fill",
                             title: "Disk space is getting low: \(gb(disk.available)) left",
                             detail: "\(Int(disk.usedShare * 100))% of \(gb(disk.total)) used.")
             x.steps = ["Start with the Trash and Downloads, then the cleanups below."]
+            x.fixes = [.review(card: "cleanups", label: "Quick cleanups")]
             out.append(x)
         case .ok: break
         }
@@ -577,64 +598,85 @@ public enum StorageAnalysis {
                             detail: "Use is growing by \(gb(UInt64(perDay ?? 0))) a day over the last week.")
             x.why = "A straight line through the last 7 days of readings. A one-off download skews it; steady growth usually means a cache, a VM disk or a sync folder."
             x.steps = ["Check What grew below for the folder that is growing."]
+            x.fixes = [.review(card: "grew", label: "What grew")]
             out.append(x)
         }
         if let j = jumps(points.filter { $0.t >= Int(now.timeIntervalSince1970) - 86_400 }).first, j.bytes > 0 {
-            out.append(Insight(id: "disk-jump", tone: .info, symbol: "arrow.up.forward.square",
-                               title: "\(gb(UInt64(j.bytes))) was used at \(j.from.formatted(.dateTime.weekday(.abbreviated).hour().minute()))",
-                               detail: "Within an hour. Large downloads, a VM growing or a backup are the usual causes."))
+            var x = Insight(id: "disk-jump", tone: .info, symbol: "arrow.up.forward.square",
+                            title: "\(gb(UInt64(j.bytes))) was used at \(j.from.formatted(.dateTime.weekday(.abbreviated).hour().minute()))",
+                            detail: "Within an hour. Large downloads, a VM growing or a backup are the usual causes.")
+            x.fixes = [.review(card: "grew", label: "What grew")]
+            out.append(x)
         }
         if let t = found.places["trash"], t >= 1 << 30 {
-            out.append(Insight(id: "disk-trash", tone: t >= 10 << 30 ? .warning : .info, symbol: "trash.fill",
-                               title: "\(gb(t)) is sitting in the Trash", detail: "Deleted files keep using space until the Trash is emptied."))
+            var x = Insight(id: "disk-trash", tone: t >= 10 << 30 ? .warning : .info, symbol: "trash.fill",
+                            title: "\(gb(t)) is sitting in the Trash", detail: "Deleted files keep using space until the Trash is emptied.")
+            x.fixes = [.emptyTrash]
+            out.append(x)
         }
         let installers = found.installers.reduce(UInt64(0)) { $0 + $1.bytes }
         if installers >= 1 << 30 {
-            out.append(Insight(id: "disk-installers", tone: .info, symbol: "shippingbox.fill",
-                               title: "\(gb(installers)) of installers and disk images",
-                               detail: "\(found.installers.count) .dmg, .pkg and .iso files. Once installed, they are rarely needed again."))
+            var x = Insight(id: "disk-installers", tone: .info, symbol: "shippingbox.fill",
+                            title: "\(gb(installers)) of installers and disk images",
+                            detail: "\(found.installers.count) .dmg, .pkg and .iso files. Once installed, they are rarely needed again.")
+            x.fixes = [.trashFound(.installers, count: found.installers.count), .review(card: "packages:Installers", label: "Review")]
+            out.append(x)
         }
-        let oldDownloads = found.downloads.filter { Clutter.isStale($0.used ?? $0.modified, days: 90, at: now) }
+        let oldDownloads = items(.oldDownloads, in: found, at: now)
         let oldBytes = oldDownloads.reduce(UInt64(0)) { $0 + $1.bytes }
         if oldBytes >= 2 << 30 {
-            out.append(Insight(id: "disk-olddownloads", tone: .info, symbol: "arrow.down.circle.fill",
-                               title: "\(gb(oldBytes)) in Downloads is over 3 months old",
-                               detail: "\(oldDownloads.count) items. Review them in Downloads below."))
+            var x = Insight(id: "disk-olddownloads", tone: .info, symbol: "arrow.down.circle.fill",
+                            title: "\(gb(oldBytes)) in Downloads is over 3 months old",
+                            detail: "\(oldDownloads.count) items not opened since they arrived.")
+            x.fixes = [.trashFound(.oldDownloads, count: oldDownloads.count), .review(card: "downloads", label: "Review")]
+            out.append(x)
         }
-        let dev = ["derivedData", "deviceSupport", "simulators", "npm", "pip", "yarn", "gradle", "maven", "cargo", "homebrew"]
+        let dev = devPlaces
             .compactMap { k in found.places[k].map { (k, $0) } }.filter { $0.1 >= 1 << 30 }
         let devBytes = dev.reduce(UInt64(0)) { $0 + $1.1 }
         if devBytes >= 5 << 30 {
-            out.append(Insight(id: "disk-dev", tone: .info, symbol: "hammer.fill",
-                               title: "\(gb(devBytes)) of developer caches can be rebuilt",
-                               detail: dev.sorted { $0.1 > $1.1 }.prefix(3).map { "\(StoragePlace.named($0.0)?.name ?? $0.0) \(gb($0.1))" }.joined(separator: ", ") + "."))
+            let sorted = dev.sorted { $0.1 > $1.1 }
+            var x = Insight(id: "disk-dev", tone: .info, symbol: "hammer.fill",
+                            title: "\(gb(devBytes)) of developer caches can be rebuilt",
+                            detail: sorted.prefix(3).map { "\(StoragePlace.named($0.0)?.name ?? $0.0) \(gb($0.1))" }.joined(separator: ", ") + ".")
+            x.fixes = [.cleanPlaces(keys: sorted.map(\.0)), .review(card: "cleanups", label: "Review")]
+            out.append(x)
         }
-        let nm = found.nodeModules.filter { Clutter.isStale($0.modified, days: 90, at: now) }
+        let nm = items(.oldNodeModules, in: found, at: now)
         let nmBytes = nm.reduce(UInt64(0)) { $0 + $1.bytes }
         if nmBytes >= 1 << 30 {
-            out.append(Insight(id: "disk-nodemodules", tone: .info, symbol: "cube.box.fill",
-                               title: "\(gb(nmBytes)) of node_modules in projects untouched for 3 months",
-                               detail: "\(nm.count) folders. npm install brings them back when you return to a project."))
+            var x = Insight(id: "disk-nodemodules", tone: .info, symbol: "cube.box.fill",
+                            title: "\(gb(nmBytes)) of node_modules in projects untouched for 3 months",
+                            detail: "\(nm.count) folders. npm install brings them back when you return to a project.")
+            x.fixes = [.trashFound(.oldNodeModules, count: nm.count), .review(card: "packages:node_modules", label: "Review")]
+            out.append(x)
         }
         let apps = found.unusedApps.reduce(UInt64(0)) { $0 + $1.bytes }
         if apps >= 2 << 30 {
-            out.append(Insight(id: "disk-apps", tone: .info, symbol: "app.badge",
-                               title: "\(gb(apps)) of apps not opened in 6 months",
-                               detail: found.unusedApps.prefix(3).map { $0.name.replacingOccurrences(of: ".app", with: "") }.joined(separator: ", ") + (found.unusedApps.count > 3 ? " and \(found.unusedApps.count - 3) more." : ".")))
+            var x = Insight(id: "disk-apps", tone: .info, symbol: "app.badge",
+                            title: "\(gb(apps)) of apps not opened in 6 months",
+                            detail: found.unusedApps.prefix(3).map { $0.name.replacingOccurrences(of: ".app", with: "") }.joined(separator: ", ") + (found.unusedApps.count > 3 ? " and \(found.unusedApps.count - 3) more." : "."))
+            // Apps one by one: removing all at once is too blunt.
+            x.fixes = [.review(card: "packages:Unused apps", label: "Review")]
+            out.append(x)
         }
-        let movies = found.movies.filter { Clutter.isStale($0.used ?? $0.modified, days: 180, at: now) }
+        let movies = items(.oldMovies, in: found, at: now)
         let movieBytes = movies.reduce(UInt64(0)) { $0 + $1.bytes }
         if movieBytes >= 2 << 30 {
-            out.append(Insight(id: "disk-movies", tone: .info, symbol: "film.fill",
-                               title: "\(gb(movieBytes)) of videos not watched in 6 months",
-                               detail: "\(movies.count) videos. Move them to an external drive or cloud storage."))
+            var x = Insight(id: "disk-movies", tone: .info, symbol: "film.fill",
+                            title: "\(gb(movieBytes)) of videos not watched in 6 months",
+                            detail: "\(movies.count) videos. Move them to an external drive or cloud storage.")
+            x.fixes = [.archiveFound(.oldMovies, count: movies.count), .review(card: "videos", label: "Review")]
+            out.append(x)
         }
         let photos = found.photoFolders.filter { Clutter.isStale($0.newest, days: 365, at: now) }
         let photoBytes = photos.reduce(UInt64(0)) { $0 + $1.bytes }
         if photoBytes >= 1 << 30 {
-            out.append(Insight(id: "disk-photos", tone: .info, symbol: "photo.stack.fill",
-                               title: "\(gb(photoBytes)) of photo folders unchanged for over a year",
-                               detail: "\(photos.count) folders ready to archive to an external drive or cloud storage."))
+            var x = Insight(id: "disk-photos", tone: .info, symbol: "photo.stack.fill",
+                            title: "\(gb(photoBytes)) of photo folders unchanged for over a year",
+                            detail: "\(photos.count) folders ready to archive to an external drive or cloud storage.")
+            x.fixes = [.review(card: "photos", label: "Review")]
+            out.append(x)
         }
         if let p = found.places["pictures"], p >= 20 << 30 {
             var x = Insight(id: "disk-photos-library", tone: .info, symbol: "photo.on.rectangle.angled",
@@ -642,6 +684,7 @@ public enum StorageAnalysis {
                             detail: "Usually the biggest thing on a Mac. Photos can keep the originals in iCloud and small copies here.")
             x.steps = ["Open Photos, Settings, iCloud, and choose Optimize Mac Storage (needs iCloud Photos and enough iCloud space).",
                        "Or move the library to an external drive: quit Photos, drag the library across, then open it from there while holding Option."]
+            x.fixes = [.openApp(bundleID: "com.apple.Photos", name: "Photos"), .review(card: "folders", label: "Review")]
             out.append(x)
         }
         if found.localSnapshots > 0, disk.level != .ok {

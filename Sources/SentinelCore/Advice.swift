@@ -12,6 +12,17 @@ public enum FixAction: Equatable, Sendable, Identifiable {
     case lowPowerMode
     case openSettings(Settings)
     case reveal(path: String)
+    /// Storage: empty the Trash (asks first).
+    case emptyTrash
+    /// Storage: clean these rebuildable places (`StoragePlace` keys), asking first.
+    case cleanPlaces(keys: [String])
+    /// Storage: move what a scan found to the Trash, asking first.
+    case trashFound(StorageAnalysis.Kind, count: Int)
+    /// Storage: move what a scan found to a folder you pick, such as an external drive.
+    case archiveFound(StorageAnalysis.Kind, count: Int)
+    /// Scroll to a card on the current tab and pick its view.
+    case review(card: String, label: String)
+    case openApp(bundleID: String, name: String)
 
     public enum Settings: String, Sendable {
         case battery, displays, accessibilityDisplay, screenRecording, timeMachine, loginItems
@@ -47,6 +58,13 @@ public enum FixAction: Equatable, Sendable, Identifiable {
         case .lowPowerMode: return "Turn on Low Power Mode"
         case .openSettings(let s): return s.title
         case .reveal: return "Show in Finder"
+        case .emptyTrash: return "Empty Trash"
+        case .cleanPlaces(let keys):
+            return keys.count == 1 ? "Clean \(StoragePlace.named(keys[0])?.name ?? keys[0])" : "Clean all \(keys.count)"
+        case .trashFound(_, let n): return n == 1 ? "Move it to the Trash" : "Move all \(n) to the Trash"
+        case .archiveFound: return "Move to a drive…"
+        case .review(_, let label): return label
+        case .openApp(_, let name): return "Open \(name)"
         }
     }
 
@@ -57,14 +75,20 @@ public enum FixAction: Equatable, Sendable, Identifiable {
         case .lowPowerMode: return "leaf.fill"
         case .openSettings: return "gearshape.fill"
         case .reveal: return "folder.fill"
+        case .emptyTrash: return "trash.slash.fill"
+        case .cleanPlaces: return "sparkles"
+        case .trashFound: return "trash.fill"
+        case .archiveFound: return "externaldrive.fill"
+        case .review: return "list.bullet"
+        case .openApp: return "arrow.up.forward.app.fill"
         }
     }
 
     /// Changes something (red button) rather than only opening a window.
     public var acts: Bool {
         switch self {
-        case .quit, .kill, .lowPowerMode: return true
-        case .openSettings, .reveal: return false
+        case .quit, .kill, .lowPowerMode, .emptyTrash, .cleanPlaces, .trashFound: return true
+        case .openSettings, .reveal, .archiveFound, .review, .openApp: return false
         }
     }
 

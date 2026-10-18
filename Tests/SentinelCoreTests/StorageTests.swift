@@ -101,6 +101,33 @@ final class StorageTests: XCTestCase {
         XCTAssertTrue(ids.contains("disk-dev"))
     }
 
+    func testStorageInsightsCarryActions() {
+        let now = Date()
+        let old = now.addingTimeInterval(-200 * 86_400)
+        var found = StorageAnalysis.Found()
+        found.places = ["trash": 2 * gb, "npm": 4 * gb, "derivedData": 2 * gb]
+        found.installers = [FoundItem(path: "/d/a.dmg", bytes: gb), FoundItem(path: "/d/b.pkg", bytes: gb)]
+        found.downloads = [FoundItem(path: "/dl/old.zip", bytes: 3 * gb, modified: old),
+                           FoundItem(path: "/dl/new.zip", bytes: 3 * gb, modified: now)]
+        found.movies = [FoundItem(path: "/m/a.mov", bytes: 3 * gb, modified: old, used: old)]
+        let list = StorageAnalysis.insights(disk: DiskSpace(total: 500 * gb, free: 200 * gb, available: 200 * gb), points: [], scans: [],
+                                            found: found, at: now)
+        func fixes(_ id: String) -> [FixAction] { list.first { $0.id == id }?.fixes ?? [] }
+        XCTAssertEqual(fixes("disk-trash"), [.emptyTrash])
+        XCTAssertEqual(fixes("disk-installers").first, .trashFound(.installers, count: 2))
+        XCTAssertEqual(fixes("disk-olddownloads").first, .trashFound(.oldDownloads, count: 1), "only the old one")
+        XCTAssertEqual(fixes("disk-dev").first, .cleanPlaces(keys: ["npm", "derivedData"]), "biggest first")
+        XCTAssertEqual(fixes("disk-movies").first, .archiveFound(.oldMovies, count: 1))
+        for i in list { XCTAssertFalse(i.fixes.isEmpty, "\(i.id) has no action") }
+
+        // The buttons act on the same files the headline counts.
+        XCTAssertEqual(StorageAnalysis.items(.oldDownloads, in: found, at: now).map(\.path), ["/dl/old.zip"])
+        XCTAssertEqual(FixAction.trashFound(.installers, count: 2).title, "Move all 2 to the Trash")
+        XCTAssertEqual(FixAction.cleanPlaces(keys: ["npm"]).title, "Clean \(StoragePlace.named("npm")!.name)")
+        XCTAssertTrue(FixAction.emptyTrash.acts)
+        XCTAssertFalse(FixAction.review(card: "downloads", label: "Review").acts)
+    }
+
     func testAlarmWatch() {
         var w = AlarmWatch()
         let t0 = Date(timeIntervalSince1970: 0)
