@@ -50,7 +50,7 @@ private struct FileIcon: View {
 }
 
 /// A small text button for a row: Show, Move…, Trash.
-private struct RowButton: View {
+struct RowButton: View {
     let title: String
     let symbol: String
     var color: Color = storageTint

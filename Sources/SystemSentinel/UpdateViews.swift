@@ -35,6 +35,7 @@ extension Model {
                 self.lastUpdateCheck = Date().timeIntervalSince1970
                 switch result {
                 case .success(let rel):
+                    self.taskHealth.ran(.updateCheck)
                     if Updates.isNewer(rel.version, than: Model.appVersion) {
                         self.update = rel
                         self.updateState = .idle
@@ -46,6 +47,7 @@ extension Model {
                     }
                 case .failure(let e):
                     self.updateState = .failed(e.text)
+                    Diagnostics.report("update", "Update check failed: \(e.text)")
                     if manual { self.showToast(Toast(ok: false, title: "Could not check for updates", detail: e.text)) }
                 }
             }
@@ -119,13 +121,10 @@ extension Model {
                         try p.run()
                     } catch {
                         self.updateState = .failed("Could not start the installer: \(error.localizedDescription)")
+                        self.showToast(Toast(ok: false, title: "Update not installed", detail: "Could not start the installer: \(error.localizedDescription)"))
                         return
                     }
-                    self.sentinel.dailyUsage.save()
-                    self.sentinel.recentUsage.save()
-                    self.powerHistory.save()
-                    self.memoryHistory.save()
-                    self.energyUsage.save()
+                    // Quitting saves the history (see saveOnQuit).
                     NSApplication.shared.terminate(nil)
                 }
             }

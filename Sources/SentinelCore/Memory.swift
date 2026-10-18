@@ -115,8 +115,7 @@ public final class MemoryHistory {
 
     public func save() {
         guard !readOnly, let url = fileURL, let data = try? JSONEncoder().encode(points) else { return }
-        try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try? data.write(to: url, options: .atomic)
+        Diagnostics.write(data, to: url, what: url.lastPathComponent)
     }
 }
 

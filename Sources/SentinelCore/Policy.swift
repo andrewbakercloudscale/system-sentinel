@@ -87,10 +87,8 @@ public final class PolicyStore {
 
     private func save() {
         guard let url = fileURL else { return }
-        try? FileManager.default.createDirectory(
-            at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         if let data = try? JSONEncoder().encode(policies) {
-            try? data.write(to: url, options: .atomic)
+            Diagnostics.write(data, to: url, what: "rules")
         }
     }
 }

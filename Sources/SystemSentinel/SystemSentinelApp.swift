@@ -142,6 +142,7 @@ struct MenuView: View {
 
     @ViewBuilder
     private var banners: some View {
+        CrashBanner(model: model)
         if let rel = model.update { UpdateBanner(model: model, rel: rel) }
         if Model.snapshotDir == nil { PermissionsGate(permissions: model.permissions) }
     }
@@ -356,6 +357,7 @@ struct SettingsView: View {
             }
             UpdatesCard(model: model, auto: draft.autoUpdateCheck)
             PermissionsCard(permissions: model.permissions)
+            DiagnosticsCard(model: model)
             HStack(spacing: 8) {
                 if dirty {
                     Label("Unsaved changes", systemImage: "pencil.circle.fill").font(.caption.weight(.semibold)).foregroundStyle(Tab.events.color)

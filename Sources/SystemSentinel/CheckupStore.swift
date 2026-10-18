@@ -10,6 +10,7 @@ final class CheckupStore: ObservableObject {
     @Published var checks: [Check] = []
     @Published var running = false
     @Published var ranAt: Date?
+    var ran: (TaskHealth.Job) -> Void = { _ in }
     @Published var working: Set<String> = []
     /// Pending macOS updates, from the slow `softwareupdate -l`, refreshed once a day.
     @Published var updates: [String]?
@@ -45,6 +46,7 @@ final class CheckupStore: ObservableObject {
                 if needUpdates { self.updates = pending; self.updatesAt = Date() }
                 self.ranAt = Date()
                 self.running = false
+                self.ran(.checkup)
             }
         }
     }
@@ -469,8 +471,15 @@ nonisolated func sh(_ path: String, _ args: [String], timeout: TimeInterval = 20
     let pipe = Pipe()
     p.standardOutput = pipe
     p.standardError = pipe
-    guard (try? p.run()) != nil else { return "" }
-    let timer = DispatchWorkItem { if p.isRunning { p.terminate() } }
+    guard (try? p.run()) != nil else {
+        Diagnostics.report("checkup", "\(URL(fileURLWithPath: path).lastPathComponent) would not start")
+        return ""
+    }
+    let timer = DispatchWorkItem {
+        guard p.isRunning else { return }
+        p.terminate()
+        Diagnostics.report("checkup", "\(URL(fileURLWithPath: path).lastPathComponent) \(args.first ?? "") took over \(Int(timeout)) s and was stopped")
+    }
     DispatchQueue.global().asyncAfter(deadline: .now() + timeout, execute: timer)
     let data = pipe.fileHandleForReading.readDataToEndOfFile()
     p.waitUntilExit()

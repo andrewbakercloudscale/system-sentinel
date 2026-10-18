@@ -40,8 +40,8 @@ public final class History {
             h.seekToEndOfFile()
             h.write(line)
             try? h.close()
-        } else {
-            try? line.write(to: url)
+        } else if (try? line.write(to: url)) == nil {
+            Diagnostics.report("save", "Could not write the events log \(url.lastPathComponent)")
         }
     }
 }

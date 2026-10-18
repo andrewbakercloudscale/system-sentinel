@@ -114,8 +114,7 @@ public final class StorageHistory {
 
     public func save() {
         guard !readOnly, let url = fileURL, let data = try? JSONEncoder().encode(File(points: points, scans: scans)) else { return }
-        try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try? data.write(to: url, options: .atomic)
+        Diagnostics.write(data, to: url, what: url.lastPathComponent)
     }
 }
 
@@ -372,9 +371,13 @@ public enum Spotlight {
         let pipe = Pipe()
         p.standardOutput = pipe
         p.standardError = FileHandle.nullDevice
-        guard (try? p.run()) != nil else { return [] }
+        guard (try? p.run()) != nil else {
+            Diagnostics.report("storage", "Spotlight search (mdfind) would not start")
+            return []
+        }
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
         p.waitUntilExit()
+        if p.terminationStatus != 0 { Diagnostics.report("storage", "Spotlight search failed (mdfind exit \(p.terminationStatus))") }
         return data.split(separator: 0).compactMap { String(data: Data($0), encoding: .utf8) }
     }
 

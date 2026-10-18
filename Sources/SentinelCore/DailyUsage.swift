@@ -205,8 +205,7 @@ public final class DailyUsage {
     public func save() {
         guard !readOnly, let url = fileURL,
               let data = try? JSONEncoder().encode(Stored(entries: entries, coverage: coverage)) else { return }
-        try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try? data.write(to: url, options: .atomic)
+        Diagnostics.write(data, to: url, what: url.lastPathComponent)
     }
 
     static func key(for s: ProcessSample) -> String { s.path }

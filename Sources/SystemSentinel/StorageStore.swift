@@ -24,6 +24,8 @@ final class StorageStore: ObservableObject {
     private var timer: Timer?
     private var treeCancelled = false
     var toast: (Model.Toast) -> Void = { _ in }
+    /// Tells the model a scan finished, for the Diagnostics card.
+    var ran: (TaskHealth.Job) -> Void = { _ in }
     let home = FileManager.default.homeDirectoryForCurrentUser
 
     init(supportDir: URL, readOnly: Bool) {
@@ -79,6 +81,7 @@ final class StorageStore: ObservableObject {
                 self.scanning = false
                 self.history.record(scan: result.found.places, at: Date())
                 self.refreshInsights()
+                self.ran(.storageScan)
             }
         }
     }
@@ -171,9 +174,9 @@ final class StorageStore: ObservableObject {
             }, cancelled: { StorageStore.cancelFlag })
             let cancelled = StorageStore.cancelFlag
             StorageStore.cancelFlag = false
-            if !cancelled, let data = try? JSONEncoder().encode(t) { try? data.write(to: url, options: .atomic) }
+            if !cancelled, let data = try? JSONEncoder().encode(t) { Diagnostics.write(data, to: url, what: "folder sizes") }
             await MainActor.run {
-                if !cancelled { self.tree = t }
+                if !cancelled { self.tree = t; self.ran(.folderTree) }
                 self.treeProgress = nil
             }
         }

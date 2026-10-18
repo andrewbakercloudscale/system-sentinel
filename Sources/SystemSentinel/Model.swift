@@ -104,6 +104,11 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
     static var termSource: DispatchSourceSignal?
     /// A card to scroll to (and its view, after a colon), set by an insight's Review button.
     @Published var focus: String?
+    /// When each background job last finished, for the Diagnostics card.
+    @Published var taskHealth = TaskHealth()
+    /// macOS's report of the crash that ended the last run, shown once on the next launch.
+    @Published var lastCrash: URL?
+    let errorLog = ErrorLog(fileURL: Model.snapshotDir == nil ? Model.supportDir.appendingPathComponent("errors.log") : nil)
     let cores = Double(ProcessInfo.processInfo.activeProcessorCount)
     private var timer: Timer?
     /// Processes named in a pending notification, so its Kill button acts on the right one.
@@ -166,6 +171,7 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
     }
 
     override init() {
+        Diagnostics.log = errorLog
         sentinel = Sentinel(
             policies: PolicyStore(fileURL: Model.supportDir.appendingPathComponent("policies.json")),
             history: History(fileURL: Model.snapshotDir == nil ? Model.supportDir.appendingPathComponent("history.jsonl") : nil,
@@ -188,6 +194,8 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
         Model.current = self
         storage.toast = { [weak self] in self?.showToast($0) }
         checkup.toast = { [weak self] in self?.showToast($0) }
+        storage.ran = { [weak self] in self?.taskHealth.ran($0) }
+        checkup.ran = { [weak self] in self?.taskHealth.ran($0) }
         sentinel.onBattery = { [weak self] in MainActor.assumeIsolated { self?.battery?.onBattery ?? false } }
         sentinel.batteryPercent = { [weak self] in MainActor.assumeIsolated { self?.battery?.percent } }
         backgroundItems = BackgroundItems.scan()
@@ -201,6 +209,7 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
         if let dir = Model.snapshotDir {
             DispatchQueue.main.asyncAfter(deadline: .now() + Model.snapshotDelay) { Snapshot.run(self, into: dir) }
         } else {
+            watchForCrashes()
             saveOnQuit()
             scheduleUpdateChecks()
         }
@@ -227,6 +236,7 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
             // A flagged process that has cooled down is no longer flagged.
             flagged = flagged.filter { sentinel.detector.hotDuration(of: $0, at: Date()) != nil }
             lastError = nil
+            taskHealth.ran(.sampling)
             for e in events { handle(e) }
             checkKills()
             readPower()
@@ -237,6 +247,7 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
                 .map { $0.id == "memory" ? explainQuit($0) : $0 }
         } catch {
             lastError = "Could not read processes: \(error)"
+            Diagnostics.report("sampling", lastError!)
         }
     }
 
@@ -293,6 +304,7 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
         notifyOverdueBlockers(blockers, at: now)
         let samples = wakeups.update(readings, at: now)
         energyAt = now
+        taskHealth.ran(.energy, at: now)
         energy = EnergyRow.group(samples, processes: sentinel.latest, key: Model.appKey, name: Model.appName)
         self.blockers = blockers
         // Stored as samples whose "cpu" is the Energy Impact, so the CPU store's code serves.
@@ -1049,6 +1061,7 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
 
     func showToast(_ t: Toast) {
         toast = t
+        if !t.ok { Diagnostics.report("action", t.title + (t.detail.map { ": " + $0 } ?? "")) }
         DispatchQueue.main.asyncAfter(deadline: .now() + (t.detail == nil ? 4 : 9)) { [weak self] in
             if self?.toast?.id == t.id { self?.toast = nil }
         }
@@ -1212,12 +1225,13 @@ extension Model {
     /// sends SIGTERM, which otherwise ends the app on the spot.
     func saveOnQuit() {
         NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: .main) { _ in
-            MainActor.assumeIsolated { Model.current?.saveAll() }
+            MainActor.assumeIsolated { Model.current?.saveAll(); Model.crashMarker.cleanExit() }
         }
         signal(SIGTERM, SIG_IGN)
         let source = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
         source.setEventHandler {
             MainActor.assumeIsolated { Model.current?.saveAll() }
+            Model.crashMarker.cleanExit()
             exit(0)
         }
         source.resume()
