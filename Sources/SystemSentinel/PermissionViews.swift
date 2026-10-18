@@ -111,11 +111,17 @@ final class Permissions: ObservableObject {
         }
     }
 
-    /// Opens the Full Disk Access list and shows the app in Finder, ready to drag in.
-    func openFullDiskAccess() {
+    func openFullDiskAccess() { Permissions.showFullDiskAccess() }
+
+    /// Opens System Settings at the Full Disk Access list, in front. System Sentinel is already
+    /// in that list (it looked for its access at launch), so turning on its switch is all it takes.
+    static func showFullDiskAccess() {
         NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles")!)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
-            NSWorkspace.shared.activateFileViewerSelecting([Bundle.main.bundleURL])
+        // Opening a URL leaves System Settings behind this app's window; bring it forward.
+        for delay in [0.5, 1.5] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.systempreferences").first?.activate()
+            }
         }
     }
 

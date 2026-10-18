@@ -43,6 +43,8 @@ final class StorageStore: ObservableObject {
     private func periodic() {
         readDisk()
         let now = Date()
+        // Full Disk Access just granted: measure the folders that were left out.
+        if !fullAccess, !scanning, Permissions.hasFullDiskAccess() { fullAccess = true; scan() }
         if !scanning, foundAt.map({ now.timeIntervalSince($0) >= 6 * 3600 }) ?? true { scan() }
         if treeProgress == nil, tree.map({ now.timeIntervalSince($0.at) >= 86_400 }) ?? true, foundAt != nil { scanTree() }
     }
@@ -308,9 +310,7 @@ final class StorageStore: ObservableObject {
 
     func reveal(_ path: String) { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)]) }
 
-    func openFullDiskAccess() {
-        NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles")!)
-    }
+    func openFullDiskAccess() { Permissions.showFullDiskAccess() }
 
     nonisolated static func osascript(_ script: String) -> Bool {
         let p = Process()
