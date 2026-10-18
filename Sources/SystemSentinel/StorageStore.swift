@@ -31,10 +31,9 @@ final class StorageStore: ObservableObject {
         treeURL = supportDir.appendingPathComponent("storage-tree.json")
         if let d = try? Data(contentsOf: treeURL), let t = try? JSONDecoder().decode(FolderTree.self, from: d) { tree = t }
         readDisk()
-        guard !readOnly else {
-            scan()
-            return
-        }
+        // Snapshots run from a throwaway, ad-hoc signed copy that macOS sees as a new app every
+        // build, so scanning Downloads and Documents there asks for permission every time.
+        guard !readOnly else { return }
         timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.periodic() }
         }
