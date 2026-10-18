@@ -17,7 +17,7 @@ final class StorageStore: ObservableObject {
     /// Actions running, by key, so their buttons show progress.
     @Published var working: Set<String> = []
     /// False when macOS hides the Trash (and Mail, Messages…) without Full Disk Access.
-    @Published var fullAccess = true
+    @Published var fullAccess = Permissions.hasFullDiskAccess()
 
     let history: StorageHistory
     private let treeURL: URL
@@ -86,11 +86,14 @@ final class StorageStore: ObservableObject {
         let h = home.path
         let fm = FileManager.default
         let fullAccess = (try? fm.contentsOfDirectory(atPath: home.appendingPathComponent(".Trash").path)) != nil
-        f.places = DiskUsage.places(home: home, skip: fullAccess ? [] : FolderTree.otherApps)
+        let guarded = FolderTree.guarded(fullAccess: fullAccess)
+        f.places = DiskUsage.places(home: home, skip: guarded)
+        // Spotlight answers without opening folders, but measuring what it found would.
+        let open: (String) -> Bool = { !FolderTree.isInside($0, guarded, home: h) }
 
         // Downloads: what is at the top, with when it arrived.
         let dl = home.appendingPathComponent("Downloads")
-        f.downloads = ((try? fm.contentsOfDirectory(at: dl, includingPropertiesForKeys: [.addedToDirectoryDateKey])) ?? [])
+        f.downloads = (!fullAccess ? [] : (try? fm.contentsOfDirectory(at: dl, includingPropertiesForKeys: [.addedToDirectoryDateKey])) ?? [])
             .filter { !$0.lastPathComponent.hasPrefix(".") }
             .compactMap { url -> FoundItem? in
                 guard var item = Spotlight.item(url.path, folderDeadline: 5) else { return nil }
@@ -101,16 +104,19 @@ final class StorageStore: ObservableObject {
 
         let names = Clutter.installerExtensions.map { "kMDItemFSName == \"*.\($0)\"c" }.joined(separator: " || ")
         f.installers = Spotlight.find("(\(names)) && kMDItemFSSize > 10485760", in: h)
+            .filter(open)
             .filter { !$0.contains("/Library/") && !$0.contains("/.Trash/") }
             .compactMap { Spotlight.item($0) }
             .sorted { $0.bytes > $1.bytes }
 
         f.movies = Spotlight.find("kMDItemContentTypeTree == \"public.movie\" && kMDItemFSSize > 104857600", in: h)
+            .filter(open)
             .filter { !$0.contains("/Library/") && !$0.contains("/.Trash/") }
             .compactMap { Spotlight.item($0, lastUsed: true) }
             .sorted { $0.bytes > $1.bytes }
 
         let images = Spotlight.find("kMDItemContentTypeTree == \"public.image\" && kMDItemFSSize > 102400", in: h)
+            .filter(open)
             .filter { !$0.contains("/Library/") && !$0.contains(".photoslibrary/") && !$0.contains("/.Trash/") }
             .compactMap { p -> FoundItem? in
                 let v = try? URL(fileURLWithPath: p).resourceValues(forKeys: [.totalFileAllocatedSizeKey, .contentModificationDateKey])
@@ -126,7 +132,7 @@ final class StorageStore: ObservableObject {
             .filter { $0.bytes >= 50 << 20 }
             .sorted { $0.bytes > $1.bytes }
 
-        f.nodeModules = Clutter.topNodeModules(Spotlight.find("kMDItemFSName == \"node_modules\"", in: h))
+        f.nodeModules = Clutter.topNodeModules(Spotlight.find("kMDItemFSName == \"node_modules\"", in: h).filter(open))
             .filter { !$0.contains("/Library/") && !$0.contains("/.Trash/") }
             .compactMap { p -> FoundItem? in
                 guard var item = Spotlight.item(p, folderDeadline: 5) else { return nil }
@@ -142,6 +148,7 @@ final class StorageStore: ObservableObject {
         f.localSnapshots = snap.split(separator: "\n").filter { $0.contains("com.apple") }.count
 
         let large = Spotlight.find("kMDItemFSSize > 524288000", in: h)
+            .filter(open)
             .filter { !$0.contains("/.Trash/") }
             .compactMap { Spotlight.item($0, folderDeadline: 0, lastUsed: true) }
             .filter { $0.bytes >= 500 << 20 }
@@ -155,7 +162,7 @@ final class StorageStore: ObservableObject {
         treeProgress = (0, 0)
         treeCancelled = false
         let home = self.home, url = treeURL
-        let skip = fullAccess ? FolderTree.skipped : FolderTree.skipped.union(FolderTree.otherApps)
+        let skip = FolderTree.skipped.union(FolderTree.guarded(fullAccess: fullAccess))
         Task.detached(priority: .background) {
             let t = FolderTree.scan(home, skip: skip, progress: { b, n in
                 Task { @MainActor in if self.treeProgress != nil { self.treeProgress = (b, n) } }

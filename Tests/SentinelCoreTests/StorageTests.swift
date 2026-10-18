@@ -117,4 +117,21 @@ final class StorageTests: XCTestCase {
         XCTAssertFalse(v.update(over: false, holdFor: 0, at: t0.addingTimeInterval(3000)))
         XCTAssertTrue(v.update(over: true, holdFor: 0, at: t0.addingTimeInterval(3700)))
     }
+
+    func testGuardedFoldersAreLeftAloneWithoutFullAccess() {
+        let g = FolderTree.guarded(fullAccess: false)
+        for f in ["Desktop", "Documents", "Downloads", "Pictures", "Movies", "Music", "Library/Containers"] {
+            XCTAssertTrue(g.contains(f), f)
+        }
+        XCTAssertTrue(FolderTree.guarded(fullAccess: true).isEmpty)
+
+        let home = "/Users/me"
+        XCTAssertTrue(FolderTree.isInside("/Users/me/Downloads/a.dmg", g, home: home))
+        XCTAssertTrue(FolderTree.isInside("/Users/me/Music", g, home: home))
+        XCTAssertTrue(FolderTree.isInside("/Users/me/Library/Containers/x/big", g, home: home))
+        XCTAssertFalse(FolderTree.isInside("/Users/me/DownloadsOld/a.dmg", g, home: home), "only the folder itself")
+        XCTAssertFalse(FolderTree.isInside("/Users/me/dev/node_modules", g, home: home))
+        XCTAssertFalse(FolderTree.isInside("/Applications/Music.app", g, home: home))
+        XCTAssertFalse(FolderTree.isInside("/Users/me/Downloads/a.dmg", [], home: home))
+    }
 }

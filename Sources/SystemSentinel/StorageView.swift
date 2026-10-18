@@ -185,7 +185,7 @@ private struct FullAccessNote: View {
             Image(systemName: "lock.shield.fill").font(.title3).foregroundStyle(amber)
             VStack(alignment: .leading, spacing: 2) {
                 Text("Some folders are hidden by macOS").font(.callout.weight(.semibold))
-                Text("Without Full Disk Access the Trash, Mail, Messages and other apps' data cannot be measured. Emptying the Trash still works. Ad-hoc signed builds need the access granted again after an update.")
+                Text("Without Full Disk Access, Desktop, Documents, Downloads, Pictures, Movies, Music, the Trash, Mail, Messages and other apps' data are left out, so macOS does not ask about each folder. Grant it once to measure everything. Emptying the Trash still works.")
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
             Spacer()
@@ -525,7 +525,7 @@ private struct WhereIsTheSpace: View {
                 ForEach(kids.prefix(15), id: \.path) { k in
                     folderRow(k.path, k.bytes, share: Double(k.bytes) / max(parent, 1), full: false)
                 }
-                Text("Measured \(ago(t.at)) in \(Int(t.seconds)) s, \(t.files.formatted()) files. Cloud folders (iCloud Drive, OneDrive…) are left out\(store.fullAccess ? "" : ", and so is other apps' data without Full Disk Access").")
+                Text("Measured \(ago(t.at)) in \(Int(t.seconds)) s, \(t.files.formatted()) files. Cloud folders (iCloud Drive, OneDrive…) are left out\(store.fullAccess ? "" : ", and so are your personal folders and other apps' data without Full Disk Access").")
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             } else if store.treeProgress == nil {
                 Text("Measure every folder to see where the space really is. Runs in the background, about once a day.")

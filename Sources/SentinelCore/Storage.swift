@@ -248,6 +248,23 @@ public struct FolderTree: Codable, Equatable, Sendable {
     /// Other apps' containers: without Full Disk Access, reading them makes macOS ask
     /// "would like to access data from other apps", and waits for an answer.
     public static let otherApps: Set<String> = ["Library/Containers", "Library/Group Containers"]
+    /// Folders macOS guards one at a time ("would like to access files in your Downloads
+    /// folder"). Without Full Disk Access they are left alone, so there are no prompts at all.
+    public static let personal: Set<String> = ["Desktop", "Documents", "Downloads", "Pictures", "Movies", "Music"]
+
+    /// What to leave out of a scan of `home`: everything macOS would ask about, unless the app
+    /// has Full Disk Access.
+    public static func guarded(fullAccess: Bool) -> Set<String> {
+        fullAccess ? [] : otherApps.union(personal)
+    }
+
+    /// Whether `path` lies inside one of `skip` (relative to `home`).
+    public static func isInside(_ path: String, _ skip: Set<String>, home: String) -> Bool {
+        let base = home.hasSuffix("/") ? home : home + "/"
+        guard path.hasPrefix(base) else { return false }
+        let rel = String(path.dropFirst(base.count))
+        return skip.contains { rel == $0 || rel.hasPrefix($0 + "/") }
+    }
 
     public static func scan(_ root: URL, skip: Set<String> = skipped, progress: (UInt64, Int) -> Void = { _, _ in }, cancelled: () -> Bool = { false }) -> FolderTree {
         let started = Date()
