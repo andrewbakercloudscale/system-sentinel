@@ -101,6 +101,7 @@ extension Model {
         s.thermal = thermal.rawValue
         s.battery = battery.map { Double($0.percent) }
         s.onBattery = battery?.onBattery ?? false
+        s.checkupProblems = checkup.checks.filter { $0.status == .problem }.count
         return HealthRAG.of(s)
     }
 }

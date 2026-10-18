@@ -402,6 +402,8 @@ public struct HealthRAG: Equatable, Sendable {
         public var thermal = 0
         public var battery: Double?
         public var onBattery = false
+        /// Checkup findings marked as problems (FileVault off, repeated panics…).
+        public var checkupProblems = 0
         public init() {}
     }
 
@@ -426,6 +428,7 @@ public struct HealthRAG: Equatable, Sendable {
             if b <= 10 { r.append(.init(rag: .red, symbol: "battery.0percent", text: "battery \(Int(b))%")) }
             else if b <= 20 { r.append(.init(rag: .amber, symbol: "battery.25percent", text: "battery \(Int(b))%")) }
         }
+        if s.checkupProblems > 0 { r.append(.init(rag: .amber, symbol: "stethoscope", text: "\(s.checkupProblems) checkup problem\(s.checkupProblems == 1 ? "" : "s")")) }
         let sorted = r.enumerated().sorted { ($0.element.rag == .red ? 0 : 1, $0.offset) < ($1.element.rag == .red ? 0 : 1, $1.offset) }.map(\.element)
         return HealthRAG(rag: sorted.first?.rag ?? .green, reasons: sorted)
     }

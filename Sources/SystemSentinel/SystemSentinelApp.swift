@@ -89,7 +89,7 @@ struct MenuView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             header
-            TabBar(selection: $tab, badges: [.events: model.flagged.count])
+            TabBar(selection: $tab, badges: [.events: model.flagged.count, .checkup: model.checkup.problems.count])
             Group {
                 if fullLength {
                     banners
@@ -145,6 +145,7 @@ struct MenuView: View {
         case .trends: TrendsView(model: model)
         case .memory: MemoryView(model: model)
         case .storage: StorageView(model: model, store: model.storage)
+        case .checkup: CheckupView(store: model.checkup)
         case .battery: BatteryView(model: model)
         case .events: EventsView(model: model)
         case .rules: RulesView(model: model)
