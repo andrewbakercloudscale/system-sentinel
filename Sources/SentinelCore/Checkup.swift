@@ -52,6 +52,7 @@ public struct Check: Identifiable, Equatable, Sendable {
         case syncClock = "/usr/bin/sntp -sS time.apple.com"
         case guestOff = "/usr/bin/defaults write /Library/Preferences/com.apple.loginwindow GuestEnabled -bool false"
         case cancelPrintJobs = "/usr/bin/cancel -a -"
+        case restartSoftwareUpdate = "/usr/bin/killall softwareupdated"
         case autoSecurityUpdatesOn = "/usr/bin/defaults write /Library/Preferences/com.apple.SoftwareUpdate CriticalUpdateInstall -bool true; /usr/bin/defaults write /Library/Preferences/com.apple.SoftwareUpdate ConfigDataInstall -bool true"
     }
 

@@ -9,11 +9,32 @@ import UniformTypeIdentifiers
 /// The one-click fixes under an insight. Red for ones that change something.
 struct FixButtons: View {
     @ObservedObject var model: Model
+    /// Watched too, so storage fixes show Clearing… while they run.
+    @ObservedObject private var storage: StorageStore
     let fixes: [FixAction]
+
+    init(model: Model, fixes: [FixAction]) {
+        self.model = model
+        self.storage = model.storage
+        self.fixes = fixes
+    }
+
+    /// The storage job a fix starts, while it is running.
+    private func busy(_ f: FixAction) -> Bool {
+        switch f {
+        case .emptyTrash: return storage.working.contains("trash")
+        case .cleanPlaces(let keys): return keys.contains { storage.working.contains($0) }
+        case .trashFound(let kind, _), .archiveFound(let kind, _): return storage.working.contains("insight-\(kind.rawValue)")
+        default: return false
+        }
+    }
 
     var body: some View {
         FlowLayout(spacing: 6) {
             ForEach(fixes) { f in
+                if busy(f) {
+                    BusyButton(title: f == .emptyTrash ? "Emptying…" : "Clearing…")
+                } else {
                 Button { if confirmed(f) { model.perform(f) } } label: {
                     Label(f.title, systemImage: f.symbol)
                         .font(.caption.weight(.semibold))
@@ -24,6 +45,7 @@ struct FixButtons: View {
                 }
                 .buttonStyle(.plain)
                 .help(help(f))
+                }
                 if case .quit(let pids, let name) = f {
                     Button { forceQuit(pids, name) } label: {
                         Label("Force Quit", systemImage: "bolt.fill")

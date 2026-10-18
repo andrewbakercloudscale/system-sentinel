@@ -290,8 +290,12 @@ final class StorageStore: ObservableObject {
             case .emptyTrash: break
             }
             let issue = problem
+            // Measure it again now, so the card and its insight show what is left rather than
+            // the size from before (the next full scan is hours away).
+            let left = DiskUsage.size(of: dir, deadline: Date().addingTimeInterval(20))?.bytes
             await MainActor.run {
                 let problem = issue
+                if let left { self.found.places[place.key] = left }
                 self.working.remove(place.key)
                 if let p = problem { self.toast(Model.Toast(ok: false, title: "\(place.name) only partly cleaned", detail: p)) }
                 else { self.afterCleanup("\(place.name) cleaned", before: before) }
@@ -313,15 +317,22 @@ final class StorageStore: ObservableObject {
         let before = disk
         Task.detached {
             var failed: [String] = []
+            var gone = Set<String>()
             for i in items {
                 let src = URL(fileURLWithPath: i.path)
-                do { try FileManager.default.moveItem(at: src, to: dest.appendingPathComponent(src.lastPathComponent)) }
-                catch { failed.append(i.name) }
+                do {
+                    try FileManager.default.moveItem(at: src, to: dest.appendingPathComponent(src.lastPathComponent))
+                    gone.insert(i.path)
+                } catch { failed.append(i.name) }
             }
-            let bad = failed
+            let (bad, done) = (failed, gone)
             await MainActor.run {
                 let failed = bad
                 self.working.remove(key)
+                self.found = StorageAnalysis.removing(done, from: self.found)
+                self.found.photoFolders.removeAll { done.contains($0.path) }
+                self.largeFiles.removeAll { done.contains($0.path) }
+                self.refreshInsights()
                 if failed.isEmpty { self.afterCleanup("Moved to \(dest.lastPathComponent)", before: before) }
                 else { self.toast(Model.Toast(ok: false, title: "Not everything was moved", detail: "Failed: \(failed.prefix(3).joined(separator: ", ")).")) }
             }

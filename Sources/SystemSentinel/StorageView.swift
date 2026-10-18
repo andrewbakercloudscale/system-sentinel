@@ -49,15 +49,36 @@ private struct FileIcon: View {
     }
 }
 
-/// A small text button for a row: Show, Move…, Trash.
+/// Where a button was, while its job runs: greyed, with a spinner, so a second click is
+/// impossible and it is clear something is happening.
+struct BusyButton: View {
+    let title: String
+    var body: some View {
+        HStack(spacing: 6) {
+            ProgressView().controlSize(.small)
+            Text(title).font(.caption.weight(.semibold))
+        }
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 10).padding(.vertical, 5)
+        .background(Capsule().fill(Color.secondary.opacity(0.15)))
+    }
+}
+
+/// A small text button for a row: Show, Move…, Trash. While `busy`, it turns into a
+/// greyed "Clearing…" that cannot be clicked again.
 struct RowButton: View {
     let title: String
     let symbol: String
     var color: Color = storageTint
     var filled = false
+    var busy: String? = nil
     let action: () -> Void
 
     var body: some View {
+        if let busy { BusyButton(title: busy) } else { button }
+    }
+
+    private var button: some View {
         Button(action: action) {
             Label(title, systemImage: symbol)
                 .font(.caption.weight(.semibold))
@@ -107,13 +128,13 @@ private struct ItemRow: View {
             Text(gb(item.bytes)).font(.callout.weight(.semibold)).monospacedDigit()
             RowButton(title: "Show", symbol: "magnifyingglass") { store.reveal(item.path) }
             if archive {
-                RowButton(title: "Move…", symbol: "externaldrive.badge.plus") { store.archive([item], key: key) }
+                RowButton(title: "Move…", symbol: "externaldrive.badge.plus", busy: store.working.contains(item.path) ? "Moving…" : nil) { store.archive([item], key: item.path) }
                     .help("Move it somewhere else, like an external drive")
             }
             if trash {
-                RowButton(title: "Trash", symbol: "trash", color: Theme.heat(100)) {
+                RowButton(title: "Trash", symbol: "trash", color: Theme.heat(100), busy: store.working.contains(item.path) ? "Clearing…" : nil) {
                     if StorageStore.confirm("Move \(item.name) to the Trash?", "\(gb(item.bytes)). You can put it back from the Trash until it is emptied.", button: "Move to Trash") {
-                        store.moveToTrash([item], key: key)
+                        store.moveToTrash([item], key: item.path)
                     }
                 }
             }
@@ -407,7 +428,7 @@ private struct QuickCleanups: View {
             Text(bytes.map(gb) ?? "size hidden").font(.callout.weight(.bold)).monospacedDigit()
                 .foregroundStyle(bytes == nil ? .secondary : .primary)
             if store.working.contains(p.key) || (p.key == "trash" && store.working.contains("trash")) {
-                ProgressView().controlSize(.small).frame(width: 90)
+                BusyButton(title: "Clearing…").frame(minWidth: 90, alignment: .trailing)
             } else {
                 RowButton(title: p.clean == .emptyTrash ? "Empty Trash" : "Clean", symbol: p.clean == .emptyTrash ? "trash.slash" : "sparkles",
                           color: Theme.heat(100), filled: true) {
@@ -477,9 +498,8 @@ private struct DownloadsCard: View {
                 }
                 .disabled(items.isEmpty)
                 Spacer()
-                if store.working.contains("downloads") { ProgressView().controlSize(.small) }
                 RowButton(title: chosen.isEmpty ? "Move to Trash" : "Move \(chosen.count) (\(gb(chosenBytes))) to Trash", symbol: "trash",
-                          color: Theme.heat(100), filled: !chosen.isEmpty) {
+                          color: Theme.heat(100), filled: !chosen.isEmpty, busy: store.working.contains("downloads") ? "Clearing…" : nil) {
                     guard !chosen.isEmpty else { return }
                     if StorageStore.confirm("Move \(chosen.count) item\(chosen.count == 1 ? "" : "s") to the Trash?",
                                             "\(gb(chosenBytes)). You can put them back from the Trash until it is emptied.", button: "Move to Trash") {
@@ -632,7 +652,8 @@ private struct PackagesCard: View {
             if stale.count > 1 {
                 HStack {
                     Spacer()
-                    RowButton(title: "Move all \(stale.count) (\(gb(total))) to Trash", symbol: "trash", color: Theme.heat(100), filled: true) {
+                    RowButton(title: "Move all \(stale.count) (\(gb(total))) to Trash", symbol: "trash", color: Theme.heat(100), filled: true,
+                              busy: store.working.contains("packages") ? "Clearing…" : nil) {
                         if StorageStore.confirm("Move \(stale.count) items to the Trash?", "\(gb(total)): \(stale.prefix(4).map(\.name).joined(separator: ", "))\(stale.count > 4 ? "…" : ""). You can put them back until the Trash is emptied.", button: "Move to Trash") {
                             store.moveToTrash(stale, key: "packages")
                         }
@@ -706,8 +727,8 @@ private struct PhotoFoldersCard: View {
                     Spacer(minLength: 6)
                     Text(gb(f.bytes)).font(.callout.weight(.semibold)).monospacedDigit()
                     RowButton(title: "Show", symbol: "magnifyingglass") { store.reveal(f.path) }
-                    RowButton(title: "Move…", symbol: "externaldrive.badge.plus") {
-                        store.archive([FoundItem(path: f.path, bytes: f.bytes)], key: "photos")
+                    RowButton(title: "Move…", symbol: "externaldrive.badge.plus", busy: store.working.contains(f.path) ? "Moving…" : nil) {
+                        store.archive([FoundItem(path: f.path, bytes: f.bytes)], key: f.path)
                     }
                 }
             }
@@ -730,8 +751,7 @@ private struct KnownFolders: View {
         let top = Double(rows.first?.1 ?? 1)
         Card(title: "Known folders", symbol: "list.bullet.indent", tint: storageTint,
              trailing: AnyView(HStack(spacing: 6) {
-                 if store.scanning { ProgressView().controlSize(.small) }
-                 RowButton(title: "Rescan", symbol: "arrow.clockwise") { store.scan() }.disabled(store.scanning)
+                 RowButton(title: "Rescan", symbol: "arrow.clockwise", busy: store.scanning ? "Scanning…" : nil) { store.scan() }
              })) {
             ForEach(rows, id: \.0.key) { p, b in
                 HStack(spacing: 8) {

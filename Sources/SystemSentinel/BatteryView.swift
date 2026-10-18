@@ -445,16 +445,46 @@ private struct SleepBlockersCard: View {
                         Pill(text: held >= 86_400 ? "\(Int(held / 86_400))d \(Int(held.truncatingRemainder(dividingBy: 86_400) / 3600))h" : Model.duration(held),
                              symbol: "clock", color: held >= 3600 ? Theme.heat(85) : .secondary)
                     }
-                    if let s = sample, Safety.canKillManually(s) {
+                    if let s = sample, s.name == "caffeinate" {
+                        if model.killing.contains(s.pid) {
+                            BusyButton(title: "Releasing…")
+                        } else {
+                            sleepButton("Let it sleep") { model.decaffeinate([s]) }
+                                .help("Stops this caffeinate only. \(b.onBehalfOf.map { "\($0) keeps running." } ?? "")")
+                        }
+                    } else if let s = sample, Safety.canKillManually(s) {
                         KillButton(model: model, sample: s)
                     }
                 }
             }
+            let caffeinates = model.blockers.compactMap { model.sample(pid: $0.pid) }.filter { $0.name == "caffeinate" }
+            if caffeinates.count > 1 {
+                HStack {
+                    Spacer()
+                    if caffeinates.contains(where: { model.killing.contains($0.pid) }) {
+                        BusyButton(title: "Releasing…")
+                    } else {
+                        sleepButton("Let the Mac sleep: stop all \(caffeinates.count) caffeinates", filled: true) { model.decaffeinate(caffeinates) }
+                    }
+                }
+            }
             if !model.blockers.isEmpty {
-                Text("Killing caffeinate lets the Mac sleep again; the tool it was keeping awake carries on. Apps (video calls, players, downloads) release their hold when they finish.")
+                Text("Let it sleep stops only the caffeinate, which exists just to keep the Mac awake; the tool it was started for carries on. Apps (video calls, players, downloads) release their hold when they finish.")
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
         }
+    }
+
+    private func sleepButton(_ title: String, filled: Bool = false, action: @escaping () -> Void) -> some View {
+        let tint = Color(hex: "#6366f1")
+        return Button(action: action) {
+            Label(title, systemImage: "moon.fill")
+                .font(.caption.weight(.semibold)).foregroundStyle(filled ? .white : tint)
+                .padding(.horizontal, 10).padding(.vertical, 5)
+                .background(Capsule().fill(filled ? AnyShapeStyle(tint.gradient) : AnyShapeStyle(tint.opacity(0.13))))
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
     }
 
     private func detail(_ b: SleepBlocker) -> String {

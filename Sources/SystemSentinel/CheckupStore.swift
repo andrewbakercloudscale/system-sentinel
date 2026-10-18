@@ -449,7 +449,29 @@ final class CheckupStore: ObservableObject {
         ("Restart menu bar", "Menu bar icons missing or not responding.", "menubar.rectangle", .run(label: "Restart menu bar", path: "/usr/bin/killall", args: ["SystemUIServer", "ControlCenter"])),
         ("Rebuild Spotlight index", "Search cannot find files you know are there. Indexing then takes hours and uses CPU.", "magnifyingglass", .admin(label: "Rebuild Spotlight index", command: .spotlightReindex)),
         ("Sync clock", "Certificate errors or two-factor codes rejected.", "clock.fill", .admin(label: "Sync clock", command: .syncClock)),
+        ("Restart Wi-Fi", "Connected but nothing loads, or stuck on an old network. Turns Wi-Fi off and on, which also asks for a fresh address.", "wifi",
+         .run(label: "Restart Wi-Fi", path: "/bin/sh", args: ["-c", wifiCycle])),
+        ("Restart iCloud sync", "iCloud Drive stuck on Waiting or not uploading.", "icloud.fill",
+         .run(label: "Restart iCloud sync", path: "/usr/bin/killall", args: ["bird", "cloudd"])),
+        ("Restart AirDrop and Handoff", "AirDrop cannot see nearby devices, or copy and paste between devices stops.", "airplayaudio",
+         .run(label: "Restart AirDrop and Handoff", path: "/usr/bin/killall", args: ["sharingd"])),
+        ("Restart notifications", "Notifications stop appearing, or stay stuck on screen.", "bell.badge.fill",
+         .run(label: "Restart notifications", path: "/usr/bin/killall", args: ["NotificationCenter"])),
+        ("Reset Quick Look", "Space-bar previews blank, or thumbnails out of date.", "eye.fill",
+         .run(label: "Reset Quick Look", path: "/usr/bin/qlmanage", args: ["-r", "cache"])),
+        ("Fix Open With", "The Open With menu lists apps twice, or files open in the wrong app. Takes a minute.", "arrow.up.forward.app.fill",
+         .run(label: "Fix Open With", path: "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister",
+              args: ["-kill", "-r", "-domain", "local", "-domain", "system", "-domain", "user"])),
+        ("Clear print queue", "A stuck print job blocks everything after it.", "printer.fill", .admin(label: "Clear print queue", command: .cancelPrintJobs)),
+        ("Restart Software Update", "Software Update stuck on Checking or a download that never finishes.", "arrow.down.circle.fill",
+         .admin(label: "Restart Software Update", command: .restartSoftwareUpdate)),
     ]
+
+    /// Finds the Wi-Fi interface (en0 on most Macs, not all) and turns it off and on.
+    static let wifiCycle = """
+        d=$(/usr/sbin/networksetup -listallhardwareports | /usr/bin/awk '/Wi-Fi|AirPort/{getline; print $2; exit}'); \
+        [ -n "$d" ] && /usr/sbin/networksetup -setairportpower "$d" off && /bin/sleep 2 && /usr/sbin/networksetup -setairportpower "$d" on
+        """
 
     nonisolated static func status(_ path: String, _ args: [String]) -> Int32 {
         let p = Process()

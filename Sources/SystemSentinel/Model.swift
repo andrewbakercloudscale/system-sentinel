@@ -963,6 +963,30 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
         }
     }
 
+    /// Stops caffeinate processes so the Mac can sleep. Only caffeinate itself goes: whatever
+    /// it was started for (a build, an agent session) keeps running.
+    func decaffeinate(_ targets: [ProcessSample]) {
+        let list = targets.filter { $0.name == "caffeinate" && !killing.contains($0.pid) }
+        guard !list.isEmpty else { return }
+        for t in list { killing.insert(t.pid) }
+        Task.detached {
+            let outcomes = list.map { Killer.kill($0) }
+            await MainActor.run {
+                let stopped = zip(list, outcomes).filter { [.terminated, .forceKilled, .alreadyGone].contains($0.1) }.map(\.0)
+                for t in list { self.killing.remove(t.pid) }
+                for t in stopped { self.sentinel.history.record(.killed, t, detail: "decaffeinated") }
+                let gone = Set(stopped.map(\.pid))
+                self.blockers.removeAll { gone.contains($0.pid) }
+                self.lastEnergy = nil // read the sleep holds again on the next tick
+                self.showToast(Toast(ok: stopped.count == list.count,
+                                     title: stopped.count == list.count ? "Stopped \(list.count) caffeinate\(list.count == 1 ? "" : "s"): the Mac can sleep"
+                                                                        : "Stopped \(stopped.count) of \(list.count) caffeinates",
+                                     detail: "What they were keeping awake carries on running."))
+                self.tick()
+            }
+        }
+    }
+
     /// Force kill: SIGKILL at once, through the admin prompt for root and macOS processes.
     func forceKill(_ s: ProcessSample) {
         guard !killing.contains(s.pid) else { return }

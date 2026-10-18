@@ -4,12 +4,14 @@ import SwiftUI
 /// Checkup: security posture, network doctor, leftovers and crashes, backups, each with a fix,
 /// and a toolbox of the everyday restarts.
 struct CheckupView: View {
+    @ObservedObject var model: Model
     @ObservedObject var store: CheckupStore
     @State private var open: Set<String> = []
 
     var body: some View {
         VStack(spacing: 10) {
             hero
+            SlownessCard(model: model)
             ForEach(Check.Area.allCases, id: \.self) { area in
                 let list = store.checks.filter { $0.area == area }
                 if !list.isEmpty {
@@ -127,8 +129,8 @@ struct CheckupView: View {
         return Button { store.perform(f, in: c) } label: {
             HStack(spacing: 4) {
                 if busy { ProgressView().controlSize(.mini) }
-                if case .admin = f { Image(systemName: "lock.fill") }
-                Text(f.label)
+                if case .admin = f, !busy { Image(systemName: "lock.fill") }
+                Text(busy ? "Working…" : f.label)
             }
             .font(.caption.weight(.semibold))
             .foregroundStyle(acts ? .white : Tab.checkup.color)
@@ -168,6 +170,92 @@ struct CheckupView: View {
             }
             Text("Buttons with a lock ask for your admin password and show the exact command when you hover. Nothing here turns a security setting off.")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
+/// Is the Mac slow right now, and what is doing it: the apps using the most CPU over the last
+/// minute and the most memory, each with Quit and Force Quit.
+struct SlownessCard: View {
+    @ObservedObject var model: Model
+
+    struct Row: Identifiable {
+        let id: String
+        let name: String
+        let figure: String
+        let pids: [Int32]
+        let sample: ProcessSample
+    }
+
+    var body: some View {
+        let load = model.machineAverage(60)
+        let pressure = model.memory?.pressure ?? .normal
+        let swap = model.memory?.swapUsed ?? 0
+        let hot = model.thermal.rawValue >= ProcessInfo.ThermalState.serious.rawValue
+        let cpu = cpuRows()
+        let mem = memoryRows()
+        let slow = load >= 60 || pressure != .normal || hot || !cpu.isEmpty
+        let color = slow ? Theme.heat(50) : Tab.battery.color
+        Card(title: "Is the Mac slow?", symbol: "tortoise.fill", tint: Tab.checkup.color,
+             trailing: AnyView(Text(slow ? "something is busy" : "running freely").font(.caption.weight(.semibold)).foregroundStyle(color))) {
+            HStack(spacing: 8) {
+                chip("CPU \(Int(load))% busy", load >= 60)
+                chip("Memory \(pressure.label.lowercased())", pressure != .normal)
+                chip("Swap \(ReportDocument.bytes(swap))", swap >= 4 << 30)
+                if hot { chip("Running hot", true) }
+            }
+            section("Using the most CPU, last minute", cpu,
+                    empty: "No app is using more than a third of a core. CPU is not what is slowing things down.")
+            section("Using the most memory", mem,
+                    empty: "No app is using more than 2 GB.")
+            Text("Quit lets the app save first. Force Quit stops it at once and loses anything unsaved. System processes are left alone.")
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func chip(_ text: String, _ bad: Bool) -> some View {
+        Text(text).font(.caption.weight(.semibold))
+            .foregroundStyle(bad ? Theme.heat(100) : .secondary)
+            .padding(.horizontal, 8).padding(.vertical, 3)
+            .background(Capsule().fill((bad ? Theme.heat(100) : Color.secondary).opacity(0.1)))
+    }
+
+    @ViewBuilder
+    private func section(_ title: String, _ rows: [Row], empty: String) -> some View {
+        Text(title.uppercased()).font(.caption2.weight(.bold)).foregroundStyle(.secondary).padding(.top, 4)
+        if rows.isEmpty {
+            Text(empty).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        }
+        ForEach(rows) { r in
+            HStack(spacing: 8) {
+                IconView(icon: IconCache.shared.icon(for: r.sample), size: 22)
+                Text(r.name).font(.callout.weight(.semibold)).lineLimit(1)
+                Text(r.figure).font(.callout).foregroundStyle(.secondary).monospacedDigit()
+                Spacer(minLength: 6)
+                if r.sample.pid != getpid(), Safety.canKillManually(r.sample) {
+                    FixButtons(model: model, fixes: [.quit(pids: r.pids, name: r.name)])
+                } else {
+                    Text("part of macOS").font(.caption).foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    /// Apps, not processes: a browser's helpers count together. Over a third of a core.
+    private func cpuRows() -> [Row] {
+        let groups = Dictionary(grouping: model.top, by: { Model.appKey($0.path) })
+        return groups.compactMap { key, list -> (Row, Double)? in
+            let cpu = list.reduce(0) { $0 + model.average($1, 60) }
+            guard cpu >= 33, let big = list.max(by: { $0.cpu < $1.cpu }) else { return nil }
+            return (Row(id: "cpu-" + key, name: Model.appName(key), figure: "\(Int(cpu))% of a core",
+                        pids: list.map(\.pid), sample: big), cpu)
+        }
+        .sorted { $0.1 > $1.1 }.prefix(4).map(\.0)
+    }
+
+    private func memoryRows() -> [Row] {
+        model.memoryApps.filter { $0.bytes >= 2 << 30 }.prefix(4).map {
+            Row(id: "mem-" + $0.key, name: $0.name, figure: ReportDocument.bytes($0.bytes), pids: $0.pids, sample: $0.sample)
         }
     }
 }
