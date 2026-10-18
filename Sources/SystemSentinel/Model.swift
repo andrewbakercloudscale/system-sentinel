@@ -76,6 +76,7 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
     let storage: StorageStore
     let permissions = Permissions()
     let checkup: CheckupStore
+    let network: NetworkStore
     private let ioTracker = IOTracker()
     private var lastSleepRead: Date?
     private var typicalCache: (at: Date, values: [String: Double])?
@@ -190,12 +191,14 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
         healthLog = HealthLog(fileURL: Model.supportDir.appendingPathComponent("battery-health.json"), readOnly: Model.snapshotDir != nil)
         storage = StorageStore(supportDir: Model.supportDir, readOnly: Model.snapshotDir != nil)
         checkup = CheckupStore(readOnly: Model.snapshotDir != nil)
+        network = NetworkStore()
         super.init()
         Model.current = self
         storage.toast = { [weak self] in self?.showToast($0) }
         checkup.toast = { [weak self] in self?.showToast($0) }
         storage.ran = { [weak self] in self?.taskHealth.ran($0) }
         checkup.ran = { [weak self] in self?.taskHealth.ran($0) }
+        network.processes = { [weak self] in self?.sentinel.latest ?? [] }
         sentinel.onBattery = { [weak self] in MainActor.assumeIsolated { self?.battery?.onBattery ?? false } }
         sentinel.batteryPercent = { [weak self] in MainActor.assumeIsolated { self?.battery?.percent } }
         backgroundItems = BackgroundItems.scan()

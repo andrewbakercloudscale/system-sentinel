@@ -25,7 +25,7 @@ public enum FixAction: Equatable, Sendable, Identifiable {
     case openApp(bundleID: String, name: String)
 
     public enum Settings: String, Sendable {
-        case battery, displays, accessibilityDisplay, screenRecording, timeMachine, loginItems
+        case battery, displays, accessibilityDisplay, screenRecording, timeMachine, loginItems, wifi, network
 
         public var url: String {
             let base = "x-apple.systempreferences:"
@@ -36,6 +36,8 @@ public enum FixAction: Equatable, Sendable, Identifiable {
             case .screenRecording: return base + "com.apple.preference.security?Privacy_ScreenCapture"
             case .timeMachine: return base + "com.apple.Time-Machine-Settings.extension"
             case .loginItems: return base + "com.apple.LoginItems-Settings.extension"
+            case .wifi: return base + "com.apple.wifi-settings-extension"
+            case .network: return base + "com.apple.Network-Settings.extension"
             }
         }
 
@@ -47,6 +49,8 @@ public enum FixAction: Equatable, Sendable, Identifiable {
             case .screenRecording: return "Screen recording access"
             case .timeMachine: return "Time Machine settings"
             case .loginItems: return "Login Items"
+            case .wifi: return "Wi-Fi settings"
+            case .network: return "Network settings"
             }
         }
     }

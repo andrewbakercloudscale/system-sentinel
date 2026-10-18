@@ -216,6 +216,11 @@ public struct Insight: Equatable, Sendable, Identifiable {
         self.title = title
         self.detail = detail
     }
+
+    public init(id: String, tone: Tone, symbol: String, title: String, detail: String, fixes: [FixAction]) {
+        self.init(id: id, tone: tone, symbol: symbol, title: title, detail: detail)
+        self.fixes = fixes
+    }
 }
 
 /// Everything the insights look at, gathered by the app on each refresh.

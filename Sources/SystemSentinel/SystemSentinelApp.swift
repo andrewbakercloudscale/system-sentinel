@@ -155,6 +155,7 @@ struct MenuView: View {
         case .trends: TrendsView(model: model)
         case .memory: MemoryView(model: model)
         case .storage: StorageView(model: model, store: model.storage)
+        case .network: NetworkView(model: model, store: model.network)
         case .checkup: CheckupView(model: model, store: model.checkup)
         case .battery: BatteryView(model: model)
         case .events: EventsView(model: model)
