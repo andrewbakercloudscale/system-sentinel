@@ -116,6 +116,14 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
     private var heatWatch = HeatWatch()
     @AppStorage("blockerHours") var blockerHours: Double = 2
     @AppStorage("lastWeeklyReport") private var lastWeeklyReport: Double = 0
+    /// Updates: a newer release on GitHub, checked 30 s after launch and every 6 hours.
+    @AppStorage("autoUpdateCheck") var autoUpdateCheck = true
+    @AppStorage("lastUpdateCheck") var lastUpdateCheck: Double = 0
+    /// The version already announced in a notification, so each one is announced once.
+    @AppStorage("notifiedUpdate") var notifiedUpdate = ""
+    @Published var update: Updates.Release?
+    @Published var updateState: UpdateState = .idle
+    var updateTimer: Timer?
 
     static let supportDir: URL = FileManager.default
         .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -166,6 +174,8 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
         }
         if let dir = Model.snapshotDir {
             DispatchQueue.main.asyncAfter(deadline: .now() + Model.snapshotDelay) { Snapshot.run(self, into: dir) }
+        } else {
+            scheduleUpdateChecks()
         }
     }
 
@@ -1088,6 +1098,7 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
         let action = response.actionIdentifier
         Task { @MainActor in
             defer { done() }
+            if id.hasPrefix("update-") { PopOut.show(self); return }
             guard let s = self.pending.removeValue(forKey: id) else { return }
             switch action {
             case "kill": self.kill(s)

@@ -27,7 +27,7 @@ struct SystemSentinelApp: App {
 
     private var menuIcon: NSImage {
         let alert = model.level == .alert
-        return Self.menuIcon(alert: alert, rag: LoadRAG.of(load: model.machineAverage(60), flagged: alert))
+        return Self.menuIcon(alert: alert, rag: LoadRAG.of(load: model.machineAverage(60), flagged: alert), update: model.update != nil)
     }
 
     /// Green under 40% of the Mac over the last minute, amber to 70%, red above or when
@@ -42,19 +42,27 @@ struct SystemSentinelApp: App {
 
     /// A solid coloured badge with a white chip glyph (a warning triangle when something is
     /// flagged): readable on light and dark menu bars, which a thin coloured outline symbol was not.
-    static func menuIcon(alert: Bool, rag: LoadRAG? = nil) -> NSImage {
-        let size = NSSize(width: 24, height: 18)
+    static func menuIcon(alert: Bool, rag: LoadRAG? = nil, update: Bool = false) -> NSImage {
+        // A blue dot on the top right corner while an update is waiting.
+        let size = NSSize(width: update ? 28 : 24, height: 18)
         let fill = color(rag ?? (alert ? .red : .green))
         let glyph = NSImage(systemSymbolName: alert ? "exclamationmark.triangle.fill" : "cpu", accessibilityDescription: "System Sentinel")?
             .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 13, weight: .bold)
                 .applying(NSImage.SymbolConfiguration(paletteColors: [.white])))
         let img = NSImage(size: size, flipped: false) { rect in
+            let badge = NSRect(x: 0, y: 0, width: 24, height: 18)
             fill.setFill()
-            NSBezierPath(roundedRect: rect.insetBy(dx: 0.5, dy: 0.5), xRadius: 5, yRadius: 5).fill()
+            NSBezierPath(roundedRect: badge.insetBy(dx: 0.5, dy: 0.5), xRadius: 5, yRadius: 5).fill()
             if let g = glyph {
-                let r = NSRect(x: (rect.width - g.size.width) / 2, y: (rect.height - g.size.height) / 2,
+                let r = NSRect(x: (badge.width - g.size.width) / 2, y: (badge.height - g.size.height) / 2,
                                width: g.size.width, height: g.size.height)
                 g.draw(in: r)
+            }
+            if update {
+                let dot = NSBezierPath(ovalIn: NSRect(x: rect.width - 10, y: rect.height - 10, width: 9, height: 9))
+                NSColor.white.setFill(); dot.fill()
+                NSColor(srgbRed: 0.15, green: 0.39, blue: 0.92, alpha: 1).setFill()
+                NSBezierPath(ovalIn: NSRect(x: rect.width - 9, y: rect.height - 9, width: 7, height: 7)).fill()
             }
             return true
         }
@@ -79,6 +87,7 @@ struct MenuView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             header
+            if let rel = model.update { UpdateBanner(model: model, rel: rel) }
             TabBar(selection: $tab, badges: [.events: model.flagged.count])
             Group {
                 if fullLength {
@@ -244,11 +253,13 @@ struct SettingsDraft: Equatable {
     var alertBlockers: Bool
     var blockerHours: Double
     var weeklyReport: Bool
+    var autoUpdateCheck: Bool
 
     @MainActor init(_ m: Model) {
         threshold = m.threshold; window = m.windowSeconds; login = m.launchAtLogin
         menuBarShows = m.menuBarShows; alertHeat = m.alertHeat; heatWatts = m.heatWatts; heatMinutes = m.heatMinutes
         alertBlockers = m.alertBlockers; blockerHours = m.blockerHours; weeklyReport = m.weeklyReport
+        autoUpdateCheck = m.autoUpdateCheck
     }
 
     @MainActor func apply(to m: Model) {
@@ -256,6 +267,7 @@ struct SettingsDraft: Equatable {
         if login != m.launchAtLogin { m.launchAtLogin = login }
         m.menuBarShows = menuBarShows; m.alertHeat = alertHeat; m.heatWatts = heatWatts; m.heatMinutes = heatMinutes
         m.alertBlockers = alertBlockers; m.blockerHours = blockerHours; m.weeklyReport = weeklyReport
+        m.autoUpdateCheck = autoUpdateCheck
     }
 }
 
@@ -307,6 +319,7 @@ struct SettingsView: View {
                 Text("Top apps, CPU hours, time on battery and average power draw for the last 7 days. The same report is always on the Events tab.")
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
+            UpdatesCard(model: model, auto: draft.autoUpdateCheck)
             HStack(spacing: 8) {
                 if dirty {
                     Label("Unsaved changes", systemImage: "pencil.circle.fill").font(.caption.weight(.semibold)).foregroundStyle(Tab.events.color)
