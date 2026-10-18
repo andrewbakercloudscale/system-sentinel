@@ -244,7 +244,10 @@ public final class ConnectionTracker {
     }
 
     private func judge(_ c: NetConn, seconds: TimeInterval, at now: Date) {
-        guard c.proto == .tcp, Self.tlsPorts.contains(c.remotePort),
+        // Nothing sent means no handshake was tried: a reachability probe (connect and close,
+        // as network monitors and claude-burst's hotspot watch do), not a failed one. A real
+        // attempt sends its ClientHello first, a few hundred bytes.
+        guard c.proto == .tcp, Self.tlsPorts.contains(c.remotePort), c.tx > 0,
               seconds <= Self.shortSeconds, c.rx < Self.shortBytes else { return }
         record(.shortTLS, c, seconds: seconds, at: now)
     }

@@ -71,14 +71,16 @@ final class NetworkTests: XCTestCase {
         let t0 = Date(timeIntervalSince1970: 1_000_000)
         t.update([], at: t0)
         // Opens and is gone 3 s later with 2 KB received: a failed handshake.
-        t.update([conn("a.1", "9.9.9.9", rx: 2000)], at: t0.addingTimeInterval(3))
+        t.update([conn("a.1", "9.9.9.9", rx: 2000, tx: 517)], at: t0.addingTimeInterval(3))
         t.update([], at: t0.addingTimeInterval(6))
         // Opened and closed between two samples: first seen already in TIME_WAIT.
-        t.update([conn("a.2", "9.9.9.9", 443, "TIME_WAIT", rx: 1500)], at: t0.addingTimeInterval(9))
+        t.update([conn("a.2", "9.9.9.9", 443, "TIME_WAIT", rx: 1500, tx: 517)], at: t0.addingTimeInterval(9))
         // A healthy one: lives long and receives plenty.
         t.update([conn("a.3", "8.8.8.8", rx: 500_000)], at: t0.addingTimeInterval(12))
         t.update([conn("a.3", "8.8.8.8", rx: 900_000)], at: t0.addingTimeInterval(60))
         t.update([], at: t0.addingTimeInterval(63))
+        // A reachability probe: connects and closes, sends nothing. Not a handshake.
+        t.update([conn("a.5", "1.1.1.1", 443, "TIME_WAIT")], at: t0.addingTimeInterval(64))
         // Plain HTTP that drops is not TLS.
         t.update([conn("a.4", "7.7.7.7", 80, rx: 10)], at: t0.addingTimeInterval(66))
         t.update([], at: t0.addingTimeInterval(69))
