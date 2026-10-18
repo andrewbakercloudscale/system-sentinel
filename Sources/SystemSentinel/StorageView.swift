@@ -145,6 +145,10 @@ private struct StorageHero: View {
             .scaleEffect(1.35)
             .frame(width: 74, height: 74)
             VStack(alignment: .leading, spacing: 4) {
+                Label(status.text, systemImage: status.symbol)
+                    .font(.caption.weight(.bold)).foregroundStyle(.white)
+                    .padding(.horizontal, 8).padding(.vertical, 3)
+                    .background(Capsule().fill(.white.opacity(0.22)))
                 Text("\(gb(disk.available)) free").font(.title3.weight(.bold)).foregroundStyle(.white)
                 Text("\(gb(disk.used)) of \(gb(disk.total)) used").font(.callout).foregroundStyle(.white.opacity(0.9))
                 if disk.purgeable >= 1 << 30 {
@@ -171,9 +175,18 @@ private struct StorageHero: View {
 
     private var colors: [Color] {
         switch disk.level {
-        case .ok: return [Color(hex: "#b45309"), Color(hex: "#7c2d12")]
-        case .low: return [Color(hex: "#c2410c"), Color(hex: "#9a3412")]
-        case .critical: return [Color(hex: "#b91c1c"), Color(hex: "#9f1239")]
+        case .ok: return [Color(hex: "#16a34a"), Color(hex: "#166534")]
+        case .low: return [Color(hex: "#d97706"), Color(hex: "#b45309")]
+        case .critical: return [Color(hex: "#dc2626"), Color(hex: "#9f1239")]
+        }
+    }
+
+    /// Red, amber or green in words too, with the line it is measured against.
+    private var status: (symbol: String, text: String) {
+        switch disk.level {
+        case .ok: return ("checkmark.circle.fill", "Plenty of space")
+        case .low: return ("exclamationmark.triangle.fill", "Getting low: under 25 GB or 15% free")
+        case .critical: return ("xmark.octagon.fill", "Almost full: under 10 GB or 5% free")
         }
     }
 }

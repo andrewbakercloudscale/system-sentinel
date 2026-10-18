@@ -189,6 +189,11 @@ final class StorageStore: ObservableObject {
 
     private func afterCleanup(_ title: String, before: DiskSpace?, detail: String? = nil) {
         readDisk()
+        // macOS hands space back over the next half minute (APFS frees blocks lazily, Finder
+        // empties in the background), so measure again rather than show a stale figure.
+        for delay in [10.0, 30.0] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in self?.readDisk() }
+        }
         let freed = (disk?.available ?? 0) > (before?.available ?? 0) ? (disk?.available ?? 0) - (before?.available ?? 0) : 0
         toast(Model.Toast(ok: true, title: freed >= 1 << 20 ? "\(title): \(ReportDocument.bytes(freed)) freed" : title, detail: detail))
         scan()
