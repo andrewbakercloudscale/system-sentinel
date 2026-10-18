@@ -62,8 +62,27 @@ extension Model {
     }
 
     /// Downloads the release, quits, and a small script swaps the new copy in and reopens it.
-    func installUpdate() {
-        guard let rel = update, updateState != .installing else { return }
+    /// Downloads the latest release and installs it even when it is this same version: a
+    /// repair, and a way to try the installer.
+    func reinstallLatest() {
+        guard updateState != .checking, updateState != .installing else { return }
+        updateState = .checking
+        Task.detached {
+            let result = Updates.latest()
+            await MainActor.run {
+                self.updateState = .idle
+                switch result {
+                case .success(let rel): self.installUpdate(rel)
+                case .failure(let e):
+                    self.updateState = .failed(e.text)
+                    self.showToast(Toast(ok: false, title: "Could not reach GitHub", detail: e.text))
+                }
+            }
+        }
+    }
+
+    func installUpdate(_ release: Updates.Release? = nil) {
+        guard let rel = release ?? update, updateState != .installing else { return }
         let installed = Bundle.main.bundlePath
         guard installed.hasSuffix(".app") else {
             showToast(Toast(ok: false, title: "Not running from an app bundle", detail: "Download it from the release page instead."))
@@ -181,6 +200,17 @@ struct UpdatesCard: View {
                         .buttonStyle(.borderedProminent).tint(Color(hex: "#16a34a"))
                         .disabled(model.updateState == .installing)
                 }
+                Button("Reinstall…") {
+                    let alert = NSAlert()
+                    alert.messageText = "Reinstall System Sentinel?"
+                    alert.informativeText = "Downloads the latest release from GitHub, checks its signature, replaces this copy and reopens it. Settings and history are kept."
+                    alert.addButton(withTitle: "Reinstall")
+                    alert.addButton(withTitle: "Cancel")
+                    NSApp.activate(ignoringOtherApps: true)
+                    if alert.runModal() == .alertFirstButtonReturn { model.reinstallLatest() }
+                }
+                .help("Download and install the latest release again, even if you already have it")
+                .disabled(model.updateState == .checking || model.updateState == .installing)
                 Button {
                     model.checkForUpdates(manual: true)
                 } label: {
