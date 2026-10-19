@@ -69,4 +69,10 @@ final class UpdatesTests: XCTestCase {
         XCTAssertTrue(s.contains("'/tmp/a b/System Sentinel.app'"))
         XCTAssertTrue(s.contains("'/Applications/O'\\''Brien.app'"))
     }
+
+    func testFailureReasonDropsCurlPrefix() {
+        XCTAssertEqual(Updates.reason("curl: (6) Could not resolve host: api.github.com"), "Could not resolve host: api.github.com")
+        XCTAssertEqual(Updates.reason("curl: (22) The requested URL returned error: 403"), "The requested URL returned error: 403")
+        XCTAssertEqual(Updates.reason(""), "")
+    }
 }

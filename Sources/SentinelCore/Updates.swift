@@ -1,8 +1,8 @@
 import Foundation
 import Security
 
-/// Finds newer releases on GitHub. The repository is private, so the GitHub CLI (`gh`, signed
-/// in) is tried first; plain HTTPS works once the repository is public.
+/// Finds newer releases on GitHub: the GitHub CLI (`gh`) when it is installed and signed in,
+/// otherwise plain HTTPS to the public API.
 public enum Updates {
     public static let repo = "andrewbakercloudscale/system-sentinel"
 
@@ -156,15 +156,24 @@ public enum Updates {
 
     /// Blocks for up to a few seconds: run it off the main thread.
     public static func latest() -> Result<Release, CheckError> {
+        // Once more after a pause: a network that is still coming up (after waking, joining
+        // Wi-Fi or a VPN reconnecting) fails the first try and is fine a moment later.
+        let first = latestOnce()
+        guard case .failure = first else { return first }
+        Thread.sleep(forTimeInterval: 3)
+        return latestOnce()
+    }
+
+    static func latestOnce() -> Result<Release, CheckError> {
         if let gh {
             let r = run(gh, ["api", "repos/\(repo)/releases/latest"])
             if r.status == 0, let rel = parse(r.out) { return .success(rel) }
         }
         let r = run("/usr/bin/curl", ["-fsSL", "--proto", "=https", "--max-time", "15", "https://api.github.com/repos/\(repo)/releases/latest"])
         if r.status == 0, let rel = parse(r.out) { return .success(rel) }
-        return .failure(.message(gh == nil
-            ? "Could not reach GitHub. The repository is private: install GitHub CLI (brew install gh) and run gh auth login."
-            : "Could not reach GitHub. Check the network, or run gh auth login in Terminal."))
+        if r.status == 0 { return .failure(.message("GitHub answered, but not with a release.")) }
+        let why = reason(r.err)
+        return .failure(.message("Could not reach GitHub" + (why.isEmpty ? "" : " (\(why))") + ". Check the network and try again."))
     }
 
     /// Downloads the release zip and unpacks it; returns the .app inside.
@@ -207,16 +216,38 @@ public enum Updates {
         """
     }
 
-    static func run(_ path: String, _ args: [String]) -> (status: Int32, out: Data) {
+    static func run(_ path: String, _ args: [String]) -> (status: Int32, out: Data, err: String) {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: path)
         p.arguments = args
-        let pipe = Pipe()
+        let pipe = Pipe(), errPipe = Pipe()
         p.standardOutput = pipe
-        p.standardError = FileHandle.nullDevice
-        do { try p.run() } catch { return (-1, Data()) }
+        p.standardError = errPipe
+        let errBuf = ErrBuffer()
+        errPipe.fileHandleForReading.readabilityHandler = { errBuf.append($0.availableData) }
+        do { try p.run() } catch { return (-1, Data(), error.localizedDescription) }
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
         p.waitUntilExit()
-        return (p.terminationStatus, data)
+        errPipe.fileHandleForReading.readabilityHandler = nil
+        errBuf.append(errPipe.fileHandleForReading.readDataToEndOfFile())
+        return (p.terminationStatus, data, errBuf.text)
+    }
+
+    /// Stderr gathered while stdout is read, so neither pipe can fill up and stall the other.
+    final class ErrBuffer: @unchecked Sendable {
+        private var data = Data()
+        private let lock = NSLock()
+        func append(_ d: Data) { lock.lock(); data.append(d.prefix(max(0, 4096 - data.count))); lock.unlock() }
+        var text: String {
+            lock.lock(); defer { lock.unlock() }
+            return String(decoding: data, as: UTF8.self).split(separator: "\n").last.map { $0.trimmingCharacters(in: .whitespaces) } ?? ""
+        }
+    }
+
+    /// "curl: (6) Could not resolve host" becomes "Could not resolve host".
+    static func reason(_ err: String) -> String {
+        var t = err
+        if let r = t.range(of: #"^curl: \(\d+\) "#, options: .regularExpression) { t.removeSubrange(r) }
+        return t
     }
 }

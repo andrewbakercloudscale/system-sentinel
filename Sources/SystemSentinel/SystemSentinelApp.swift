@@ -140,11 +140,18 @@ struct MenuView: View {
 
     private var header: some View {
         HStack(spacing: 10) {
-            SymbolTile(symbol: "cpu", color: Color(hex: "#dc2626"), size: 28)
-            VStack(alignment: .leading, spacing: 0) {
-                Text("System Sentinel").font(.headline)
-                Text("v\(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev")  ·  \(Int(model.cores)) cores  ·  sampled every 5 s").font(.caption2).foregroundStyle(.secondary)
+            Button { AboutWindow.show(model) } label: {
+                HStack(spacing: 10) {
+                    SymbolTile(symbol: "cpu", color: Color(hex: "#dc2626"), size: 28)
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text("System Sentinel").font(.headline)
+                        Text("v\(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev")  ·  \(Int(model.cores)) cores  ·  sampled every 5 s").font(.caption2).foregroundStyle(.secondary)
+                    }
+                }
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+            .tip("About System Sentinel: version, updates and who made it")
             Spacer()
             HealthChip(health: model.health)
             let load = model.machineLoad
@@ -196,6 +203,10 @@ struct MenuView: View {
                 }
                 .tip("Open in a window you can move around and keep open")
             }
+            FooterButton(title: "About", symbol: "info.circle", color: Tab.overview.color) {
+                AboutWindow.show(model)
+            }
+            .tip("Version, updates, links and who made it")
             FooterButton(title: "Activity Monitor", symbol: "waveform.path.ecg", color: Tab.processes.color) {
                 NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/Utilities/Activity Monitor.app"))
             }
@@ -389,6 +400,10 @@ struct SettingsView: View {
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
             UpdatesCard(model: model, auto: draft.autoUpdateCheck)
+            Button { AboutWindow.show(model) } label: {
+                Label("About System Sentinel", systemImage: "info.circle")
+            }
+            .tip("Version, updates, links and who made it")
             PermissionsCard(permissions: model.permissions)
             DiagnosticsCard(model: model)
             HStack(spacing: 8) {
