@@ -1,4 +1,5 @@
 import AppKit
+import ApplicationServices
 import SentinelCore
 import ServiceManagement
 import SwiftUI
@@ -8,18 +9,19 @@ import UserNotifications
 struct SystemSentinelApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     @StateObject private var model = Model()
-    /// Snapshot runs put no icon in the menu bar: a second one there pushes the real one
-    /// behind the notch while it runs.
-    @State private var inserted = Model.snapshotDir == nil
+    @ObservedObject private var bar = MenuBarState.shared
 
     init() {
         SelfGuard.start()
+        MenuBarState.placeRight()
         // Before Model reads any settings.
         Migration.fromCPUSentinel()
     }
 
     var body: some Scene {
-        MenuBarExtra(isInserted: $inserted) {
+        // Set only on a real change: SwiftUI writes the binding back on every update, and a
+        // @Published that fires on each write keeps the scene updating forever.
+        MenuBarExtra(isInserted: Binding(get: { bar.inserted }, set: { if bar.inserted != $0 { bar.inserted = $0 } })) {
             MenuView(model: model)
         } label: {
             // The menu bar draws SwiftUI images as monochrome templates, so the colour has to
@@ -519,6 +521,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
+/// Whether the icon is in the menu bar, and where it goes.
+@MainActor
+final class MenuBarState: ObservableObject {
+    static let shared = MenuBarState()
+    /// Snapshot runs put no icon in the menu bar: a second one there pushes the real one
+    /// behind the notch while it runs.
+    @Published var inserted = Model.snapshotDir == nil
+
+    /// AppKit's own key for where a status item sits: points from the right edge of the screen.
+    /// New items go to the far left, next to the notch, and that is the end macOS hides first
+    /// when the bar is full. Near the right, by Control Centre, it is the last to go.
+    static let positionKey = "NSStatusItem Preferred Position Item-0"
+    static let rightSide: Double = 150
+
+    /// Before the icon is created: on the right unless it has been placed already (a ⌘-drag
+    /// sets this too, and is kept).
+    static func placeRight(force: Bool = false) {
+        guard force || UserDefaults.standard.object(forKey: positionKey) == nil else { return }
+        UserDefaults.standard.set(rightSide, forKey: positionKey)
+    }
+
+    /// Takes the icon out and puts it back on the right, where macOS hides icons last.
+    func moveRight() {
+        Self.placeRight(force: true)
+        inserted = false
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { self.inserted = true }
+    }
+}
+
 /// On a MacBook with a notch, menu bar icons that do not fit are hidden without a word,
 /// newest first, and an app that has just started is the newest. Checks now and then
 /// whether the icon is on screen; if it has been hidden for a while, says so once a day
@@ -527,9 +558,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 enum IconWatch {
     private static var hiddenSince: Date?
     private static var timer: Timer?
+    private static var moved: Date?
+    private static var closingPanel = false
+
+    /// The icon's button, inside the status item's window.
+    static var statusButton: NSButton? {
+        func find(_ v: NSView) -> NSButton? {
+            if let b = v as? NSButton { return b }
+            for s in v.subviews { if let b = find(s) { return b } }
+            return nil
+        }
+        return iconWindow?.contentView.flatMap(find)
+    }
 
     static func start() {
-        timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { _ in Task { @MainActor in check() } }
+        timer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { _ in Task { @MainActor in check() } }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { check() }
+        // Clicking the icon while the window is open brings the window to the front instead
+        // of opening a second copy under the icon.
+        // The panel under the icon does not become key while the window is, so this watches
+        // for it appearing at all.
+        for name in [NSWindow.didBecomeKeyNotification, NSWindow.didChangeOcclusionStateNotification] {
+            NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { n in
+                MainActor.assumeIsolated {
+                    guard let w = n.object as? NSWindow, w.isVisible, String(describing: type(of: w)).contains("MenuBarExtra"),
+                          PopOut.isOpen, !closingPanel else { return }
+                    // SwiftUI keeps its own open flag for the panel; hiding the window behind its
+                    // back would spend the next click closing it. Clicking the icon's button again
+                    // closes it the way SwiftUI expects.
+                    closingPanel = true
+                    w.alphaValue = 0
+                    DispatchQueue.main.async {
+                        statusButton?.performClick(nil)
+                        w.alphaValue = 1
+                        if w.isVisible { w.orderOut(nil) }
+                        closingPanel = false
+                    }
+                    if let m = Model.current { PopOut.show(m) }
+                }
+            }
+        }
     }
 
     /// The status item's window: AppKit's own class, the only way to it from MenuBarExtra.
@@ -537,21 +605,47 @@ enum IconWatch {
         NSApp.windows.first { String(describing: type(of: $0)).contains("NSStatusBarWindow") }
     }
 
+    /// Where the icon really is, from the accessibility tree of this app's own menu bar item.
+    /// The status window's frame cannot be trusted: since macOS 26 Control Centre lays the icons
+    /// out, and the frame AppKit reports can be far from where it is drawn.
+    static func iconX() -> (minX: CGFloat, width: CGFloat)? {
+        let app = AXUIElementCreateApplication(getpid())
+        var bar: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(app, "AXExtrasMenuBar" as CFString, &bar) == .success, let bar else { return nil }
+        var kids: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(bar as! AXUIElement, kAXChildrenAttribute as CFString, &kids) == .success,
+              let item = (kids as? [AXUIElement])?.first else { return nil }
+        var pos: CFTypeRef?, size: CFTypeRef?
+        AXUIElementCopyAttributeValue(item, kAXPositionAttribute as CFString, &pos)
+        AXUIElementCopyAttributeValue(item, kAXSizeAttribute as CFString, &size)
+        var p = CGPoint.zero, sz = CGSize.zero
+        guard let pos, let size, AXValueGetValue(pos as! AXValue, .cgPoint, &p), AXValueGetValue(size as! AXValue, .cgSize, &sz) else { return nil }
+        return (p.x, sz.width)
+    }
+
     static func isHidden() -> Bool {
-        guard let w = iconWindow else { return true }
-        if !w.isVisible || !w.occlusionState.contains(.visible) { return true }
-        // Behind the notch: the frame falls in the gap between the two usable top areas.
-        guard let screen = NSScreen.screens.first(where: { $0.frame.intersects(w.frame) }) ?? NSScreen.main else { return false }
+        guard iconWindow != nil else { return true }
+        guard let screen = NSScreen.screens.first(where: { $0.auxiliaryTopLeftArea != nil }) ?? NSScreen.main else { return false }
+        guard let x = iconX() else { return false } // cannot tell: say nothing rather than cry wolf
+        // Behind the notch: the icon's middle falls in the gap between the two usable top areas.
         if let left = screen.auxiliaryTopLeftArea, let right = screen.auxiliaryTopRightArea {
-            let mid = w.frame.midX - screen.frame.minX
+            let mid = x.minX + x.width / 2 - screen.frame.minX
             if mid > left.maxX && mid < right.minX { return true }
         }
-        return w.frame.maxX <= screen.frame.minX || w.frame.minX >= screen.frame.maxX
+        return x.minX + x.width <= screen.frame.minX || x.minX >= screen.frame.maxX
     }
 
     static func check() {
         guard isHidden() else { hiddenSince = nil; return }
         let now = Date()
+        // First, move it to the right end, which macOS hides last. At most every 10 minutes,
+        // so a bar that is simply too full does not make it jump about.
+        if moved.map({ now.timeIntervalSince($0) > 600 }) ?? true {
+            moved = now
+            Diagnostics.report("menu bar", "Icon was hidden behind the notch; moved it to the right end")
+            MenuBarState.shared.moveRight()
+            return
+        }
         guard let since = hiddenSince else { hiddenSince = now; return }
         let last = UserDefaults.standard.double(forKey: "iconHiddenNotified")
         guard now.timeIntervalSince(since) >= 120, now.timeIntervalSince1970 - last > 86_400 else { return }
@@ -570,6 +664,8 @@ enum IconWatch {
 enum PopOut {
     private static var window: NSWindow?
 
+    static var isOpen: Bool { window.map { $0.isVisible || $0.isMiniaturized } ?? false }
+
     static func show(_ model: Model) {
         if window == nil {
             let host = NSHostingController(rootView: MenuView(model: model, inWindow: true))
@@ -581,8 +677,10 @@ enum PopOut {
             if !w.setFrameUsingName("SystemSentinelWindow") { w.center() }
             window = w
         }
-        NSApp.activate(ignoringOtherApps: true)
+        NSApp.activate()
+        if window?.isMiniaturized == true { window?.deminiaturize(nil) }
         window?.makeKeyAndOrderFront(nil)
+        window?.orderFrontRegardless()
     }
 }
 
