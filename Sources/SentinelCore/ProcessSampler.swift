@@ -34,7 +34,9 @@ public struct ProcessSample: Equatable, Sendable {
 
     /// What the menu and notifications call this process.
     public var displayName: String {
-        isChromeRenderer ? "Chrome tab (renderer \(pid))" : name
+        if isChromeRenderer { return "Chrome tab (renderer \(pid))" }
+        // The binary has no space; the app's name does.
+        return name == "SystemSentinel" ? "System Sentinel" : name
     }
 }
 

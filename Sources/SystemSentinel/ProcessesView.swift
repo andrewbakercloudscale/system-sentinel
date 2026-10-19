@@ -256,7 +256,7 @@ private struct ProcessRow: View {
                 .tip("Explain: ask ChatGPT why this is busy and how to bring it down")
                 if OptimiseButton.available(model, s) { OptimiseButton(model: model, sample: s) }
                 if s.pid == getpid() {
-                    Pill(text: "this app", color: Tab.overview.color).frame(width: 96, alignment: .trailing)
+                    Pill(text: "This app", color: Tab.overview.color).frame(width: 96, alignment: .trailing)
                 } else if s.name == "WindowServer" {
                     OptimiseScreenButton(model: model)
                 } else if Safety.canKillManually(s) {
