@@ -452,6 +452,7 @@ enum Snapshot {
             let zooms: [(String, AnyView, NSSize)] = [
                 ("zoom-now", AnyView(NowDonut(model: model, zoomed: true)), NSSize(width: 760, height: 440)),
                 ("zoom-lasthour", AnyView(LastHourChart(model: model, zoomed: true)), NSSize(width: 960, height: 600)),
+                ("optimise", AnyView(OptimiseView(model: model, store: .shared)), NSSize(width: 720, height: 1500)),
             ]
             for (name, view, size) in zooms {
                 let host = NSHostingView(rootView: view.padding(14).frame(width: size.width, height: size.height)

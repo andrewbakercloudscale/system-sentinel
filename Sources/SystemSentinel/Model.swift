@@ -21,6 +21,10 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
     /// Programs relaunched under a new pid soon after a kill, by path, so their row can say
     /// "restarted" instead of looking as if the kill did nothing.
     @Published var restarted: [String: Int32] = [:]
+    /// Processes put at background priority (efficiency cores, I/O last), and the names that
+    /// always are. See SlowDown.swift.
+    @Published var slowed: Set<Int32> = []
+    @Published var slowRules: Set<String> = Set(UserDefaults.standard.stringArray(forKey: "slowRules") ?? [])
     /// Recent kills, by path, watched for a minute for a relaunch.
     private var recentKills: [String: (sample: ProcessSample, at: Date)] = [:]
     /// Battery and power, refreshed every tick. nil on a Mac without a battery.
@@ -213,6 +217,7 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
             Task { @MainActor in self?.tick() }
         }
         if let dir = Model.snapshotDir {
+            TweakStore.shared.refresh()
             if let name = Model.argument("--dnsmap") { DNSMapStore.shared.input = name; DNSMapStore.shared.start() }
             DispatchQueue.main.asyncAfter(deadline: .now() + Model.snapshotDelay) { Snapshot.run(self, into: dir) }
         } else {
@@ -241,6 +246,8 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
             totalCPU = sentinel.totalCPU
             let live = Set(sentinel.latest.map(\.pid))
             flagged.formIntersection(live)
+            slowed.formIntersection(live)
+            applySlowRules()
             startTimes = startTimes.filter { live.contains($0.key) }
             // A flagged process that has cooled down is no longer flagged.
             flagged = flagged.filter { sentinel.detector.hotDuration(of: $0, at: Date()) != nil }
@@ -547,6 +554,8 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
             if let u = URL(string: url) { NSWorkspace.shared.open(u) }
         case .leaveHotspot:
             network.leaveHotspot()
+        case .optimiseScreen:
+            OptimiseWindow.show(self)
         case .openApp(let id, _):
             if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: id) {
                 NSWorkspace.shared.openApplication(at: url, configuration: .init())

@@ -172,7 +172,7 @@ final class FixAndRuleTests: XCTestCase {
 
         var w = input([ps(2, 60, "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer")])
         w.samples[0] = ProcessSample(pid: 2, uid: 88, cpu: 60, path: "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer")
-        XCTAssertEqual(Insights.generate(w).first { $0.id == "ws" }?.fixes, [.openSettings(.accessibilityDisplay), .openSettings(.displays)])
+        XCTAssertEqual(Insights.generate(w).first { $0.id == "ws" }?.fixes, [.optimiseScreen, .openSettings(.accessibilityDisplay), .openSettings(.displays)])
 
         var h = input([ps(5, 120, "/Applications/Slack.app/Contents/MacOS/Slack")])
         h.avg15m = [5: 110]

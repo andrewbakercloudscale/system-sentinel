@@ -367,7 +367,8 @@ public enum Insights {
             } else {
                 out.append(Insight(id: "ws", tone: .info, symbol: "display.2",
                                    title: "WindowServer is at \(Int(ws.cpu))%",
-                                   detail: "Usually displays: a scaled resolution on an external monitor, 120 Hz, many open windows, transparency or animated content. Try System Settings > Accessibility > Display > Reduce transparency, and close windows playing video."))
+                                   detail: "Usually displays: a scaled resolution on an external monitor, 120 Hz, many open windows, transparency or animated content. Optimise turns down what can be turned down, each with an undo.",
+                                   fixes: [.optimiseScreen]))
             }
         }
 

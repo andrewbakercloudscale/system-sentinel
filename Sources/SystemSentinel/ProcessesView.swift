@@ -10,6 +10,11 @@ struct ProcessesView: View {
     /// The list as it stood when Pause was pressed. Sampling, alerts and history carry on;
     /// only what this list shows holds still, so a row does not move away mid-read.
     @State private var frozen: (rows: [ProcessSample], at: Date)?
+    /// Column widths, dragged in the header and kept. Process takes whatever is left.
+    @AppStorage("colTrend") private var colTrend = 76.0
+    @AppStorage("colNow") private var colNow = 62.0
+    @AppStorage("colAvg") private var colAvg = 44.0
+    @AppStorage("colMem") private var colMem = 54.0
 
     enum Sort: String, CaseIterable {
         case now = "Now", m15 = "15 min", h1 = "1 hour", h6 = "6 hours", memory = "Memory"
@@ -48,16 +53,18 @@ struct ProcessesView: View {
             }
             HStack(spacing: 8) {
                 Text("Process").frame(maxWidth: .infinity, alignment: .leading).padding(.leading, 34)
-                Text("15 min trend").frame(width: 76)
-                Text("now").frame(width: 62, alignment: .trailing)
-                Text(window == 900 ? "15 min" : window == 3600 ? "1 hour" : "6 hours").frame(width: 44, alignment: .trailing)
-                Text("memory").frame(width: 54, alignment: .trailing)
-                Text("").frame(width: 172)
+                ColumnHeader(title: "15 min trend", width: $colTrend, standard: 76, alignment: .center)
+                ColumnHeader(title: "now", width: $colNow, standard: 62)
+                ColumnHeader(title: window == 900 ? "15 min" : window == 3600 ? "1 hour" : "6 hours", width: $colAvg, standard: 44)
+                ColumnHeader(title: "memory", width: $colMem, standard: 54)
+                Text("").frame(width: ProcessColumns.actions)
             }
             .font(.caption2.weight(.medium)).foregroundStyle(.secondary)
+            .help("Drag a column's left edge to resize it; double-click the edge to reset")
             VStack(spacing: 2) {
+                let cols = ProcessColumns(trend: colTrend, now: colNow, avg: colAvg, mem: colMem)
                 ForEach(Array(rows.enumerated()), id: \.element.pid) { i, s in
-                    ProcessRow(model: model, sample: s, zebra: i.isMultiple(of: 2), window: window)
+                    ProcessRow(model: model, sample: s, zebra: i.isMultiple(of: 2), window: window, cols: cols)
                 }
             }
             Text("100% is one full core; a busy process can use several. Averages count idle time, so they show what has been chewing the CPU, not how hot it runs when it does.")
@@ -93,6 +100,46 @@ struct ProcessesView: View {
     }
 }
 
+/// Widths of the fixed columns, shared by the header and every row.
+struct ProcessColumns: Equatable {
+    var trend = 76.0, now = 62.0, avg = 44.0, mem = 54.0
+    static let actions: CGFloat = 196
+}
+
+/// A column title with a handle on its left edge: drag to resize, double-click to reset.
+private struct ColumnHeader: View {
+    let title: String
+    @Binding var width: Double
+    let standard: Double
+    var alignment: Alignment = .trailing
+    @State private var start: Double?
+    @State private var hover = false
+
+    var body: some View {
+        Text(title).lineLimit(1)
+            .frame(width: width, alignment: alignment)
+            .overlay(alignment: .leading) {
+                Rectangle().fill(hover || start != nil ? Color.secondary.opacity(0.5) : Color.secondary.opacity(0.15))
+                    .frame(width: 2, height: 12)
+                    .padding(.horizontal, 3)
+                    .contentShape(Rectangle())
+                    .offset(x: -6)
+                    .onHover { h in
+                        hover = h
+                        if h { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
+                    }
+                    .gesture(DragGesture(minimumDistance: 1)
+                        .onChanged { g in
+                            if start == nil { start = width }
+                            // The column grows as its left edge moves left.
+                            width = min(260, max(standard * 0.6, (start ?? width) - g.translation.width))
+                        }
+                        .onEnded { _ in start = nil })
+                    .onTapGesture(count: 2) { width = standard }
+            }
+    }
+}
+
 /// A row of small tappable chips, the selected one filled.
 struct ChipPicker: View {
     let options: [String]
@@ -122,6 +169,7 @@ private struct ProcessRow: View {
     let zebra: Bool
     /// The average column's window: 15 minutes, or what the list is sorted by.
     var window: TimeInterval = 900
+    var cols = ProcessColumns()
     @State private var hover = false
     @State private var showInfo = false
 
@@ -138,6 +186,10 @@ private struct ProcessRow: View {
                     if let hot = model.hotFor(s) { Pill(text: "hot \(hot)", symbol: "flame.fill", color: Theme.heat(50)) }
                     if s.isRoot { Pill(text: "root", color: Tab.settings.color) }
                     policyPill(model.policy(for: s))
+                    if model.isSlowed(s) {
+                        Pill(text: "background", symbol: "tortoise.fill", color: Tab.rules.color)
+                            .help("Running at background priority: efficiency cores, disk access last. The tortoise button puts it back.")
+                    }
                     if model.restarted[s.path] == s.pid {
                         Pill(text: "restarted", symbol: "arrow.clockwise", color: Tab.rules.color)
                             .help("Killed a moment ago and launched again under this new pid")
@@ -148,15 +200,15 @@ private struct ProcessRow: View {
             .frame(maxWidth: .infinity, alignment: .leading)
 
             Sparkline(values: model.sparkline(s), color: Theme.heat(max(s.cpu, avg15)))
-                .frame(width: 76, height: 22)
+                .frame(width: cols.trend, height: 22)
 
             VStack(alignment: .trailing, spacing: 3) {
                 Text(Fmt.pct(s.cpu)).font(.callout.weight(.semibold)).monospacedDigit().foregroundStyle(Theme.heat(s.cpu))
-                HeatBar(value: s.cpu).frame(width: 52, height: 4)
+                HeatBar(value: s.cpu).frame(width: max(20, cols.now - 10), height: 4)
             }
-            .frame(width: 62, alignment: .trailing)
-            Text(Fmt.pct(avg15)).font(.caption).monospacedDigit().foregroundStyle(Theme.heat(avg15)).frame(width: 44, alignment: .trailing)
-            Text(Fmt.memory(s.rssKB)).font(.caption).monospacedDigit().foregroundStyle(.secondary).frame(width: 54, alignment: .trailing)
+            .frame(width: cols.now, alignment: .trailing)
+            Text(Fmt.pct(avg15)).font(.caption).monospacedDigit().foregroundStyle(Theme.heat(avg15)).frame(width: cols.avg, alignment: .trailing)
+            Text(Fmt.memory(s.rssKB)).font(.caption).monospacedDigit().foregroundStyle(.secondary).frame(width: cols.mem, alignment: .trailing)
 
             HStack(spacing: 4) {
                 Button { showInfo.toggle() } label: {
@@ -171,15 +223,18 @@ private struct ProcessRow: View {
                 }
                 .buttonStyle(.plain)
                 .help("Explain: ask ChatGPT why this is busy and how to bring it down")
+                if model.canSlow(s) { SlowButton(model: model, sample: s) }
                 if s.pid == getpid() {
                     Pill(text: "this app", color: Tab.overview.color).frame(width: 96, alignment: .trailing)
+                } else if s.name == "WindowServer" {
+                    OptimiseScreenButton(model: model)
                 } else if Safety.canKillManually(s) {
                     KillButton(model: model, sample: s)
                 } else {
                     SudoButton(model: model, sample: s)
                 }
             }
-            .frame(width: 172, alignment: .trailing)
+            .frame(width: ProcessColumns.actions, alignment: .trailing)
         }
         .padding(.horizontal, 6).padding(.vertical, 5)
         .background(
@@ -405,6 +460,56 @@ struct KillButton: View {
         .opacity(busy ? 0.75 : 1)
         .fixedSize()
         .help(isRoot ? "Runs as root: asks for your password" : "Stop politely, force after 5 s")
+    }
+}
+
+/// Lower priority, now or always for this name, and back again.
+struct SlowButton: View {
+    @ObservedObject var model: Model
+    let sample: ProcessSample
+
+    var body: some View {
+        let on = model.isSlowed(sample)
+        let ruled = model.slowRules.contains(sample.name)
+        Menu {
+            if on {
+                Button("Back to normal priority") { model.restore(sample) }
+            } else {
+                Button("Lower priority now") { model.slowDown(sample) }
+                Button("Always lower \(sample.name)") { model.slowDown(sample, always: true) }
+            }
+            if on, !ruled { Button("Always lower \(sample.name)") { model.slowDown(sample, always: true) } }
+            if let note = BackgroundCandidates.note(sample.name) {
+                Divider()
+                Text(note)
+            }
+        } label: {
+            Image(systemName: on ? "tortoise.fill" : "tortoise")
+                .foregroundStyle(on ? Tab.rules.color : Color.secondary)
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help(on ? "At background priority\(ruled ? ", always" : ""). Click to put it back." :
+                   "Optimise: lower its priority so it runs on the efficiency cores and your apps stay quick. Undo any time.")
+    }
+}
+
+/// WindowServer cannot be killed without logging out; it can be given less to draw.
+struct OptimiseScreenButton: View {
+    @ObservedObject var model: Model
+    var body: some View {
+        Button { OptimiseWindow.show(model) } label: {
+            Label("Optimise", systemImage: "wand.and.stars")
+                .font(.caption.weight(.bold)).foregroundStyle(.white)
+                .padding(.horizontal, 9).padding(.vertical, 5)
+                .background(Capsule().fill(Tab.processes.color))
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .fixedSize()
+        .frame(width: 96, alignment: .trailing)
+        .help("Settings that make WindowServer draw less, each with an undo")
     }
 }
 

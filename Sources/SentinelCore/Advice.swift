@@ -26,6 +26,8 @@ public enum FixAction: Equatable, Sendable, Identifiable {
     case openURL(String, label: String)
     /// Turn Wi-Fi off and on, so macOS rejoins its best known network instead of a phone.
     case leaveHotspot
+    /// Opens the WindowServer optimiser: settings that make the screen cheaper to draw, each with an undo.
+    case optimiseScreen
 
     public enum Settings: String, Sendable {
         case battery, displays, accessibilityDisplay, screenRecording, timeMachine, loginItems, wifi, network
@@ -74,6 +76,7 @@ public enum FixAction: Equatable, Sendable, Identifiable {
         case .openApp(_, let name): return "Open \(name)"
         case .openURL(_, let label): return label
         case .leaveHotspot: return "Leave the hotspot"
+        case .optimiseScreen: return "Optimise the screen…"
         }
     }
 
@@ -92,6 +95,7 @@ public enum FixAction: Equatable, Sendable, Identifiable {
         case .openApp: return "arrow.up.forward.app.fill"
         case .openURL: return "safari.fill"
         case .leaveHotspot: return "wifi.exclamationmark"
+        case .optimiseScreen: return "wand.and.stars"
         }
     }
 
@@ -99,7 +103,7 @@ public enum FixAction: Equatable, Sendable, Identifiable {
     public var acts: Bool {
         switch self {
         case .quit, .kill, .lowPowerMode, .emptyTrash, .cleanPlaces, .trashFound, .leaveHotspot: return true
-        case .openSettings, .reveal, .archiveFound, .review, .openApp, .openURL: return false
+        case .openSettings, .reveal, .archiveFound, .review, .openApp, .openURL, .optimiseScreen: return false
         }
     }
 
