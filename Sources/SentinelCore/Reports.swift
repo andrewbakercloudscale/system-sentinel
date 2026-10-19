@@ -258,7 +258,7 @@ extension Insights {
         }
         if let c = i.charge, c.sitsAtFull {
             var x = Insight(id: "charge", tone: .info, symbol: "battery.100percent.bolt",
-                            title: "Plugged in at 100% \(Int(c.fullShare * 100))% of the time",
+                            title: "Plugged in at 100% for \(Int(c.fullShare * 100))% of the time",
                             detail: "Sitting full on the charger is what wears a battery fastest.")
             x.steps = ["System Settings > Battery > Charging: set a charge limit of 80% if your macOS offers one.",
                        "Otherwise keep Optimised Battery Charging on: it learns your routine and holds at 80%.",

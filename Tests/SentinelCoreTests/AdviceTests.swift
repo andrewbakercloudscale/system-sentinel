@@ -152,7 +152,7 @@ final class HealthAndChargeTests: XCTestCase {
         XCTAssertTrue(c.sitsAtFull)
         var i = input()
         i.charge = c
-        XCTAssertEqual(Insights.generate(i).first { $0.id == "charge" }?.title, "Plugged in at 100% 77% of the time")
+        XCTAssertEqual(Insights.generate(i).first { $0.id == "charge" }?.title, "Plugged in at 100% for 77% of the time")
         XCTAssertFalse(ChargeHabits.from(Array(pts.prefix(300))).sitsAtFull, "too little time to judge")
     }
 }
