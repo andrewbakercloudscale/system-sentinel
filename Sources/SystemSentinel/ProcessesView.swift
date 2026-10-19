@@ -70,16 +70,27 @@ struct ProcessesView: View {
             }
             HStack(spacing: 8) {
                 Text("Process").frame(maxWidth: .infinity, alignment: .leading).padding(.leading, 34)
-                ColumnHeader(title: "15 min trend", width: $colTrend, standard: 76, alignment: .center)
-                ColumnHeader(title: "now", width: $colNow, standard: 62)
-                ColumnHeader(title: window == 900 ? "15 min" : window == 3600 ? "1 hour" : "6 hours", width: $colAvg, standard: 44)
-                ColumnHeader(title: "memory", width: $colMem, standard: 54)
+                // A column grows into the Process column, never past it: an overfull row made the
+                // whole list fight over its width, which is what flickered.
+                let room = ProcessColumns.room
+                ColumnHeader(title: "15 min trend", width: $colTrend, standard: 76, minWidth: 40, maxWidth: room - colNow - colAvg - colMem, alignment: .center)
+                ColumnHeader(title: "now", width: $colNow, standard: 62, minWidth: 50, maxWidth: room - colTrend - colAvg - colMem)
+                ColumnHeader(title: window == 900 ? "15 min" : window == 3600 ? "1 hour" : "6 hours", width: $colAvg, standard: 44, minWidth: 34, maxWidth: room - colTrend - colNow - colMem)
+                ColumnHeader(title: "memory", width: $colMem, standard: 54, minWidth: 44, maxWidth: room - colTrend - colNow - colAvg)
                 Text("").frame(width: ProcessColumns.actions)
             }
             .font(.caption2.weight(.medium)).foregroundStyle(.secondary)
             .tip("Drag a column's left edge to resize it; double-click the edge to reset")
         }
         .padding(.vertical, 6)
+        .onAppear {
+            // Widths saved before the columns had limits can overfill the row or wrap a value
+            // onto two lines; start again.
+            if colTrend + colNow + colAvg + colMem > ProcessColumns.room
+                || colTrend < 40 || colNow < 50 || colAvg < 34 || colMem < 44 {
+                (colTrend, colNow, colAvg, colMem) = (76, 62, 44, 54)
+            }
+        }
         // Opaque, so rows scrolling underneath the pinned bar do not show through it.
         .background(Color(nsColor: .windowBackgroundColor))
     }
@@ -116,6 +127,9 @@ struct ProcessesView: View {
 struct ProcessColumns: Equatable {
     var trend = 76.0, now = 62.0, avg = 44.0, mem = 54.0
     static let actions: CGFloat = 196
+    /// What the four resizable columns may share: the row, less its padding, spacing, the
+    /// actions and the narrowest the Process column can usefully be.
+    static let room = Double(MenuView.width) - 28 - 2 - 12 - Double(actions) - 5 * 8 - 100
 }
 
 /// A column title with a handle on its left edge: drag to resize, double-click to reset.
@@ -123,6 +137,9 @@ private struct ColumnHeader: View {
     let title: String
     @Binding var width: Double
     let standard: Double
+    /// Narrow enough to give room away, wide enough that the value still fits on one line.
+    let minWidth: Double
+    let maxWidth: Double
     var alignment: Alignment = .trailing
     @State private var start: Double?
     @State private var hover = false
@@ -140,11 +157,13 @@ private struct ColumnHeader: View {
                         hover = h
                         if h { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
                     }
-                    .gesture(DragGesture(minimumDistance: 1)
+                    // Global coordinates: the handle moves as the column grows, so measuring the
+                    // drag in its own space fed the movement back into itself.
+                    .gesture(DragGesture(minimumDistance: 1, coordinateSpace: .global)
                         .onChanged { g in
                             if start == nil { start = width }
                             // The column grows as its left edge moves left.
-                            width = min(260, max(standard * 0.6, (start ?? width) - g.translation.width))
+                            width = min(max(minWidth, maxWidth), max(minWidth, ((start ?? width) - g.translation.width).rounded()))
                         }
                         .onEnded { _ in start = nil })
                     .onTapGesture(count: 2) { width = standard }
