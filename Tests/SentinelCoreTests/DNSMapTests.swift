@@ -157,4 +157,70 @@ final class DNSMapTests: XCTestCase {
         XCTAssertEqual(DNSMap.findings(n).first?.tone, .problem)
         XCTAssertTrue(DNSMap.report(n).contains("NXDOMAIN"))
     }
+
+    func testDoHAndRoute() {
+        let cf = #"{"Status":0,"Answer":[{"name":"www.github.com","type":5,"TTL":2148,"data":"github.com."},{"name":"github.com","type":1,"TTL":60,"data":"20.87.245.0"}]}"#
+        let d = NetParse.dohJSON(Data(cf.utf8))
+        XCTAssertEqual(d?.status, "NOERROR")
+        XCTAssertEqual(d?.addresses, ["20.87.245.0"])
+        XCTAssertEqual(d?.cnames, ["github.com"])
+        XCTAssertEqual(NetParse.dohJSON(Data(#"{"Status":3,"Authority":[]}"#.utf8))?.status, "NXDOMAIN")
+        XCTAssertNil(NetParse.dohJSON(Data("<html>blocked</html>".utf8)))
+        let r = NetParse.routeGet("   route to: 100.64.0.1\ndestination: 100.64.0.1\n    gateway: 100.64.0.1\n  interface: utun4\n")
+        XCTAssertEqual(r.interface, "utun4")
+        XCTAssertEqual(r.gateway, "100.64.0.1")
+        XCTAssertTrue(DNSMap.isTunnelInterface("utun4") && !DNSMap.isTunnelInterface("en0") && !DNSMap.isTunnelInterface(nil))
+    }
+
+    func testZscalerAndTunnels() {
+        let direct = "<p>The request received from you didn't come from a Zscaler IP therefore you are not going through the Zscaler proxy service.</p><p>Your request is arriving at this server from the IP address 197.103.133.125</p>"
+        XCTAssertEqual(NetParse.zscalerPage(direct), ZscalerPath(throughProxy: false, publicIP: "197.103.133.125"))
+        let proxied = "You are accessing this host via a Zscaler BETA proxy hostname: zs2-jnb1-2b5.gateway.zscalertwo.net. Your request is arriving at this server from the IP address 165.225.73.10 The Zscaler proxy virtual IP is 165.225.72.38."
+        let z = NetParse.zscalerPage(proxied)
+        XCTAssertEqual(z?.throughProxy, true)
+        XCTAssertEqual(z?.proxyHost, "zs2-jnb1-2b5.gateway.zscalertwo.net")
+        XCTAssertEqual(z?.proxyIP, "165.225.72.38")
+        XCTAssertNil(NetParse.zscalerPage("<html>some other page</html>"))
+
+        func conn(_ host: String, _ process: String, state: String = "ESTABLISHED") -> NetConn {
+            NetConn(proto: .tcp, local: "172.20.13.62.60662", remoteHost: host, remotePort: 443, state: state, rx: 1, tx: 1, pid: 1, process: process)
+        }
+        let t = DNSMap.tunnels([conn("147.161.163.253", "ZscalerTunnel"), conn("147.161.163.253", "ZscalerTunnel"),
+                                conn("147.161.170.1", "ZscalerService"), conn("10.0.0.1", "ZscalerTunnel"),
+                                conn("140.82.121.4", "Safari"), conn("2.2.2.2", "ZscalerTunnel", state: "TIME_WAIT")])
+        XCTAssertEqual(t, [Tunnel(vendor: "Zscaler", process: "ZscalerTunnel", edges: ["147.161.163.253", "147.161.170.1"])])
+    }
+
+    func testDoHFindings() {
+        func answer(_ server: String, _ status: String?, _ addrs: [String], https: Bool = false) -> DNSMapResult.ServerAnswer {
+            .init(server: server, scope: https ? "over HTTPS" : "main", status: status, ms: 10, addresses: addrs, cnames: [], viaHTTPS: https)
+        }
+        var r = DNSMapResult(query: "blocked.example", at: Date())
+        r.status = "NXDOMAIN"
+        r.system = []
+        r.answers = [answer("192.168.1.1", "NXDOMAIN", []), answer("Cloudflare", "NOERROR", ["93.184.216.34"], https: true)]
+        XCTAssertTrue(DNSMap.findings(r).contains { $0.tone == .warning && $0.text.contains("hiding it") })
+        XCTAssertFalse(DNSMap.findings(r).contains { $0.text.contains("disagree") }, "DNS over HTTPS is compared on its own")
+
+        r = DNSMapResult(query: "jira.corp", at: Date())
+        r.status = "NOERROR"
+        r.system = ["10.0.0.5"]
+        r.answers = [answer("100.64.0.1", "NOERROR", ["10.0.0.5"]), answer("Cloudflare", "NXDOMAIN", [], https: true)]
+        XCTAssertTrue(DNSMap.findings(r).contains { $0.text.contains("internal name") })
+
+        r.answers = [answer("100.64.0.1", "NOERROR", ["10.0.0.5"]), answer("Cloudflare", nil, [], https: true), answer("Google", nil, [], https: true)]
+        let f = DNSMap.findings(r)
+        XCTAssertTrue(f.contains { $0.text.contains("blocked on this network") })
+        XCTAssertFalse(f.contains { $0.text.contains("did not answer") })
+
+        var route = DNSMapResult.Route(label: "x", address: "10.0.0.5")
+        route.tunnel = "Zscaler"
+        r.routes = [route]
+        r.tunnels = [Tunnel(vendor: "Zscaler", process: "ZscalerTunnel", edges: ["147.161.163.253"])]
+        r.zscaler = ZscalerPath(throughProxy: false, publicIP: "197.103.133.125")
+        let g = DNSMap.findings(r)
+        XCTAssertTrue(g.contains { $0.text.contains("Zscaler tunnel") && $0.text.contains("147.161.163.253") })
+        XCTAssertTrue(g.contains { $0.text.contains("not through Zscaler's proxy") })
+        XCTAssertTrue(DNSMap.report(r).contains("inside the Zscaler tunnel"))
+    }
 }

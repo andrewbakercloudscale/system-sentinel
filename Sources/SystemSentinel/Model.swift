@@ -472,7 +472,11 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
     /// The text beside the menu bar icon, per the setting.
     var menuBarText: String? {
         switch menuBarShows {
-        case "load": return "\(Int(machineLoad))%"
+        // Padded with figure spaces to three digits: a label that changes width makes macOS
+        // lay the menu bar out again, and on a full bar with a notch that can hide the icon.
+        case "load":
+            let n = String(min(Int(machineLoad), 999))
+            return String(repeating: "\u{2007}", count: max(0, 3 - n.count)) + n + "%"
         case "watts": return battery?.watts.map { String(format: "%.1f W", $0) }
         case "battery":
             guard let b = battery, b.present else { return nil }

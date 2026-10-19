@@ -38,6 +38,7 @@ struct DNSMapView: View {
                             }
                         }
                         AddressesCard(result: r)
+                        if !r.tunnels.isEmpty { TunnelCard(result: r) }
                         RoutesCard(result: r)
                         if let c = r.certificate { CertCard(cert: c, host: r.query) }
                         CommandsCard(result: r)
@@ -152,7 +153,8 @@ private struct FlowCard: View {
                         Node(kind: "/etc/hosts", value: h.address, symbol: "doc.text", color: amber)
                     } else if !result.isIP {
                         arrow
-                        Node(kind: result.resolver?.supplemental == true ? "VPN DNS" : "DNS server",
+                        let dnsRoute = result.routes.first { $0.address == result.resolver?.servers.first }
+                        Node(kind: dnsRoute?.onThisMac == true ? "\(dnsRoute?.tunnel ?? "VPN") app, this Mac" : (result.resolver?.supplemental == true ? "VPN DNS" : "DNS server"),
                              value: result.resolver?.servers.first ?? "Bonjour", symbol: "server.rack",
                              detail: result.answers.first { $0.server == result.resolver?.servers.first }.map { ms($0.ms) })
                         ForEach(Array(result.chain.enumerated()), id: \.offset) { i, n in
@@ -244,6 +246,7 @@ private struct ServersCard: View {
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
                         Circle().fill(a.status == nil ? Theme.heat(100) : (a.status == "NOERROR" ? okColor : amber)).frame(width: 8, height: 8)
+                        if a.viaHTTPS { Image(systemName: "lock.fill").font(.caption).foregroundStyle(.secondary) }
                         Mono(text: a.server)
                         Text(a.scope).font(.caption).foregroundStyle(.secondary)
                         Spacer()
@@ -384,6 +387,43 @@ private struct AddressesCard: View {
     }
 }
 
+private struct TunnelCard: View {
+    let result: DNSMapResult
+    var body: some View {
+        Card(title: "Tunnels on this Mac", symbol: "lock.shield", tint: mapTint) {
+            Text("Security and VPN apps that carry some traffic in a tunnel. Routers inside a tunnel cannot be traced from here; the tunnel itself can, to the provider's server.")
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            ForEach(result.tunnels, id: \.vendor) { t in
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack {
+                        Text(t.vendor).font(.callout.weight(.semibold))
+                        Text(t.process).font(.caption.monospaced()).foregroundStyle(.secondary)
+                    }
+                    ForEach(t.edges, id: \.self) { e in
+                        let route = result.routes.first { $0.address == e }
+                        HStack(spacing: 8) {
+                            Mono(text: e)
+                            Text(result.owners[e].map { "\($0.label), \($0.country)" } ?? "").font(.caption).foregroundStyle(.secondary)
+                            Spacer()
+                            if let r = route, r.done, let last = r.shown.hops.last?.ms {
+                                Text("\(r.shown.hops.count) hops, \(Int(last)) ms").font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
+            }
+            if let z = result.zscaler {
+                Label(z.throughProxy
+                      ? "Web traffic goes through Zscaler's proxy\(z.proxyHost.map { " \($0)" } ?? "")\(z.proxyIP.map { " (\($0))" } ?? ""). Sites see Zscaler's address\(z.publicIP.map { ", \($0)" } ?? "")."
+                      : "Web traffic goes straight out, not through Zscaler's proxy. Sites see \(z.publicIP ?? "this network's address"). Zscaler carries only internal names.",
+                      systemImage: z.throughProxy ? "arrow.triangle.branch" : "arrow.up.right")
+                    .font(.callout).fixedSize(horizontal: false, vertical: true)
+                Text("From ip.zscaler.com").font(.caption).foregroundStyle(.secondary)
+            }
+        }
+    }
+}
+
 private struct RoutesCard: View {
     let result: DNSMapResult
     var body: some View {
@@ -391,7 +431,7 @@ private struct RoutesCard: View {
             Text("Each router on the way, how long it took to reply, and who runs it. Silent hops are routers that do not answer traces, which is normal; the trace stops counting after the last reply.")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             ForEach(Array(result.routes.enumerated()), id: \.offset) { i, r in
-                RouteView(route: r, owners: result.owners, expanded: i < result.targets.count)
+                RouteView(route: r, owners: result.owners, expanded: i < result.targets.count && r.tunnel == nil)
             }
         }
     }
@@ -407,6 +447,12 @@ private struct RouteView: View {
         let maxMs = max(shown.hops.compactMap(\.ms).max() ?? 1, 1)
         DisclosureGroup(isExpanded: $expanded) {
             VStack(alignment: .leading, spacing: 3) {
+                if let t = route.tunnel {
+                    Text(route.onThisMac
+                         ? "This address is the \(t) app itself, on this Mac (\(route.interface ?? "its tunnel")). It answers here and forwards through its tunnel, so there is no route to trace. The tunnel's own route is under \"\(t) tunnel server\"."
+                         : "Traffic to this address leaves by \(route.interface ?? "a tunnel") into the \(t) tunnel, which hides the routers inside it. The tunnel's own route is under \"\(t) tunnel server\".")
+                        .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }
                 ForEach(shown.hops, id: \.n) { h in
                     HStack(spacing: 8) {
                         Text("\(h.n)").font(.caption.monospacedDigit()).foregroundStyle(.secondary).frame(width: 20, alignment: .trailing)
@@ -434,7 +480,9 @@ private struct RouteView: View {
                 Mono(text: route.address).foregroundStyle(.secondary)
                 Spacer()
                 if !route.done { Waiting(text: "tracing") }
-                else {
+                else if let t = route.tunnel {
+                    Pill(text: route.onThisMac ? "\(t) app on this Mac" : "inside the \(t) tunnel", color: mapTint)
+                } else {
                     Text(shown.hops.isEmpty ? "no replies: a VPN tunnel or firewall hides the route" :
                             "\(shown.hops.count) hops" + (route.reached ? ", reached" : ", then silent")
                          + (shown.hops.last?.ms.map { String(format: ", %.0f ms", $0) } ?? ""))

@@ -133,6 +133,67 @@ extension NetParse {
     }
 }
 
+/// A tunnel app (Zscaler, a VPN client) and the servers its tunnel connects to.
+public struct Tunnel: Equatable, Sendable {
+    public let vendor: String
+    public let process: String
+    /// The tunnel's far ends: the provider's edge servers.
+    public var edges: [String]
+    public init(vendor: String, process: String, edges: [String]) { self.vendor = vendor; self.process = process; self.edges = edges }
+}
+
+/// What ip.zscaler.com says about the path web traffic takes.
+public struct ZscalerPath: Equatable, Sendable {
+    public var throughProxy: Bool
+    public var publicIP: String?
+    public var proxyHost: String?
+    public var proxyIP: String?
+    public init(throughProxy: Bool, publicIP: String? = nil, proxyHost: String? = nil, proxyIP: String? = nil) {
+        self.throughProxy = throughProxy; self.publicIP = publicIP; self.proxyHost = proxyHost; self.proxyIP = proxyIP
+    }
+}
+
+extension NetParse {
+    /// A DNS-over-HTTPS JSON answer (Cloudflare and Google use the same shape).
+    public static func dohJSON(_ d: Data) -> (status: String, addresses: [String], cnames: [String])? {
+        guard let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any], let code = o["Status"] as? Int else { return nil }
+        let names = [0: "NOERROR", 1: "FORMERR", 2: "SERVFAIL", 3: "NXDOMAIN", 4: "NOTIMP", 5: "REFUSED"]
+        let answers = (o["Answer"] as? [[String: Any]]) ?? []
+        let addrs = answers.filter { [1, 28].contains($0["type"] as? Int ?? 0) }.compactMap { $0["data"] as? String }
+        let cnames = answers.filter { $0["type"] as? Int == 5 }.compactMap { ($0["data"] as? String).map(trimDot) }
+        return (names[code] ?? "RCODE\(code)", addrs, cnames)
+    }
+
+    /// `route -n get`: the interface and gateway traffic to an address takes.
+    public static func routeGet(_ s: String) -> (interface: String?, gateway: String?) {
+        var i: String?, g: String?
+        for line in s.split(separator: "\n") {
+            let t = line.trimmingCharacters(in: .whitespaces)
+            if t.hasPrefix("interface:") { i = t.dropFirst(10).trimmingCharacters(in: .whitespaces) }
+            if t.hasPrefix("gateway:") { g = t.dropFirst(8).trimmingCharacters(in: .whitespaces) }
+        }
+        return (i, g)
+    }
+
+    /// ip.zscaler.com's page, tags stripped or not.
+    public static func zscalerPage(_ html: String) -> ZscalerPath? {
+        let text = html.replacingOccurrences(of: "<[^>]*>", with: " ", options: .regularExpression)
+            .split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        func after(_ marker: String) -> String? {
+            guard let r = text.range(of: marker, options: .caseInsensitive) else { return nil }
+            let word = text[r.upperBound...].drop { $0 == " " || $0 == ":" }.prefix { !$0.isWhitespace }
+            let w = word.trimmingCharacters(in: CharacterSet(charactersIn: ".,"))
+            return w.isEmpty ? nil : w
+        }
+        let ip = after("arriving at this server from the IP address")
+        if text.localizedCaseInsensitiveContains("not going through the Zscaler") {
+            return ZscalerPath(throughProxy: false, publicIP: ip)
+        }
+        guard text.localizedCaseInsensitiveContains("via a Zscaler") || text.localizedCaseInsensitiveContains("Zscaler proxy virtual IP") else { return nil }
+        return ZscalerPath(throughProxy: true, publicIP: ip, proxyHost: after("proxy hostname"), proxyIP: after("proxy virtual IP is"))
+    }
+}
+
 /// What the map found, worst first.
 public struct MapFinding: Equatable, Sendable {
     public enum Tone: Int, Sendable, Comparable {
@@ -153,8 +214,12 @@ public struct DNSMapResult: Sendable {
         public var ms: Int?
         public var addresses: [String]
         public var cnames: [String]
-        public init(server: String, scope: String, status: String?, ms: Int?, addresses: [String], cnames: [String]) {
+        /// DNS over HTTPS: skips /etc/hosts, the local DNS servers and anything rewriting
+        /// plain DNS on the way.
+        public var viaHTTPS: Bool
+        public init(server: String, scope: String, status: String?, ms: Int?, addresses: [String], cnames: [String], viaHTTPS: Bool = false) {
             self.server = server; self.scope = scope; self.status = status; self.ms = ms; self.addresses = addresses; self.cnames = cnames
+            self.viaHTTPS = viaHTTPS
         }
     }
     public struct Authority: Equatable, Sendable {
@@ -182,6 +247,12 @@ public struct DNSMapResult: Sendable {
         public var address: String
         public var hops: [Hop] = []
         public var done = false
+        /// The interface `route get` says traffic leaves by.
+        public var interface: String?
+        /// Set when the address is inside a tunnel (Zscaler, a VPN): no route to trace.
+        public var tunnel: String?
+        /// The tunnel's own address on this Mac (a tunnel app answering DNS itself).
+        public var onThisMac = false
         public init(label: String, address: String) { self.label = label; self.address = address }
         /// Hops up to the last that answered, and how many silent ones followed it.
         public var shown: (hops: [Hop], silent: Int) {
@@ -227,6 +298,9 @@ public struct DNSMapResult: Sendable {
     public var owners: [String: NetOwner] = [:]
     public var certificate: Certificate?
     public var commands: [Command] = []
+    /// Tunnel apps and the far ends their connections go to.
+    public var tunnels: [Tunnel] = []
+    public var zscaler: ZscalerPath?
 
     public init(query: String, at: Date) { self.query = query; self.at = at }
 
@@ -236,6 +310,34 @@ public struct DNSMapResult: Sendable {
 }
 
 public enum DNSMap {
+    /// Tunnel apps by the process name netstat shows (cut to 16 characters).
+    static let tunnelApps: [(String, String)] = [
+        ("Zscaler", "Zscaler"), ("PanGPS", "GlobalProtect"), ("GlobalProtect", "GlobalProtect"), ("vpnagentd", "Cisco AnyConnect"),
+        ("acvpnagent", "Cisco Secure Client"), ("Netskope", "Netskope"), ("nsAuxiliarySvc", "Netskope"), ("openvpn", "OpenVPN"),
+        ("tailscaled", "Tailscale"), ("io.tailscale", "Tailscale"), ("WireGuard", "WireGuard"), ("FortiTray", "FortiClient"),
+        ("fortivpn", "FortiClient"), ("CloudflareWARP", "Cloudflare WARP"), ("warp-svc", "Cloudflare WARP"),
+    ]
+
+    /// Tunnel apps with open connections out, and where to.
+    public static func tunnels(_ conns: [NetConn]) -> [Tunnel] {
+        var out: [Tunnel] = []
+        for c in conns where c.isOpen && !c.remoteHost.isEmpty && c.remoteHost != "*" && !NetParse.isLoopback(c.remoteHost) && !isPrivate(c.remoteHost) {
+            guard let vendor = tunnelApps.first(where: { c.process.localizedCaseInsensitiveContains($0.0) })?.1 else { continue }
+            if let i = out.firstIndex(where: { $0.vendor == vendor }) {
+                if !out[i].edges.contains(c.remoteHost) { out[i].edges.append(c.remoteHost) }
+            } else {
+                out.append(Tunnel(vendor: vendor, process: c.process, edges: [c.remoteHost]))
+            }
+        }
+        return out
+    }
+
+    /// Interfaces that are tunnels rather than a network card.
+    public static func isTunnelInterface(_ i: String?) -> Bool {
+        guard let i else { return false }
+        return i.hasPrefix("utun") || i.hasPrefix("ipsec") || i.hasPrefix("ppp") || i.hasPrefix("tun") || i.hasPrefix("wg")
+    }
+
     /// A host from whatever was typed: a URL, host:port, user@host or a bare name.
     public static func normalize(_ input: String) -> String? {
         var s = input.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -344,11 +446,11 @@ public enum DNSMap {
         if r.resolver?.supplemental == true, let d = r.resolver?.domain {
             out.append(.init(.note, "Looked up by the VPN's servers only (split DNS for \(d)): off the VPN it will not resolve"))
         }
-        for a in r.answers where a.status == nil {
+        for a in r.answers where a.status == nil && !a.viaHTTPS {
             out.append(.init(.warning, "\(a.server) did not answer within 2 seconds"))
         }
         // Servers that answer differently.
-        let answered = r.answers.filter { $0.status != nil }
+        let answered = r.answers.filter { $0.status != nil && !$0.viaHTTPS }
         let statuses = Set(answered.compactMap(\.status))
         if statuses.count > 1 {
             let say = answered.map { "\($0.server) \($0.status ?? "")" }.joined(separator: ", ")
@@ -383,6 +485,33 @@ public enum DNSMap {
                              + ": a recent change has not reached all of them, or they are out of sync"))
         } else if serials.count > 1 {
             out.append(.init(.note, "The name servers come from more than one DNS provider (their serials differ, their answers match)"))
+        }
+        // Plain DNS here against DNS over HTTPS, which nothing on the network can rewrite.
+        let https = r.answers.filter(\.viaHTTPS)
+        let local = r.answers.filter { !$0.viaHTTPS && $0.status != nil && $0.scope != "public, for comparison" }
+        if !https.isEmpty, https.allSatisfy({ $0.status == nil }) {
+            out.append(.init(.note, "DNS over HTTPS (Cloudflare, Google) is blocked on this network, so lookups can only go through its own DNS"))
+        } else if let pub = https.first(where: { $0.status != nil }) {
+            let localAddrs = Set(local.flatMap(\.addresses)), pubAddrs = Set(pub.addresses)
+            if r.status == "NXDOMAIN" || (local.allSatisfy { $0.status == "NXDOMAIN" } && !local.isEmpty), !pubAddrs.isEmpty {
+                out.append(.init(.warning, "The DNS here says \(name) does not exist, but public DNS over HTTPS finds it (\(pub.addresses[0])): a DNS filter here (a security product or the router) is hiding it"))
+            } else if pub.status == "NXDOMAIN", !localAddrs.isEmpty {
+                out.append(.init(.note, "Only the DNS here knows \(name): it is an internal name, unknown on the public internet"))
+            } else if !localAddrs.isEmpty, localAddrs.allSatisfy(isPrivate), !pubAddrs.isEmpty, !pubAddrs.allSatisfy(isPrivate) {
+                out.append(.init(.note, "Here \(name) points to an internal address; the internet sees a public one (\(pub.addresses[0])). Off this network or the VPN it goes elsewhere"))
+            } else if !localAddrs.isEmpty, !pubAddrs.isEmpty, localAddrs.isDisjoint(with: pubAddrs) {
+                out.append(.init(.note, "The DNS here and public DNS over HTTPS give different addresses. Normal for a CDN; if only this network has trouble, the local answer is the one to question"))
+            }
+        }
+        let hidden = r.routes.filter { $0.tunnel != nil && !$0.onThisMac }
+        if let t = hidden.first?.tunnel {
+            let edge = r.tunnels.first { $0.vendor == t }?.edges.first
+            out.append(.init(.note, "Traffic to \(hidden.map(\.address).joined(separator: ", ")) goes into the \(t) tunnel, so its route cannot be traced from here" + (edge.map { ". Traced instead: the tunnel itself, to \(t)'s server \($0)" } ?? "")))
+        }
+        if let z = r.zscaler {
+            out.append(.init(.note, z.throughProxy
+                ? "Web traffic goes through Zscaler's proxy" + (z.proxyHost.map { " (\($0))" } ?? "") + ": sites see Zscaler's address, and HTTPS may be inspected there"
+                : "Web traffic goes straight out, not through Zscaler's proxy" + (z.publicIP.map { " (sites see \($0))" } ?? "") + ". Zscaler only carries internal names here"))
         }
         let tried = r.targets.filter { $0.ports.count == 2 }
         if !tried.isEmpty {
@@ -456,8 +585,16 @@ public enum DNSMap {
                 s += "\n"
             }
         }
+        for t in r.tunnels { s += "\nTUNNEL \(t.vendor) (\(t.process)) to \(t.edges.joined(separator: ", "))\n" }
+        if let z = r.zscaler {
+            s += "- Web traffic " + (z.throughProxy ? "through Zscaler proxy \(z.proxyHost ?? "?") \(z.proxyIP ?? "")" : "direct") + (z.publicIP.map { ", public IP \($0)" } ?? "") + "\n"
+        }
         for route in r.routes {
-            s += "\nROUTE TO \(route.label) (\(route.address))\n"
+            s += "\nROUTE TO \(route.label) (\(route.address))" + (route.interface.map { " via \($0)" } ?? "") + "\n"
+            if let t = route.tunnel {
+                s += route.onThisMac ? "     the \(t) app on this Mac\n" : "     inside the \(t) tunnel: not traceable\n"
+                continue
+            }
             let shown = route.shown
             for h in shown.hops {
                 s += String(format: "%3d  ", h.n) + (h.address ?? "*")

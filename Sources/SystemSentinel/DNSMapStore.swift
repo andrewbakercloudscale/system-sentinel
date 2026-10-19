@@ -146,7 +146,9 @@ final class DNSMapStore: ObservableObject {
                 return (recs, all.compactMap(\.2).first)
             }
             async let trace = dig(gen, ["+trace", "+nodnssec", name, "A"], timeout: 25)
-            let a = await answers
+            async let cloudflare = doh(gen, "Cloudflare", "https://cloudflare-dns.com/dns-query", name)
+            async let google = doh(gen, "Google", "https://dns.google/resolve", name)
+            let a = await answers + [await cloudflare, await google]
             await update(gen) { $0.answers = a }
             let (recs, status) = await records
             await update(gen) { $0.records = recs; $0.status = status }
@@ -201,14 +203,31 @@ final class DNSMapStore: ObservableObject {
         await update(gen) { r in r.targets = targets.map { DNSMapResult.Target(address: $0) } }
         let snapshot = await MainActor.run { self.result }
         var routes: [(String, String)] = targets.map { ("\(name) \($0)", $0) }
-        for a in snapshot?.answers ?? [] where a.scope != "public, for comparison" && !routes.contains(where: { $0.1 == a.server }) && routes.count < targets.count + 4 {
+        for a in snapshot?.answers ?? [] where !a.viaHTTPS && a.scope != "public, for comparison" && !routes.contains(where: { $0.1 == a.server }) && routes.count < targets.count + 4 {
             routes.append(("DNS server \(a.server)", a.server))
         }
         for a in (snapshot?.authorities ?? []).prefix(3) {
             if let ip = a.address, !routes.contains(where: { $0.1 == ip }) { routes.append(("Name server \(a.name)", ip)) }
         }
+        // Tunnel apps (Zscaler, VPNs): what hides inside them cannot be traced, but the
+        // tunnel itself can, to the provider's server it connects to.
+        let conns = NetParse.netstat(await run(gen, "/usr/sbin/netstat", ["-anv", "-p", "tcp"], timeout: 6))
+            + NetParse.netstat(await run(gen, "/usr/sbin/netstat", ["-anv", "-p", "udp"], timeout: 6))
+        let tunnels = DNSMap.tunnels(conns)
+        for t in tunnels {
+            for e in t.edges.prefix(2) where !routes.contains(where: { $0.1 == e }) { routes.append(("\(t.vendor) tunnel server", e)) }
+        }
         let routeList = routes
-        await update(gen) { r in r.routes = routeList.map { DNSMapResult.Route(label: $0.0, address: $0.1) } }
+        await update(gen) { r in
+            r.tunnels = tunnels
+            r.routes = routeList.map { DNSMapResult.Route(label: $0.0, address: $0.1) }
+        }
+        await owners(tunnels.flatMap(\.edges), gen: gen)
+        let vendor = tunnels.first?.vendor ?? "VPN"
+        if tunnels.contains(where: { $0.vendor == "Zscaler" }) {
+            let page = await fetch(gen, "https://ip.zscaler.com/")
+            if let z = NetParse.zscalerPage(page) { await update(gen) { $0.zscaler = z } }
+        }
 
         let certificate: Task<DNSMapResult.Certificate?, Never>? = isIP ? nil : Task { await CertProbe.inspect(name) }
         await withTaskGroup(of: Void.self) { g in
@@ -221,7 +240,7 @@ final class DNSMapStore: ObservableObject {
                 guard started < routeList.count else { return }
                 let (_, ip) = routeList[started]
                 started += 1
-                g.addTask { await self.trace(ip, gen: gen) }
+                g.addTask { await self.trace(ip, tunnel: vendor, gen: gen) }
             }
             for _ in 0..<min(5, routeList.count) { next(&g) }
             while await g.next() != nil { next(&g) }
@@ -248,8 +267,21 @@ final class DNSMapStore: ObservableObject {
         }
     }
 
-    private nonisolated func trace(_ ip: String, gen: Int) async {
+    private nonisolated func trace(_ ip: String, tunnel: String, gen: Int) async {
         let six = ip.contains(":")
+        let via = NetParse.routeGet(await run(gen, "/sbin/route", ["-n", "get", six ? "-inet6" : "-inet", ip], timeout: 4))
+        if DNSMap.isTunnelInterface(via.interface) {
+            await update(gen) { r in
+                for i in r.routes.indices where r.routes[i].address == ip {
+                    r.routes[i].interface = via.interface
+                    r.routes[i].tunnel = tunnel
+                    r.routes[i].onThisMac = via.gateway == ip
+                    r.routes[i].done = true
+                }
+            }
+            return
+        }
+        await update(gen) { r in for i in r.routes.indices where r.routes[i].address == ip { r.routes[i].interface = via.interface } }
         let out = await run(gen, six ? "/usr/sbin/traceroute6" : "/usr/sbin/traceroute", ["-n", "-w", "1", "-q", "1", "-m", "20", ip], timeout: 45)
         let hops = NetParse.traceroute(out)
         await update(gen) { r in
@@ -259,6 +291,39 @@ final class DNSMapStore: ObservableObject {
             }
         }
         await owners(hops.compactMap(\.address), gen: gen)
+    }
+
+    /// One DNS-over-HTTPS lookup, logged like the commands.
+    private nonisolated func doh(_ gen: Int, _ label: String, _ endpoint: String, _ name: String) async -> DNSMapResult.ServerAnswer {
+        let t0 = Date()
+        let body = await fetch(gen, "\(endpoint)?name=\(name)&type=A", accept: "application/dns-json")
+        let ms = Int(Date().timeIntervalSince(t0) * 1000)
+        let d = NetParse.dohJSON(Data(body.utf8))
+        return .init(server: label, scope: "over HTTPS, skips the DNS here", status: d?.status, ms: d == nil ? nil : ms,
+                     addresses: d?.addresses ?? [], cnames: d?.cnames ?? [], viaHTTPS: true)
+    }
+
+    /// A GET with no cookies or cache, logged like the commands.
+    private nonisolated func fetch(_ gen: Int, _ url: String, accept: String? = nil) async -> String {
+        guard let u = URL(string: url) else { return "" }
+        let cfg = URLSessionConfiguration.ephemeral
+        cfg.timeoutIntervalForRequest = 6
+        let session = URLSession(configuration: cfg)
+        defer { session.finishTasksAndInvalidate() }
+        var req = URLRequest(url: u)
+        if let accept { req.setValue(accept, forHTTPHeaderField: "Accept") }
+        let t0 = Date()
+        var out: String
+        do {
+            let (data, resp) = try await session.data(for: req)
+            out = "HTTP \((resp as? HTTPURLResponse)?.statusCode ?? 0)\n" + (String(data: data, encoding: .utf8) ?? "")
+        } catch {
+            out = "failed: \(error.localizedDescription)"
+        }
+        let ms = Int(Date().timeIntervalSince(t0) * 1000)
+        let shown = out.count > 4000 ? String(out.prefix(4000)) + "…" : out
+        await update(gen) { $0.commands.append(.init(command: "GET \(url)", ms: ms, output: shown)) }
+        return out.hasPrefix("HTTP 200\n") ? String(out.dropFirst(9)) : ""
     }
 
     /// Looks up who runs each public address not already known.

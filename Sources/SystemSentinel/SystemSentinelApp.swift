@@ -2,11 +2,15 @@ import AppKit
 import SentinelCore
 import ServiceManagement
 import SwiftUI
+import UserNotifications
 
 @main
 struct SystemSentinelApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     @StateObject private var model = Model()
+    /// Snapshot runs put no icon in the menu bar: a second one there pushes the real one
+    /// behind the notch while it runs.
+    @State private var inserted = Model.snapshotDir == nil
 
     init() {
         // Before Model reads any settings.
@@ -14,7 +18,7 @@ struct SystemSentinelApp: App {
     }
 
     var body: some Scene {
-        MenuBarExtra {
+        MenuBarExtra(isInserted: $inserted) {
             MenuView(model: model)
         } label: {
             // The menu bar draws SwiftUI images as monochrome templates, so the colour has to
@@ -501,6 +505,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        if Model.snapshotDir == nil { IconWatch.start() }
         guard !atLogin, Model.snapshotDir == nil else { return }
         // The model is created with the menu bar scene; give it a moment.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { if let m = Model.current { PopOut.show(m) } }
@@ -509,6 +514,51 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         if let m = Model.current { PopOut.show(m) }
         return true
+    }
+}
+
+/// On a MacBook with a notch, menu bar icons that do not fit are hidden without a word,
+/// newest first, and an app that has just started is the newest. Checks now and then
+/// whether the icon is on screen; if it has been hidden for a while, says so once a day
+/// and how to bring it back.
+@MainActor
+enum IconWatch {
+    private static var hiddenSince: Date?
+    private static var timer: Timer?
+
+    static func start() {
+        timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { _ in Task { @MainActor in check() } }
+    }
+
+    /// The status item's window: AppKit's own class, the only way to it from MenuBarExtra.
+    static var iconWindow: NSWindow? {
+        NSApp.windows.first { String(describing: type(of: $0)).contains("NSStatusBarWindow") }
+    }
+
+    static func isHidden() -> Bool {
+        guard let w = iconWindow else { return true }
+        if !w.isVisible || !w.occlusionState.contains(.visible) { return true }
+        // Behind the notch: the frame falls in the gap between the two usable top areas.
+        guard let screen = NSScreen.screens.first(where: { $0.frame.intersects(w.frame) }) ?? NSScreen.main else { return false }
+        if let left = screen.auxiliaryTopLeftArea, let right = screen.auxiliaryTopRightArea {
+            let mid = w.frame.midX - screen.frame.minX
+            if mid > left.maxX && mid < right.minX { return true }
+        }
+        return w.frame.maxX <= screen.frame.minX || w.frame.minX >= screen.frame.maxX
+    }
+
+    static func check() {
+        guard isHidden() else { hiddenSince = nil; return }
+        let now = Date()
+        guard let since = hiddenSince else { hiddenSince = now; return }
+        let last = UserDefaults.standard.double(forKey: "iconHiddenNotified")
+        guard now.timeIntervalSince(since) >= 120, now.timeIntervalSince1970 - last > 86_400 else { return }
+        UserDefaults.standard.set(now.timeIntervalSince1970, forKey: "iconHiddenNotified")
+        let content = UNMutableNotificationContent()
+        content.title = "System Sentinel's menu bar icon is hidden"
+        content.body = "The menu bar is full, so macOS hid it behind the notch. Hide menu bar icons you do not need (System Settings, Menu Bar), or show the icon without the number (System Sentinel Settings). Open System Sentinel from Spotlight meanwhile."
+        content.categoryIdentifier = "info"
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "icon-hidden", content: content, trigger: nil))
     }
 }
 
