@@ -59,4 +59,13 @@ final class TweaksTests: XCTestCase {
         XCTAssertNotNil(BackgroundCandidates.note("swift-frontend")?.contains("compiler"))
         XCTAssertNil(BackgroundCandidates.note("Safari"))
     }
+
+    func testExactMode() {
+        let modes = [ModeSize(w: 1440, h: 900, pixelW: 2880, pixelH: 1800), ModeSize(w: 1440, h: 932, pixelW: 2880, pixelH: 1864),
+                     ModeSize(w: 1710, h: 1107, pixelW: 3420, pixelH: 2214), ModeSize(w: 2880, h: 1864, pixelW: 2880, pixelH: 1864)]
+        let i = ModeSize.exact(in: modes, native: (2880, 1864))
+        XCTAssertEqual(i, 1, "the sharp Retina mode, not the tiny 1:1 one")
+        XCTAssertEqual(modes[2].growth(to: modes[1]), 0.1875, accuracy: 0.001)
+        XCTAssertNil(ModeSize.exact(in: [modes[2]], native: (2880, 1864)))
+    }
 }

@@ -232,3 +232,18 @@ public struct DisplayPixels: Equatable, Sendable {
         }
     }
 }
+
+/// One resolution a display offers: the size things look like, and the pixels drawn for it.
+public struct ModeSize: Equatable, Sendable {
+    public let w: Int, h: Int, pixelW: Int, pixelH: Int
+    public init(w: Int, h: Int, pixelW: Int, pixelH: Int) { self.w = w; self.h = h; self.pixelW = pixelW; self.pixelH = pixelH }
+
+    /// The sharp Retina mode that draws exactly the panel's pixels: half the panel in points,
+    /// doubled. Nil when the display offers none (or is not Retina).
+    public static func exact(in modes: [ModeSize], native: (w: Int, h: Int)) -> Int? {
+        modes.firstIndex { $0.pixelW == native.w && $0.pixelH == native.h && $0.w * 2 == native.w && $0.h * 2 == native.h }
+    }
+
+    /// How much larger everything looks in `other` than in this mode.
+    public func growth(to other: ModeSize) -> Double { other.w > 0 ? Double(w) / Double(other.w) - 1 : 0 }
+}

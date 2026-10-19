@@ -15,6 +15,11 @@ final class TweakStore: ObservableObject {
     @Published private(set) var displays: [DisplayPixels] = []
     @Published private(set) var windows: [(app: String, count: Int)] = []
     @Published private(set) var working = false
+    /// The built-in display's resolution now, and the one that draws exactly its pixels.
+    @Published private(set) var mode: ModeSize?
+    @Published private(set) var exactMode: ModeSize?
+    /// The resolution before "Use exact pixels", for Undo.
+    @Published private(set) var modeBefore: ModeSize? = TweakStore.loadModeBefore()
 
     nonisolated static var backupURL: URL { NetworkStore.supportDir.appendingPathComponent("tweaks-backup.json") }
 
@@ -32,6 +37,7 @@ final class TweakStore: ObservableObject {
                 self.current = now
                 self.displays = shown
                 self.windows = wins
+                self.readModes(native: shown.first { $0.builtIn }?.native)
             }
         }
     }
@@ -101,6 +107,70 @@ final class TweakStore: ObservableObject {
 
     private func saveBackup() {
         if let d = try? JSONEncoder().encode(backup) { Diagnostics.write(d, to: Self.backupURL, what: "the optimise undo list") }
+    }
+
+    // MARK: Resolution of the built-in display
+
+    nonisolated static var builtIn: CGDirectDisplayID? {
+        var ids = [CGDirectDisplayID](repeating: 0, count: 8)
+        var n: UInt32 = 0
+        CGGetOnlineDisplayList(8, &ids, &n)
+        return ids.prefix(Int(n)).first { CGDisplayIsBuiltin($0) != 0 }
+    }
+
+    nonisolated static func modes(_ d: CGDirectDisplayID) -> [CGDisplayMode] {
+        let opts = [kCGDisplayShowDuplicateLowResolutionModes: kCFBooleanTrue] as CFDictionary
+        return ((CGDisplayCopyAllDisplayModes(d, opts) as? [CGDisplayMode]) ?? []).filter { $0.isUsableForDesktopGUI() }
+    }
+
+    nonisolated static func size(_ m: CGDisplayMode) -> ModeSize { ModeSize(w: m.width, h: m.height, pixelW: m.pixelWidth, pixelH: m.pixelHeight) }
+
+    private func readModes(native: (w: Int, h: Int)?) {
+        guard let d = Self.builtIn, let cur = CGDisplayCopyDisplayMode(d) else { mode = nil; exactMode = nil; return }
+        mode = Self.size(cur)
+        let all = Self.modes(d).map(Self.size)
+        let n = native ?? (cur.pixelWidth, cur.pixelHeight)
+        exactMode = ModeSize.exact(in: all, native: n).map { all[$0] }
+    }
+
+    /// Switches the built-in display to the resolution that draws exactly its pixels.
+    func useExactPixels() {
+        guard let d = Self.builtIn, let cur = CGDisplayCopyDisplayMode(d), let want = exactMode,
+              let target = Self.modes(d).first(where: { Self.size($0) == want }) else { return }
+        let before = Self.size(cur)
+        if setMode(d, target) {
+            modeBefore = before
+            UserDefaults.standard.set([before.w, before.h, before.pixelW, before.pixelH], forKey: "displayModeBefore")
+            message["resolution"] = (true, "Now looks like \(want.w) × \(want.h). Undo puts back \(before.w) × \(before.h).")
+        } else {
+            message["resolution"] = (false, "macOS did not switch the resolution. Pick it in Display settings instead.")
+        }
+        refresh()
+    }
+
+    func restoreMode() {
+        guard let d = Self.builtIn, let before = modeBefore,
+              let target = Self.modes(d).first(where: { Self.size($0) == before }) else { return }
+        if setMode(d, target) {
+            modeBefore = nil
+            UserDefaults.standard.removeObject(forKey: "displayModeBefore")
+            message["resolution"] = (true, "Back to \(before.w) × \(before.h).")
+        }
+        refresh()
+    }
+
+    private func setMode(_ d: CGDirectDisplayID, _ m: CGDisplayMode) -> Bool {
+        var config: CGDisplayConfigRef?
+        guard CGBeginDisplayConfiguration(&config) == .success else { return false }
+        CGConfigureDisplayWithDisplayMode(config, d, m, nil)
+        let ok = CGCompleteDisplayConfiguration(config, .permanently) == .success
+        if !ok { Diagnostics.report("optimise", "Could not switch the display to \(m.width) × \(m.height)") }
+        return ok
+    }
+
+    nonisolated static func loadModeBefore() -> ModeSize? {
+        guard let a = UserDefaults.standard.array(forKey: "displayModeBefore") as? [Int], a.count == 4 else { return nil }
+        return ModeSize(w: a[0], h: a[1], pixelW: a[2], pixelH: a[3])
     }
 
     nonisolated static func read(_ t: Tweak) -> Tweak.Value? {
@@ -263,10 +333,25 @@ private struct ScreenDisplaysCard: View {
                         Text("draws \(d.rendered.w) × \(d.rendered.h)" + (d.hz.map { String(format: " at %.0f Hz", $0) } ?? ""))
                             .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
                     }
-                    if let o = d.overdraw, o > 1.05, let n = d.native {
-                        Label(String(format: "Scaled: draws %.0f%% more pixels than the panel's %d × %d, then shrinks each frame. The Default resolution in Display settings draws exactly the panel's pixels.", (o - 1) * 100, n.w, n.h),
-                              systemImage: "exclamationmark.triangle.fill")
-                            .font(.caption).foregroundStyle(amber).fixedSize(horizontal: false, vertical: true)
+                    if d.builtIn, let back = store.modeBefore, let now = store.mode, now != back {
+                        HStack(alignment: .firstTextBaseline) {
+                            Label("Draws exactly the panel's pixels (looks like \(now.w) × \(now.h)).", systemImage: "checkmark.circle")
+                                .font(.caption).foregroundStyle(okColor)
+                            Spacer()
+                            Button(String("Undo: back to \(back.w) × \(back.h)")) { store.restoreMode() }
+                        }
+                    } else if let o = d.overdraw, o > 1.05, let n = d.native {
+                        let lk = d.looksLike.map { "\($0.w) × \($0.h)" } ?? "this size"
+                        Text(String(format: "Nothing is wrong: this is a scaled size (looks like %@), which on many MacBooks is Apple's Default. macOS draws it at %d × %d and shrinks that to the panel's %d × %d each frame, %.0f%% extra pixels.", lk, d.rendered.w, d.rendered.h, n.w, n.h, (o - 1) * 100))
+                            .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                        if d.builtIn, let e = store.exactMode, let now = store.mode {
+                            HStack(alignment: .firstTextBaseline) {
+                                Text(String(format: "Optional: looks like %d × %d draws exactly the panel's pixels and is the sharpest, but everything is about %.0f%% larger. Only worth it if WindowServer stays high.", e.w, e.h, now.growth(to: e) * 100))
+                                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                                Spacer()
+                                Button(String("Use \(e.w) × \(e.h)")) { store.useExactPixels() }
+                            }
+                        }
                     } else if let hz = d.hz, hz > 60 {
                         Label(String(format: "%.0f Hz redraws more often than 60 Hz. Unless you need it for games or video, 60 Hz cuts the work.", hz),
                               systemImage: "info.circle").font(.caption).foregroundStyle(.secondary)
@@ -274,6 +359,10 @@ private struct ScreenDisplaysCard: View {
                         Label("Draws its own pixels, nothing to change.", systemImage: "checkmark.circle").font(.caption).foregroundStyle(okColor)
                     }
                 }
+            }
+            if let m = store.message["resolution"] {
+                Label(m.text, systemImage: m.ok ? "checkmark.circle" : "exclamationmark.triangle.fill")
+                    .font(.caption).foregroundStyle(m.ok ? okColor : Theme.heat(100))
             }
         }
     }
