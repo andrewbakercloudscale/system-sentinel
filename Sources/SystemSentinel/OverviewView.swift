@@ -499,9 +499,16 @@ struct InsightList: View {
     /// Show these instead of the Overview's list.
     var only: [Insight]?
     var title = "Insights"
-    private var items: [Insight] { only ?? model.insights }
+    private var live: [Insight] { only ?? model.insights }
+    private var items: [Insight] { held?.items ?? live }
     /// Which insights are open. Kept by id, since the list is rebuilt every 5 seconds.
     @State private var open: Set<String> = []
+    /// The list as it stood when you started reading. The list is rebuilt every 5 seconds and
+    /// findings come, go and change order, which moved the text under the pointer; while the
+    /// pointer is on the list or an insight is open, it holds still.
+    @State private var held: (items: [Insight], at: Date)?
+    @State private var hovering = false
+    private var reading: Bool { Model.snapshotDir == nil && (hovering || !open.isEmpty) }
     /// Snapshots open the first `--expand` insights (all by default), to review the full text.
     private func expandAll(_ i: Insight) -> Bool {
         guard Model.snapshotDir != nil else { return false }
@@ -522,6 +529,24 @@ struct InsightList: View {
                 }
             }
         }
+        // In the title row, over the layout rather than in it: a line appearing above the
+        // text would move it, the very thing holding still is for.
+        .overlay(alignment: .topTrailing) {
+            if let held, held.items != live {
+                Button { self.held = (live, Date()) } label: {
+                    Label("Held while you read · Show latest", systemImage: "pause.circle.fill")
+                        .font(.caption.weight(.semibold)).foregroundStyle(Tab.trends.color)
+                        .padding(.horizontal, 9).padding(.vertical, 4)
+                        .background(Capsule().fill(Tab.trends.color.opacity(0.12)))
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .tip("Newer findings since \(held.at.formatted(date: .omitted, time: .shortened)) are waiting. They show when you move the pointer away and close any open insight.")
+                .padding(.top, 10).padding(.trailing, 12)
+            }
+        }
+        .onHover { hovering = $0 }
+        .onChange(of: reading) { _, now in held = now ? (live, Date()) : nil }
     }
 }
 
