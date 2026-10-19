@@ -215,7 +215,7 @@ private struct ProcessRow: View {
                     Text(s.displayName).font(.callout.weight(.medium)).lineLimit(1).truncationMode(.middle)
                     if flagged { Pill(text: "flagged", symbol: "exclamationmark.triangle.fill", color: Theme.heat(100)) }
                     if let hot = model.hotFor(s) { Pill(text: "hot \(hot)", symbol: "flame.fill", color: Theme.heat(50)) }
-                    if s.isRoot { Pill(text: "root", color: Tab.settings.color) }
+                    if s.isRoot { Pill(text: "root", symbol: "lock.fill", color: Color(hex: "#b45309")) }
                     policyPill(model.policy(for: s))
                     if model.isSlowed(s) {
                         Pill(text: "background", symbol: "tortoise.fill", color: Tab.rules.color)
@@ -256,7 +256,13 @@ private struct ProcessRow: View {
                 .tip("Explain: ask ChatGPT why this is busy and how to bring it down")
                 if OptimiseButton.available(model, s) { OptimiseButton(model: model, sample: s) }
                 if s.pid == getpid() {
-                    Pill(text: "This app", color: Tab.overview.color).frame(width: 96, alignment: .trailing)
+                    // Sized like the Kill button beside the other rows.
+                    Label("This app", systemImage: "cpu")
+                        .font(.caption.weight(.bold)).foregroundStyle(Tab.overview.color)
+                        .padding(.horizontal, 9).padding(.vertical, 5)
+                        .background(Capsule().fill(Tab.overview.color.opacity(0.14)))
+                        .fixedSize()
+                        .frame(width: 96, alignment: .trailing)
                 } else if s.name == "WindowServer" {
                     OptimiseScreenButton(model: model)
                 } else if Safety.canKillManually(s) {

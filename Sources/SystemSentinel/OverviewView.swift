@@ -645,7 +645,7 @@ private struct RelatedRow: View {
                     Text(Fmt.pct(s.cpu)).font(.caption2.weight(.bold)).monospacedDigit().foregroundStyle(.white)
                         .padding(.horizontal, 5).padding(.vertical, 1)
                         .background(Capsule().fill(Theme.heat(s.cpu)))
-                    if s.isRoot { Pill(text: "root", color: Tab.settings.color) }
+                    if s.isRoot { Pill(text: "root", symbol: "lock.fill", color: Color(hex: "#b45309")) }
                 }
                 if let about = related.about {
                     Text(about).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
