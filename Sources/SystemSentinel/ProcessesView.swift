@@ -202,7 +202,6 @@ private struct ProcessRow: View {
     var window: TimeInterval = 900
     var cols = ProcessColumns()
     @State private var hover = false
-    @State private var showInfo = false
 
     var body: some View {
         let s = sample
@@ -242,13 +241,12 @@ private struct ProcessRow: View {
             Text(Fmt.memory(s.rssKB)).font(.caption).monospacedDigit().foregroundStyle(.secondary).frame(width: cols.mem, alignment: .trailing)
 
             HStack(spacing: 4) {
-                Button { showInfo.toggle() } label: {
+                Button { InfoPanel.toggle(model: model, sample: s) } label: {
                     Image(systemName: ProcessGuide.note(for: s.name) == nil ? "info.circle" : "questionmark.circle.fill")
                         .foregroundStyle(Tab.processes.color)
                 }
                 .buttonStyle(.plain)
                 .tip("What is this?")
-                .popover(isPresented: $showInfo, arrowEdge: .leading) { InfoPopover(model: model, sample: s) }
                 Button { model.explain(s) } label: {
                     Image(systemName: "sparkles").foregroundStyle(Tab.trends.color)
                 }
@@ -339,12 +337,58 @@ private struct ProcessRow: View {
 }
 
 /// What the process is, where it lives, and its averages.
+/// "What is this?" in a small floating window of its own, so it stays put while the list
+/// re-sorts underneath it. One at a time: another row's button swaps it, the same one closes it.
+@MainActor
+enum InfoPanel {
+    private static var panel: NSPanel?
+    private static var pid: Int32?
+
+    static func toggle(model: Model, sample: ProcessSample) {
+        if let p = panel, p.isVisible, pid == sample.pid { p.orderOut(nil); return }
+        let host = NSHostingController(rootView: InfoPopover(model: model, sample: sample).tipsAndConfirmations(TipCenter(), surface: "info"))
+        let p = panel ?? {
+            let p = NSPanel(contentRect: .zero, styleMask: [.titled, .closable, .utilityWindow, .nonactivatingPanel],
+                            backing: .buffered, defer: false)
+            p.isFloatingPanel = true
+            p.level = .floating
+            p.hidesOnDeactivate = false
+            p.becomesKeyOnlyIfNeeded = true
+            p.isReleasedWhenClosed = false
+            p.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+            panel = p
+            return p
+        }()
+        let wasOpen = p.isVisible
+        p.contentViewController = host
+        p.title = sample.displayName
+        let size = host.view.fittingSize
+        p.setContentSize(size)
+        if !wasOpen {
+            // Level with the pointer, just outside the window it was opened from (left, or
+            // right when there is no room), so it covers none of the list.
+            let mouse = NSEvent.mouseLocation
+            let screen = (NSScreen.screens.first { $0.frame.contains(mouse) } ?? NSScreen.main)?.visibleFrame ?? .zero
+            let frame = p.frameRect(forContentRect: NSRect(origin: .zero, size: size))
+            let from = NSApp.windows.first { $0 !== p && $0.isVisible && $0.frame.contains(mouse) }?.frame
+                ?? NSRect(x: mouse.x, y: mouse.y, width: 0, height: 0)
+            var x = from.minX - frame.width - 8
+            if x < screen.minX + 8 { x = min(from.maxX + 8, screen.maxX - frame.width - 8) }
+            let y = min(max(mouse.y - frame.height / 2, screen.minY + 8), screen.maxY - frame.height - 8)
+            p.setFrameOrigin(NSPoint(x: x, y: y))
+        }
+        pid = sample.pid
+        p.orderFrontRegardless()
+    }
+}
+
 private struct InfoPopover: View {
     @ObservedObject var model: Model
     let sample: ProcessSample
 
     var body: some View {
-        let s = sample
+        // The latest reading while it is still running, so "now" stays current in the window.
+        let s = model.sample(pid: sample.pid) ?? sample
         let note = ProcessGuide.note(for: s.name)
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 10) {

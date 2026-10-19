@@ -20,6 +20,7 @@ struct NetworkView: View {
                 QualityCard(store: store)
             }
             DNSDoctorCard(store: store)
+            MTRCard()
             HStack(alignment: .top, spacing: 10) {
                 SpeedCard(store: store)
                 InspectionCard(store: store).id("inspection")
