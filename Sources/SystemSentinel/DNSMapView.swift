@@ -151,7 +151,7 @@ private struct FlowCard: View {
         Card(title: "The map", symbol: "map", tint: mapTint) {
             ScrollView(.horizontal, showsIndicators: true) {
                 HStack(alignment: .center, spacing: 6) {
-                    Node(kind: "This Mac", value: Host.current().localizedName ?? "Mac", symbol: "laptopcomputer")
+                    Node(kind: "This Mac", value: Model.snapshotDir == nil ? (Host.current().localizedName ?? "Mac") : "MacBook", symbol: "laptopcomputer")
                     if let h = result.hostsEntry {
                         arrow
                         Node(kind: "/etc/hosts", value: h.address, symbol: "doc.text", color: amber)
