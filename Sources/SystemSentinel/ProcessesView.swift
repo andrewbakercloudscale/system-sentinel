@@ -254,7 +254,7 @@ private struct ProcessRow: View {
                 }
                 .buttonStyle(.plain)
                 .tip("Explain: ask ChatGPT why this is busy and how to bring it down")
-                if model.canSlow(s) { SlowButton(model: model, sample: s) }
+                if OptimiseButton.available(model, s) { OptimiseButton(model: model, sample: s) }
                 if s.pid == getpid() {
                     Pill(text: "this app", color: Tab.overview.color).frame(width: 96, alignment: .trailing)
                 } else if s.name == "WindowServer" {
@@ -491,38 +491,6 @@ struct KillButton: View {
         .opacity(busy ? 0.75 : 1)
         .fixedSize()
         .tip(isRoot ? "Runs as root: asks for your password" : "Stop politely, force after 5 s")
-    }
-}
-
-/// Lower priority, now or always for this name, and back again.
-struct SlowButton: View {
-    @ObservedObject var model: Model
-    let sample: ProcessSample
-
-    var body: some View {
-        let on = model.isSlowed(sample)
-        let ruled = model.slowRules.contains(sample.name)
-        Menu {
-            if on {
-                Button("Back to normal priority") { model.confirmRestore(sample) }
-            } else {
-                Button("Lower priority now") { model.confirmSlowDown(sample, always: false) }
-                Button("Always lower \(sample.name)") { model.confirmSlowDown(sample, always: true) }
-            }
-            if on, !ruled { Button("Always lower \(sample.name)") { model.confirmSlowDown(sample, always: true) } }
-            if let note = BackgroundCandidates.note(sample.name) {
-                Divider()
-                Text(note)
-            }
-        } label: {
-            Image(systemName: on ? "tortoise.fill" : "tortoise")
-                .foregroundStyle(on ? Tab.rules.color : Color.secondary)
-        }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .tip(on ? "At background priority\(ruled ? ", always" : ""). Click to put it back." :
-                   "Optimise: lower its priority so it runs on the efficiency cores and your apps stay quick. Undo any time.")
     }
 }
 
