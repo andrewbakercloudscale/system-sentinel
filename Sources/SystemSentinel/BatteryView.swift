@@ -573,7 +573,8 @@ private struct TodayCard: View {
 /// Each core's load, efficiency cores then performance cores.
 struct CoresCard: View {
     @ObservedObject var model: Model
-    @State private var hovered: Int?
+    /// The core clicked on; clicking it again, or the other kind, changes or closes the list.
+    @State private var selected: Int?
 
     var body: some View {
         if let load = model.coreLoad {
@@ -594,17 +595,16 @@ struct CoresCard: View {
                             .frame(height: 36)
                             Text(eff ? "E" : "P").font(.system(size: 8, weight: .bold)).foregroundStyle(.secondary)
                         }
-                        .opacity(hovered.map { ($0 < load.efficiencyCount) == eff ? 1 : 0.35 } ?? 1)
-                        .onHover { inside in
-                            if inside { hovered = i } else if hovered == i { hovered = nil }
-                        }
-                        .help("\(eff ? "Efficiency" : "Performance") core \(i): \(Int(v))% busy")
+                        .opacity(selected.map { ($0 < load.efficiencyCount) == eff ? 1 : 0.35 } ?? 1)
+                        .contentShape(Rectangle())
+                        .onTapGesture { selected = selected == i ? nil : i }
+                        .help("\(eff ? "Efficiency" : "Performance") core \(i): \(Int(v))% busy. Click for the apps on this kind of core.")
                     }
                 }
-                if let h = hovered {
+                if let h = selected, h < load.perCore.count {
                     clusterList(efficiency: h < load.efficiencyCount, core: h, busy: load.perCore[h], load: load)
                 } else {
-                    Label("Hover over a core to see which apps are running on that kind of core.", systemImage: "cursorarrow.rays")
+                    Label("Click a core to see which apps are running on that kind of core.", systemImage: "cursorarrow.click")
                         .font(.caption.weight(.medium)).foregroundStyle(.secondary)
                 }
                 Text(caption(load)).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
@@ -618,8 +618,13 @@ struct CoresCard: View {
         let count = eff ? load.efficiencyCount : load.perCore.count - load.efficiencyCount
         let color = eff ? Self.eColor : Self.pColor
         return VStack(alignment: .leading, spacing: 6) {
-            Text("\(eff ? "Efficiency" : "Performance") core \(core) is \(Int(busy))% busy. Running on the \(count) \(eff ? "efficiency" : "performance") cores now:")
-                .font(.caption.weight(.semibold))
+            HStack(alignment: .firstTextBaseline) {
+                Text("\(eff ? "Efficiency" : "Performance") core \(core) is \(Int(busy))% busy. Running on the \(count) \(eff ? "efficiency" : "performance") cores now:")
+                    .font(.caption.weight(.semibold))
+                Spacer()
+                Button { selected = nil } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }
+                    .buttonStyle(.plain).help("Close")
+            }
             if apps.isEmpty {
                 Text("Nothing measurable in the last few seconds.").font(.caption).foregroundStyle(.secondary)
             }
