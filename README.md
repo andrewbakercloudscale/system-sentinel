@@ -180,3 +180,7 @@ only the first n insights (default all). The README screenshots are made this wa
 
 The code is split into `SentinelCore` (sampling, detection, history, insights; tested) and
 `SystemSentinel` (the SwiftUI app).
+
+## Licence
+
+MIT. See [LICENSE](LICENSE).
