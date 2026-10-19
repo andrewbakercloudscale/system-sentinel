@@ -176,7 +176,8 @@ public enum MemoryAnalysis {
     }
 
     /// Apps that grew by at least `minGrowth` and half again over the window, and are still
-    /// near their high (a peak that has come back down is not a climb).
+    /// near their high (a peak that has come back down is not a climb). Only apps in the latest
+    /// minute count: one that has been quit gave its memory back.
     public static func growing(_ points: [MemoryHistory.Point], window: TimeInterval = 3 * 3600, at now: Date,
                                minGrowth: UInt64 = 1 << 30) -> [Growth] {
         let start = Int(now.timeIntervalSince1970 - window)
@@ -185,8 +186,9 @@ public enum MemoryAnalysis {
         for p in recent {
             for a in p.apps { series[a.key, default: []].append((p.t, a.bytes, a.name)) }
         }
+        let latest = recent.last?.t ?? 0
         var out: [Growth] = []
-        for (key, s) in series where s.count >= 20 {
+        for (key, s) in series where s.count >= 20 && s[s.count - 1].t >= latest - 120 {
             let span = s[s.count - 1].t - s[0].t
             guard span >= 1800 else { continue }
             // Averages of the first and last tenth, so one spike does not count as growth.

@@ -108,6 +108,13 @@ final class MemoryTests: XCTestCase {
         XCTAssertGreaterThan(g[0].to, g[0].from + 3 * GB)
     }
 
+    func testAQuitAppIsNoLongerGrowing() {
+        let quit = timeline(120, end: now) { i in
+            point(apps: i < 110 ? [.init(key: "vm", name: "Virtual machine (Rancher Desktop)", bytes: GB + UInt64(i) * 30 * MB)] : [])
+        }
+        XCTAssertTrue(MemoryAnalysis.growing(quit, at: now).isEmpty)
+    }
+
     func testPressureOverTheDayNamesTheUsualSuspect() {
         let pts = timeline(90, end: now) { i in
             point(pressure: i < 45 ? 2 : 1, apps: [.init(key: "c", name: "Chrome", bytes: 8 * GB)])
