@@ -54,6 +54,10 @@ private struct FileIcon: View {
 struct BusyButton: View {
     let title: String
     var body: some View {
+        content.tip("Working on it. The button comes back when it is done")
+    }
+
+    private var content: some View {
         HStack(spacing: 6) {
             ProgressView().controlSize(.small)
             Text(title).font(.caption.weight(.semibold))
@@ -75,7 +79,19 @@ struct RowButton: View {
     let action: () -> Void
 
     var body: some View {
-        if let busy { BusyButton(title: busy) } else { button }
+        if let busy { BusyButton(title: busy) } else if let t = defaultTip { button.tip(t) } else { button }
+    }
+
+    /// What the common buttons do, so each says it on hover without every caller repeating it.
+    private var defaultTip: String? {
+        switch (title, symbol) {
+        case ("Show", _), ("Show file", _): return "Show it in Finder"
+        case ("Open", "folder"): return "Open the folder in Finder"
+        case ("Stop", _): return "Stop measuring. What was measured so far is kept"
+        case ("Open settings", _): return "Open System Settings at Full Disk Access"
+        case ("Copied", _): return "Copied to the clipboard"
+        default: return title.hasPrefix("Copy") ? "\(title) to the clipboard" : nil
+        }
     }
 
     private var button: some View {
@@ -129,11 +145,11 @@ private struct ItemRow: View {
             RowButton(title: "Show", symbol: "magnifyingglass") { store.reveal(item.path) }
             if archive {
                 RowButton(title: "Move…", symbol: "externaldrive.badge.plus", busy: store.working.contains(item.path) ? "Moving…" : nil) { store.archive([item], key: item.path) }
-                    .help("Move it somewhere else, like an external drive")
+                    .tip("Move it somewhere else, like an external drive")
             }
             if trash {
                 RowButton(title: "Trash", symbol: "trash", color: Theme.heat(100), busy: store.working.contains(item.path) ? "Clearing…" : nil) {
-                    if StorageStore.confirm("Move \(item.name) to the Trash?", "\(gb(item.bytes)). You can put it back from the Trash until it is emptied.", button: "Move to Trash") {
+                    StorageStore.confirm("Move \(item.name) to the Trash?", "\(gb(item.bytes)). You can put it back from the Trash until it is emptied.", button: "Move to Trash") {
                         store.moveToTrash([item], key: item.path)
                     }
                 }
@@ -433,7 +449,7 @@ private struct QuickCleanups: View {
                 RowButton(title: p.clean == .emptyTrash ? "Empty Trash" : "Clean", symbol: p.clean == .emptyTrash ? "trash.slash" : "sparkles",
                           color: Theme.heat(100), filled: true) {
                     let what = p.clean == .emptyTrash ? "Everything in the Trash is deleted for good." : p.about
-                    if StorageStore.confirm(p.clean == .emptyTrash ? "Empty the Trash?" : "Clean \(p.name)?",
+                    StorageStore.confirm(p.clean == .emptyTrash ? "Empty the Trash?" : "Clean \(p.name)?",
                                             what + (bytes.map { " Frees about \(gb($0))." } ?? ""),
                                             button: p.clean == .emptyTrash ? "Empty Trash" : "Clean") {
                         store.clean(p)
@@ -490,6 +506,7 @@ private struct DownloadsCard: View {
             }
             if items.count > 12 {
                 Button(showAll ? "Show fewer" : "Show all \(items.count)") { showAll.toggle() }
+                    .tip(showAll ? "Show only the biggest" : "Show every item found")
                     .buttonStyle(.link).font(.caption)
             }
             HStack(spacing: 8) {
@@ -501,7 +518,7 @@ private struct DownloadsCard: View {
                 RowButton(title: chosen.isEmpty ? "Move to Trash" : "Move \(chosen.count) (\(gb(chosenBytes))) to Trash", symbol: "trash",
                           color: Theme.heat(100), filled: !chosen.isEmpty, busy: store.working.contains("downloads") ? "Clearing…" : nil) {
                     guard !chosen.isEmpty else { return }
-                    if StorageStore.confirm("Move \(chosen.count) item\(chosen.count == 1 ? "" : "s") to the Trash?",
+                    StorageStore.confirm("Move \(chosen.count) item\(chosen.count == 1 ? "" : "s") to the Trash?",
                                             "\(gb(chosenBytes)). You can put them back from the Trash until it is emptied.", button: "Move to Trash") {
                         store.moveToTrash(chosen, key: "downloads")
                         picked.subtract(chosen.map(\.path))
@@ -588,7 +605,7 @@ private struct WhereIsTheSpace: View {
                     .frame(width: full ? 300 : 220, alignment: .leading)
             }
             .buttonStyle(.plain)
-            .help(canOpen ? "Open this folder below" : "Show in Finder")
+            .tip(canOpen ? "Open this folder below" : "Show in Finder")
             StorageBar(share: share)
             Text(gb(bytes)).font(.callout.weight(.semibold)).monospacedDigit().frame(width: 72, alignment: .trailing)
             RowButton(title: "Show", symbol: "magnifyingglass") { store.reveal(abs) }
@@ -654,7 +671,7 @@ private struct PackagesCard: View {
                     Spacer()
                     RowButton(title: "Move all \(stale.count) (\(gb(total))) to Trash", symbol: "trash", color: Theme.heat(100), filled: true,
                               busy: store.working.contains("packages") ? "Clearing…" : nil) {
-                        if StorageStore.confirm("Move \(stale.count) items to the Trash?", "\(gb(total)): \(stale.prefix(4).map(\.name).joined(separator: ", "))\(stale.count > 4 ? "…" : ""). You can put them back until the Trash is emptied.", button: "Move to Trash") {
+                        StorageStore.confirm("Move \(stale.count) items to the Trash?", "\(gb(total)): \(stale.prefix(4).map(\.name).joined(separator: ", "))\(stale.count > 4 ? "…" : ""). You can put them back until the Trash is emptied.", button: "Move to Trash") {
                             store.moveToTrash(stale, key: "packages")
                         }
                     }
@@ -757,7 +774,7 @@ private struct KnownFolders: View {
                 HStack(spacing: 8) {
                     Image(systemName: p.symbol).foregroundStyle(storageTint).frame(width: 18)
                     Text(p.name).font(.callout).frame(width: 190, alignment: .leading).lineLimit(1)
-                        .help(p.about)
+                        .tip(p.about)
                     StorageBar(share: Double(b) / top)
                     Text(gb(b)).font(.callout.weight(.semibold)).monospacedDigit().frame(width: 72, alignment: .trailing)
                     RowButton(title: "Show", symbol: "magnifyingglass") { store.reveal(store.home.appendingPathComponent(p.path).path) }

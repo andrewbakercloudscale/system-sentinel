@@ -202,15 +202,17 @@ extension NetworkStore {
 
     func runSpeedTest() {
         guard !speedRunning else { return }
-        if link.isHotspot || expensive {
-            let a = NSAlert()
-            a.messageText = "Run a speed test on mobile data?"
-            a.informativeText = "This connection is a phone hotspot or marked as metered. The test moves several hundred megabytes."
-            a.addButton(withTitle: "Run anyway")
-            a.addButton(withTitle: "Cancel")
-            NSApp.activate(ignoringOtherApps: true)
-            guard a.runModal() == .alertFirstButtonReturn else { return }
-        }
+        let metered = link.isHotspot || expensive
+        Confirm.ask(metered ? "Run a speed test on mobile data?" : "Run a speed test?",
+                    metered ? "This connection is a phone hotspot or marked as metered." : "Uses macOS's own networkQuality test, about 20 seconds.",
+                    symbol: "speedometer", tint: Tab.network.color,
+                    points: ["Downloads and uploads as fast as the line allows, which moves several hundred megabytes.",
+                             "Calls and downloads in progress slow down while it runs."],
+                    button: metered ? "Run anyway" : "Run test", destructive: metered) { self.startSpeedTest() }
+    }
+
+    private func startSpeedTest() {
+        guard !speedRunning else { return }
         speedRunning = true
         Task.detached(priority: .userInitiated) {
             let out = sh("/usr/bin/networkQuality", ["-c", "-s"], timeout: 90)

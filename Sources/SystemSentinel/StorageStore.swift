@@ -339,17 +339,6 @@ final class StorageStore: ObservableObject {
         }
     }
 
-    static func confirm(_ title: String, _ text: String, button: String, destructive: Bool = true) -> Bool {
-        let alert = NSAlert()
-        alert.alertStyle = destructive ? .warning : .informational
-        alert.messageText = title
-        alert.informativeText = text
-        alert.addButton(withTitle: button)
-        alert.buttons[0].hasDestructiveAction = destructive
-        alert.addButton(withTitle: "Cancel")
-        NSApp.activate(ignoringOtherApps: true)
-        return alert.runModal() == .alertFirstButtonReturn
-    }
 
     func reveal(_ path: String) { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)]) }
 

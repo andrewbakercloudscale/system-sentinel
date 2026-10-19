@@ -563,7 +563,12 @@ private struct InspectionCard: View {
                     if store.tools.contains(where: { !$0.configured }) {
                         HStack {
                             if store.exportedPEM == nil {
-                                RowButton(title: "Export certificate", symbol: "square.and.arrow.down", color: netTint, filled: true) { store.exportCertificate() }
+                                RowButton(title: "Export certificate", symbol: "square.and.arrow.down", color: netTint, filled: true) {
+                                    Confirm.ask("Export the inspection certificate?", "Saves the certificate that signs inspected HTTPS as a file your tools can point at.",
+                                                symbol: "square.and.arrow.down", tint: netTint,
+                                                points: ["Written to \(NetworkStore.pemURL.path).", "Nothing on the Mac is changed: each tool only trusts it once you add the setup line."],
+                                                undo: "Delete the file to undo.", button: "Export") { store.exportCertificate() }
+                                }
                             } else {
                                 RowButton(title: copied ? "Copied" : "Copy setup lines", symbol: copied ? "checkmark" : "doc.on.doc", color: netTint, filled: true) {
                                     NSPasteboard.general.clearContents()

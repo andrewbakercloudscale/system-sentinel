@@ -248,6 +248,7 @@ struct PermissionsBanner: View {
                     .background(Capsule().strokeBorder(.white.opacity(0.8), lineWidth: 1))
             }
             .buttonStyle(.plain)
+            .tip("Hide this banner. Settings, Permissions has the same buttons")
             Button { permissions.requestAll() } label: {
                 Label("Grant all", systemImage: "hand.raised.fill")
                     .font(.callout.weight(.semibold)).foregroundStyle(tint)
@@ -255,6 +256,7 @@ struct PermissionsBanner: View {
                     .background(Capsule().fill(.white))
             }
             .buttonStyle(.plain)
+            .tip("Ask macOS for each missing permission in turn, then open Full Disk Access in System Settings")
         }
         .padding(.horizontal, 12).padding(.vertical, 10)
         .background(RoundedRectangle(cornerRadius: 10).fill(tint))
@@ -281,7 +283,7 @@ struct PermissionsCard: View {
                         Button(p.state == .denied || p.id == "fda" ? "Open settings" : "Allow") { permissions.request(p) }
                     }
                     Button("Test") { permissions.test(p) }
-                        .help(p.id == "notifications" ? "Sends a test notification." : "Checks that the permission works now.")
+                        .tip(p.id == "notifications" ? "Sends a test notification." : "Checks that the permission works now.")
                 }
                 if p.id == "notifications", p.state == .granted { NotificationStyleRow(permissions: permissions) }
                 if let t = permissions.tested[p.id] {
@@ -312,12 +314,14 @@ private struct NotificationStyleRow: View {
                 Text("Pops up as: \(style)").font(.caption).foregroundStyle(permissions.alertStyle == UNAlertStyle.none ? Theme.heat(100) : .secondary)
                 Spacer()
                 Button("Change") { Permissions.showNotificationSettings() }.buttonStyle(.link).font(.caption)
+                    .tip("Open System Sentinel's page in Notifications settings")
             }
             HStack(spacing: 6) {
                 Text("A Focus such as Do Not Disturb holds them silently in Notification Centre unless System Sentinel is an allowed app.")
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 Spacer()
                 Button("Allow through Focus") { Permissions.showFocusSettings() }.buttonStyle(.link).font(.caption)
+                    .tip("Open Focus settings: add System Sentinel to a Focus's allowed apps")
             }
         }
         .padding(.leading, 34)

@@ -60,7 +60,7 @@ struct CrashBanner: View {
                     .buttonStyle(.plain).font(.callout.weight(.semibold)).foregroundStyle(Theme.heat(100))
                     .padding(.horizontal, 12).padding(.vertical, 6).background(Capsule().fill(.white))
                 Button { model.lastCrash = nil } label: { Image(systemName: "xmark").foregroundStyle(.white) }
-                    .buttonStyle(.plain).help("Dismiss")
+                    .buttonStyle(.plain).tip("Dismiss")
             }
             .padding(12)
             .background(RoundedRectangle(cornerRadius: 12).fill(Theme.heat(100).gradient))
@@ -90,7 +90,7 @@ struct DiagnosticsCard: View {
                         .font(.caption).foregroundStyle(bad ? Theme.heat(100) : (last == nil ? .secondary : Tab.battery.color))
                         .padding(.horizontal, 8).padding(.vertical, 3)
                         .background(Capsule().fill((bad ? Theme.heat(100) : Color.secondary).opacity(0.1)))
-                        .help(bad ? "Has not finished in over three of its intervals: it may be stuck. Quitting and reopening System Sentinel restarts it." : "Runs every \(Self.every(job.interval)).")
+                        .tip(bad ? "Has not finished in over three of its intervals: it may be stuck. Quitting and reopening System Sentinel restarts it." : "Runs every \(Self.every(job.interval)).")
                 }
             }
             Text("ERRORS, LAST 7 DAYS").font(.caption2.weight(.bold)).foregroundStyle(.secondary).padding(.top, 4)
@@ -122,7 +122,7 @@ struct DiagnosticsCard: View {
                     copied = true
                     DispatchQueue.main.asyncAfter(deadline: .now() + 2) { copied = false }
                 }
-                .help("Version, macOS, background jobs and recent errors, ready to paste into a bug report.")
+                .tip("Version, macOS, background jobs and recent errors, ready to paste into a bug report.")
             }
         }
     }

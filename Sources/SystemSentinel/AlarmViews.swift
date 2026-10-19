@@ -121,7 +121,7 @@ struct HealthChip: View {
         .foregroundStyle(c)
         .padding(.horizontal, 10).padding(.vertical, 5)
         .background(Capsule().fill(c.opacity(0.13)))
-        .help(health.reasons.isEmpty ? "CPU, memory, disk, heat and battery are all fine"
+        .tip(health.reasons.isEmpty ? "CPU, memory, disk, heat and battery are all fine"
                                      : health.reasons.map { "\($0.rag == .red ? "Red" : "Amber"): \($0.text)" }.joined(separator: "\n"))
     }
 }

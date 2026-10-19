@@ -89,7 +89,7 @@ private struct Hero: View {
             .frame(minWidth: 44)
             .padding(.vertical, 6).padding(.horizontal, 4)
             .background(RoundedRectangle(cornerRadius: 8).fill(.white.opacity(0.12)))
-            .help("Average share of the whole Mac over the last \(label)")
+            .tip("Average share of the whole Mac over the last \(label)")
         }
     }
 }
@@ -191,7 +191,7 @@ struct ZoomHint: View {
     var body: some View {
         Image(systemName: "arrow.up.left.and.arrow.down.right")
             .font(.caption2.weight(.bold)).foregroundStyle(.secondary)
-            .help("Click to open a larger version")
+            .tip("Click to open a larger version")
     }
 }
 
@@ -445,7 +445,7 @@ struct ZoomOnClick: ViewModifier {
             .contentShape(Rectangle())
             .onTapGesture { ChartZoom.show(kind, model: model) }
             .onHover { inside in if inside { NSCursor.pointingHand.push() } else { NSCursor.pop() } }
-            .help("Click to open a larger version")
+            .tip("Click to open a larger version")
     }
 }
 
@@ -561,7 +561,7 @@ private struct InsightCard: View {
                             .contentShape(Capsule())
                     }
                     .buttonStyle(.plain)
-                    .help("What this means and what to do")
+                    .tip("What this means and what to do")
                 }
             }
             .contentShape(Rectangle())
@@ -660,11 +660,11 @@ private struct RelatedRow: View {
                 Image(systemName: "sparkles").foregroundStyle(Tab.trends.color)
             }
             .buttonStyle(.plain)
-            .help("Explain \(s.name) with ChatGPT")
+            .tip("Explain \(s.name) with ChatGPT")
             if let app = NSRunningApplication(processIdentifier: s.pid), app.bundleURL != nil, app.activationPolicy == .regular {
                 Button { app.activate() } label: { Image(systemName: "eye.fill").foregroundStyle(Tab.processes.color) }
                     .buttonStyle(.plain)
-                    .help("Bring \(s.name) to the front")
+                    .tip("Bring \(s.name) to the front")
             }
             if s.pid == getpid() {
                 EmptyView()

@@ -51,6 +51,7 @@ struct CheckupView: View {
                 .background(Capsule().fill(.white))
             }
             .buttonStyle(.plain)
+            .tip("Run every check again now")
             .disabled(store.running)
         }
         .padding(16)
@@ -98,6 +99,7 @@ struct CheckupView: View {
                             .frame(width: 24, height: 20).contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    .tip(isOpen ? "Hide the details" : "Show the details")
                 }
             }
             if isOpen {
@@ -126,7 +128,14 @@ struct CheckupView: View {
     private func fixButton(_ f: Check.Fix, _ c: Check) -> some View {
         let busy = store.working.contains(c.id + f.label)
         let acts: Bool = { switch f { case .admin, .run, .removeAgent: return true; default: return false } }()
-        return Button { store.perform(f, in: c) } label: {
+        return Button {
+            if acts {
+                Confirm.ask("\(f.label)?", c.title, symbol: "wrench.and.screwdriver.fill", tint: Tab.checkup.color,
+                            points: [help(f)], undo: undoText(f), button: f.label) { store.perform(f, in: c) }
+            } else {
+                store.perform(f, in: c)
+            }
+        } label: {
             HStack(spacing: 4) {
                 if busy { ProgressView().controlSize(.mini) }
                 if case .admin = f, !busy { Image(systemName: "lock.fill") }
@@ -140,7 +149,15 @@ struct CheckupView: View {
         }
         .buttonStyle(.plain)
         .disabled(busy)
-        .help(help(f))
+        .tip(help(f))
+    }
+
+    private func undoText(_ f: Check.Fix) -> String? {
+        switch f {
+        case .removeAgent: return "It goes to the Trash: put it back from there to undo."
+        case .admin, .run: return "Most of these restart something that comes straight back by itself."
+        default: return nil
+        }
     }
 
     private func help(_ f: Check.Fix) -> String {
@@ -226,7 +243,7 @@ struct SlownessCard: View {
 
     private func chip(_ text: String, _ bad: Bool, ok: String) -> some View {
         Text(text).font(.caption.weight(.semibold))
-            .help(bad ? "Higher than it should be" : "Fine: \(ok)")
+            .tip(bad ? "Higher than it should be" : "Fine: \(ok)")
             .foregroundStyle(bad ? Theme.heat(100) : .secondary)
             .padding(.horizontal, 8).padding(.vertical, 3)
             .background(Capsule().fill((bad ? Theme.heat(100) : Color.secondary).opacity(0.1)))

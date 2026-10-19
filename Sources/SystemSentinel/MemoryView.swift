@@ -290,8 +290,6 @@ private struct LargestApps: View {
         .background(RoundedRectangle(cornerRadius: 9).fill(Color.primary.opacity(0.03)))
     }
 
-    @State private var forceTarget: Model.MemoryApp?
-
     @ViewBuilder
     private func quitButton(_ a: Model.MemoryApp, host: Model.MemoryApp?) -> some View {
         // A virtual machine is quit through the app that runs it, which shuts it down cleanly.
@@ -301,12 +299,12 @@ private struct LargestApps: View {
         VStack(alignment: .trailing, spacing: 5) {
             if canQuit {
                 pill("Quit", symbol: "xmark.circle.fill", fill: Theme.heat(100)) {
-                    model.perform(.quit(pids: target.pids, name: target.name))
+                    model.confirmAndPerform(.quit(pids: target.pids, name: target.name))
                 }
-                .help("Ask \(target.name) to quit, so it can save first, and give its memory back")
+                .tip("Ask \(target.name) to quit, so it can save first, and give its memory back")
             }
             if canForce {
-                Button { forceTarget = a } label: {
+                Button { model.confirmForceQuit(pids: a.pids, name: a.name, vm: Model.isVM(a.key)) } label: {
                     Label("Force Quit", systemImage: "bolt.circle.fill")
                         .font(.caption.weight(.semibold)).foregroundStyle(Theme.heat(100))
                         .padding(.horizontal, 9).padding(.vertical, 3)
@@ -315,23 +313,12 @@ private struct LargestApps: View {
                 }
                 .buttonStyle(.plain)
                 .fixedSize()
-                .help("Stop all \(a.pids.count) of its processes at once, without saving")
+                .tip("Stop all \(a.pids.count) of its processes at once, without saving")
             }
             if !canQuit, !canForce {
                 Text("part of macOS").font(.caption).foregroundStyle(.secondary).fixedSize()
-                    .help("Not offered for quitting: the Mac depends on it")
+                    .tip("Not offered for quitting: the Mac depends on it")
             }
-        }
-        .confirmationDialog(forceTarget.map { "Force quit \($0.name)?" } ?? "", isPresented: Binding(
-            get: { forceTarget?.id == a.id }, set: { if !$0 { forceTarget = nil } }), titleVisibility: .visible) {
-            Button("Force Quit", role: .destructive) {
-                model.forceQuit(pids: a.pids, name: a.name)
-                forceTarget = nil
-            }
-        } message: {
-            Text(Model.isVM(a.key)
-                 ? "The virtual machine stops at once, like pulling its plug: containers and anything unsaved inside it are lost, and \(host?.name ?? "the app that runs it") may show an error. Frees about \(gb(a.bytes))."
-                 : "All \(a.pids.count) of its processes stop at once. Anything unsaved is lost. Frees about \(gb(a.bytes)).")
         }
     }
 
@@ -385,7 +372,7 @@ private struct CleanUp: View {
             action(symbol: "restart.circle.fill", title: "Restart to clear swap",
                    text: "Swap only empties on a restart. \(up.map { "This Mac has been up \(Int($0 / 86_400)) days with \(gb(m.swapUsed)) in swap." } ?? "")",
                    button: AnyView(button("Restart…", symbol: "restart", color: Tab.processes.color) { model.askToRestart() }
-                    .help("Opens macOS's own Restart dialog: nothing restarts until you confirm")))
+                    .tip("Opens macOS's own Restart dialog: nothing restarts until you confirm")))
         }
     }
 

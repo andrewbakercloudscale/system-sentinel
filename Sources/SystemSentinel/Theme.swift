@@ -236,7 +236,7 @@ struct TabBar: View {
                 }
                 .buttonStyle(.plain)
                 .onHover { hover = $0 ? tab : (hover == tab ? nil : hover) }
-                .help(tab.title)
+                .tip(tab.title)
             }
         }
     }

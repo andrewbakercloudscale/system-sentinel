@@ -35,7 +35,7 @@ struct FixButtons: View {
                 if busy(f) {
                     BusyButton(title: f == .emptyTrash ? "Emptying…" : "Clearing…")
                 } else {
-                Button { if confirmed(f) { model.perform(f) } } label: {
+                Button { model.confirmAndPerform(f) } label: {
                     Label(f.title, systemImage: f.symbol)
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(f.acts ? .white : Tab.processes.color)
@@ -44,7 +44,7 @@ struct FixButtons: View {
                         .contentShape(Capsule())
                 }
                 .buttonStyle(.plain)
-                .help(help(f))
+                .tip(help(f))
                 }
                 if case .quit(let pids, let name) = f {
                     Button { forceQuit(pids, name) } label: {
@@ -55,7 +55,7 @@ struct FixButtons: View {
                             .contentShape(Capsule())
                     }
                     .buttonStyle(.plain)
-                    .help("Stop \(name) at once, without saving. Asks first.")
+                    .tip("Stop \(name) at once, without saving. Asks first.")
                 }
             }
         }
@@ -69,32 +69,7 @@ struct FixButtons: View {
             all += model.memoryApps.filter { Model.isVM($0.key) }.flatMap(\.pids)
         }
         let bytes = model.memoryApps.filter { !Set($0.pids).isDisjoint(with: all) }.reduce(UInt64(0)) { $0 + $1.bytes }
-        let alert = NSAlert()
-        alert.alertStyle = .critical
-        alert.messageText = "Force quit \(name)?"
-        var text = "All \(all.count) of its processes stop at once, with no chance to save. Anything unsaved is lost."
-        if all.count > pids.count { text += " Its virtual machine stops too, like pulling the plug: containers inside it stop." }
-        if bytes > 0 { text += " Frees about \(ReportDocument.bytes(bytes))." }
-        alert.informativeText = text
-        alert.addButton(withTitle: "Force Quit")
-        alert.buttons[0].hasDestructiveAction = true
-        alert.addButton(withTitle: "Cancel")
-        NSApp.activate(ignoringOtherApps: true)
-        if alert.runModal() == .alertFirstButtonReturn { model.forceQuit(pids: all, name: name) }
-    }
-
-    /// Stopping several processes at once (other than caffeinate) asks first.
-    private func confirmed(_ f: FixAction) -> Bool {
-        guard case .kill(let pids, let label) = f, pids.count > 1, !label.contains("caffeinate") else { return true }
-        let names = Set(pids.compactMap { model.sample(pid: $0)?.displayName }).sorted().joined(separator: ", ")
-        let alert = NSAlert()
-        alert.messageText = "Stop \(pids.count) processes?"
-        alert.informativeText = "\(names). Anything unsaved in them is lost. If they belong to a terminal or agent session you are using, that session ends too."
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: "Stop \(pids.count)")
-        alert.addButton(withTitle: "Cancel")
-        NSApp.activate(ignoringOtherApps: true)
-        return alert.runModal() == .alertFirstButtonReturn
+        model.confirmForceQuit(pids: all, name: name, vm: all.count > pids.count)
     }
 
     private func help(_ f: FixAction) -> String {
@@ -347,7 +322,7 @@ struct ChromeTabsButton: View {
             Label("Tabs", systemImage: "square.on.square").font(.caption.weight(.semibold))
         }
         .buttonStyle(.borderless)
-        .help("List Chrome's tabs, likely energy users first")
+        .tip("List Chrome's tabs, likely energy users first")
         .popover(isPresented: $shown, arrowEdge: .trailing) { ChromeTabsList() }
     }
 }
@@ -375,10 +350,16 @@ private struct ChromeTabsList: View {
                             }
                             Spacer(minLength: 6)
                             Button("Show") { _ = ChromeTabs.show(t) }.buttonStyle(.borderless).font(.caption)
+                                .tip("Bring this tab to the front in Chrome")
                             Button("Close") {
-                                if case .success = ChromeTabs.close(t) { tabs.removeAll { $0.id == t.id } }
+                                Confirm.ask("Close this Chrome tab?", t.title, symbol: "xmark.square.fill", tint: Theme.heat(100),
+                                            points: ["Anything typed into a form on it and not sent is lost."],
+                                            undo: "⇧⌘T in Chrome reopens it.", button: "Close tab", destructive: true) {
+                                    if case .success = ChromeTabs.close(t) { tabs.removeAll { $0.id == t.id } }
+                                }
                             }
                             .buttonStyle(.borderless).font(.caption).foregroundStyle(Theme.heat(100))
+                            .tip("Close this tab. Asks first")
                         }
                         .padding(.vertical, 2)
                     }
@@ -386,6 +367,7 @@ private struct ChromeTabsList: View {
             }
             .frame(maxHeight: 320)
             Button("Open Chrome's Task Manager") { _ = ChromeTabs.openTaskManager() }.font(.caption)
+                .tip("Chrome's own list of what each tab and extension uses")
         }
         .padding(12)
         .frame(width: 420)
@@ -435,7 +417,9 @@ struct ExportCard: View {
         Card(title: "Share a report", symbol: "square.and.arrow.up", tint: Tab.events.color) {
             HStack(spacing: 8) {
                 Button { save(pdf: false) } label: { Label("Markdown…", systemImage: "doc.text") }
+                    .tip("Save the report as a Markdown text file. You pick where")
                 Button { save(pdf: true) } label: { Label("PDF…", systemImage: "doc.richtext") }
+                    .tip("Save the report as a PDF. You pick where")
                 Spacer()
             }
             Text("The week, today, battery, sleep and memory in one page: for your records, IT support, or a repair shop.")

@@ -275,7 +275,7 @@ private struct RightNowPower: View {
                     Spacer(minLength: 6)
                     Text(watts(share) ?? String(format: "impact %.0f", r.power))
                         .font(.callout.weight(.semibold)).monospacedDigit().frame(width: 64, alignment: .trailing)
-                        .help(String(format: "Energy Impact %.1f: %.0f%% of everything drawing power now", r.power, share * 100))
+                        .tip(String(format: "Energy Impact %.1f: %.0f%% of everything drawing power now", r.power, share * 100))
                 }
             }
         }
@@ -337,11 +337,11 @@ private struct EnergyCard: View {
                     }
                 }
                 .frame(width: 92, alignment: .trailing)
-                .help(String(format: "Estimated power draw. Energy Impact %.1f (Activity Monitor's unitless score).", r.power))
+                .tip(String(format: "Estimated power draw. Energy Impact %.1f (Activity Monitor's unitless score).", r.power))
                 Text("\(Int(r.wakeups))/s").font(.caption).monospacedDigit()
                     .foregroundStyle(r.wakeups >= 150 ? Theme.heat(90) : .secondary)
                     .frame(width: 52, alignment: .trailing)
-                    .help("Idle wakeups per second")
+                    .tip("Idle wakeups per second")
             }
         }
     }
@@ -391,10 +391,10 @@ private struct EnergyCard: View {
                     }
                 }
                 .frame(width: 92, alignment: .trailing)
-                .help(String(format: "Estimated energy used over the period, from its share of Energy Impact and the Mac's measured draw. Average Energy Impact %.1f (Activity Monitor's unitless score).", r.average))
+                .tip(String(format: "Estimated energy used over the period, from its share of Energy Impact and the Mac's measured draw. Average Energy Impact %.1f (Activity Monitor's unitless score).", r.average))
                 Text(Fmt.pct(total > 0 ? r.coreSeconds / total * 100 : 0)).font(.caption).monospacedDigit().foregroundStyle(.secondary)
                     .frame(width: 52, alignment: .trailing)
-                    .help("Share of all energy over the period")
+                    .tip("Share of all energy over the period")
             }
         }
     }
@@ -449,8 +449,8 @@ private struct SleepBlockersCard: View {
                         if model.killing.contains(s.pid) {
                             BusyButton(title: "Releasing…")
                         } else {
-                            sleepButton("Let it sleep") { model.decaffeinate([s]) }
-                                .help("Stops this caffeinate only. \(b.onBehalfOf.map { "\($0) keeps running." } ?? "")")
+                            sleepButton("Let it sleep") { model.confirmDecaffeinate([s]) }
+                                .tip("Stops this caffeinate only. \(b.onBehalfOf.map { "\($0) keeps running." } ?? "")")
                         }
                     } else if let s = sample, Safety.canKillManually(s) {
                         KillButton(model: model, sample: s)
@@ -464,7 +464,8 @@ private struct SleepBlockersCard: View {
                     if caffeinates.contains(where: { model.killing.contains($0.pid) }) {
                         BusyButton(title: "Releasing…")
                     } else {
-                        sleepButton("Let the Mac sleep: stop all \(caffeinates.count) caffeinates", filled: true) { model.decaffeinate(caffeinates) }
+                        sleepButton("Let the Mac sleep: stop all \(caffeinates.count) caffeinates", filled: true) { model.confirmDecaffeinate(caffeinates) }
+                            .tip("Stop every caffeinate holding the Mac awake. What they were started for keeps running. Asks first")
                     }
                 }
             }
@@ -598,7 +599,7 @@ struct CoresCard: View {
                         .opacity(selected.map { ($0 < load.efficiencyCount) == eff ? 1 : 0.35 } ?? 1)
                         .contentShape(Rectangle())
                         .onTapGesture { selected = selected == i ? nil : i }
-                        .help("\(eff ? "Efficiency" : "Performance") core \(i): \(Int(v))% busy. Click for the apps on this kind of core.")
+                        .tip("\(eff ? "Efficiency" : "Performance") core \(i): \(Int(v))% busy. Click for the apps on this kind of core.")
                     }
                 }
                 if let h = selected, h < load.perCore.count {
@@ -608,7 +609,7 @@ struct CoresCard: View {
                         .font(.caption.weight(.medium)).foregroundStyle(.secondary)
                 }
                 Text(caption(load)).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                    .help("Which app is on which core is not something macOS reports: each app's threads hop between cores many times a second. Background-priority work (Spotlight, Photos, backups, updates) is kept on the E cores; what you are using goes to the P cores. The Processes tab shows which apps are busy.")
+                    .tip("Which app is on which core is not something macOS reports: each app's threads hop between cores many times a second. Background-priority work (Spotlight, Photos, backups, updates) is kept on the E cores; what you are using goes to the P cores. The Processes tab shows which apps are busy.")
             }
         }
     }
@@ -623,7 +624,7 @@ struct CoresCard: View {
                     .font(.caption.weight(.semibold))
                 Spacer()
                 Button { selected = nil } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }
-                    .buttonStyle(.plain).help("Close")
+                    .buttonStyle(.plain).tip("Close")
             }
             if apps.isEmpty {
                 Text("Nothing measurable in the last few seconds.").font(.caption).foregroundStyle(.secondary)
@@ -716,11 +717,12 @@ struct BackgroundItemsCard: View {
                         Image(systemName: "folder")
                     }
                     .buttonStyle(.borderless)
-                    .help("Reveal \(item.plist) in Finder")
+                    .tip("Reveal \(item.plist) in Finder")
                 }
             }
             if items.count > 8 {
                 Button(showAll ? "Show fewer" : "Show all \(items.count)") { showAll.toggle() }
+                    .tip(showAll ? "Show only the top few" : "Show every one")
                     .buttonStyle(.borderless).font(.caption)
             }
         }

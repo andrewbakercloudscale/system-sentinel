@@ -171,7 +171,7 @@ struct UpdateBanner: View {
                 .buttonStyle(.plain)
             }
             Button {
-                model.installUpdate()
+                model.confirmInstallUpdate()
             } label: {
                 Group {
                     if model.updateState == .installing {
@@ -205,20 +205,18 @@ struct UpdatesCard: View {
                 }
                 Spacer()
                 if model.update != nil {
-                    Button("Install and relaunch") { model.installUpdate() }
+                    Button("Install and relaunch") { model.confirmInstallUpdate() }
+                        .tip("Download the new version, check it, install it and reopen. Asks first")
                         .buttonStyle(.borderedProminent).tint(Color(hex: "#16a34a"))
                         .disabled(model.updateState == .installing)
                 }
                 Button("Reinstall…") {
-                    let alert = NSAlert()
-                    alert.messageText = "Reinstall System Sentinel?"
-                    alert.informativeText = "Downloads the latest release from GitHub, checks its signature, replaces this copy and reopens it. Settings and history are kept."
-                    alert.addButton(withTitle: "Reinstall")
-                    alert.addButton(withTitle: "Cancel")
-                    NSApp.activate(ignoringOtherApps: true)
-                    if alert.runModal() == .alertFirstButtonReturn { model.reinstallLatest() }
+                    Confirm.ask("Reinstall System Sentinel?", "Downloads the latest release from GitHub and replaces this copy.",
+                                symbol: "arrow.down.circle.fill", tint: Tab.settings.color,
+                                points: ["Checks the download's signature before installing.", "Quits and reopens in a few seconds.",
+                                         "Settings and history are kept."], button: "Reinstall") { model.reinstallLatest() }
                 }
-                .help("Download and install the latest release again, even if you already have it")
+                .tip("Download and install the latest release again, even if you already have it")
                 .disabled(model.updateState == .checking || model.updateState == .installing)
                 Button {
                     model.checkForUpdates(manual: true)
@@ -314,6 +312,6 @@ struct ChangesList: View {
                 .contentShape(Capsule())
         }
         .buttonStyle(.plain)
-        .help(url.absoluteString)
+        .tip(url.absoluteString)
     }
 }

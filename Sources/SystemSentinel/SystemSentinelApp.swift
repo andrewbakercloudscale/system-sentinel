@@ -12,6 +12,8 @@ struct SystemSentinelApp: App {
     @ObservedObject private var bar = MenuBarState.shared
 
     init() {
+        // macOS's own tooltips (left in menus and popovers) wait about a second and a half.
+        UserDefaults.standard.set(200, forKey: "NSInitialToolTipDelay")
         SelfGuard.start()
         MenuBarState.placeRight()
         // Before Model reads any settings.
@@ -88,6 +90,7 @@ struct MenuView: View {
     var fullLength = false
     /// Shown in the movable window rather than under the menu bar icon.
     var inWindow = false
+    @StateObject private var tips = TipCenter()
 
     static let width: CGFloat = 660
     /// Fixed, so switching tabs never resizes the window (a resize made the menu jump).
@@ -125,6 +128,7 @@ struct MenuView: View {
         }
         .padding(14)
         .frame(width: Self.width)
+        .tipsAndConfirmations(tips, surface: "main")
     }
 
     private var header: some View {
@@ -143,7 +147,7 @@ struct MenuView: View {
             }
             .padding(.horizontal, 10).padding(.vertical, 5)
             .background(Capsule().fill(Theme.machineHeat(load).opacity(0.13)))
-            .help("Share of all \(Int(model.cores)) cores in use right now")
+            .tip("Share of all \(Int(model.cores)) cores in use right now")
         }
     }
 
@@ -183,7 +187,7 @@ struct MenuView: View {
                 FooterButton(title: "Pop out", symbol: "macwindow.on.rectangle", color: Tab.trends.color) {
                     PopOut.show(model)
                 }
-                .help("Open in a window you can move around and keep open")
+                .tip("Open in a window you can move around and keep open")
             }
             FooterButton(title: "Activity Monitor", symbol: "waveform.path.ecg", color: Tab.processes.color) {
                 NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/Utilities/Activity Monitor.app"))
@@ -387,6 +391,7 @@ struct SettingsView: View {
                 Spacer()
                 Button("Revert") { edits = nil }
                     .disabled(!dirty)
+                    .tip("Throw away the changes on this page")
                 Button {
                     edits?.apply(to: model)
                     edits = nil

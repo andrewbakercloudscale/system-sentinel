@@ -197,7 +197,7 @@ private struct UsageRow: View {
         .padding(.vertical, 3).padding(.horizontal, 4)
         .background(RoundedRectangle(cornerRadius: 7).fill(hover ? Tab.trends.color.opacity(0.07) : .clear))
         .onHover { hover = $0 }
-        .help(ProcessGuide.note(for: (row.key as NSString).lastPathComponent).map { "\($0.headline). \($0.detail)" } ?? row.key)
+        .tip(ProcessGuide.note(for: (row.key as NSString).lastPathComponent).map { "\($0.headline). \($0.detail)" } ?? row.key)
     }
 }
 
@@ -237,7 +237,7 @@ private struct TrendChart: View {
                          .background(Capsule().fill(hideOther ? Tab.trends.color.opacity(0.15) : Color.primary.opacity(0.06)))
                  }
                  .buttonStyle(.plain)
-                 .help("Leave out the grey bar of all the smaller processes, so the named apps fill the chart")
+                 .tip("Leave out the grey bar of all the smaller processes, so the named apps fill the chart")
              })) {
             if d.bars.isEmpty {
                 Text("Nothing recorded yet. This fills in while System Sentinel runs.")

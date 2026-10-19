@@ -60,7 +60,7 @@ struct ProcessesView: View {
                 Text("").frame(width: ProcessColumns.actions)
             }
             .font(.caption2.weight(.medium)).foregroundStyle(.secondary)
-            .help("Drag a column's left edge to resize it; double-click the edge to reset")
+            .tip("Drag a column's left edge to resize it; double-click the edge to reset")
             VStack(spacing: 2) {
                 let cols = ProcessColumns(trend: colTrend, now: colNow, avg: colAvg, mem: colMem)
                 ForEach(Array(rows.enumerated()), id: \.element.pid) { i, s in
@@ -86,7 +86,7 @@ struct ProcessesView: View {
                 .contentShape(Capsule())
         }
         .buttonStyle(.plain)
-        .help(on ? "Resume live updates" : "Hold the list still to read it. Sampling and alerts carry on.")
+        .tip(on ? "Resume live updates" : "Hold the list still to read it. Sampling and alerts carry on.")
     }
 
     private func sorted(_ list: [ProcessSample], by sort: Sort) -> [ProcessSample] {
@@ -188,11 +188,11 @@ private struct ProcessRow: View {
                     policyPill(model.policy(for: s))
                     if model.isSlowed(s) {
                         Pill(text: "background", symbol: "tortoise.fill", color: Tab.rules.color)
-                            .help("Running at background priority: efficiency cores, disk access last. The tortoise button puts it back.")
+                            .tip("Running at background priority: efficiency cores, disk access last. The tortoise button puts it back.")
                     }
                     if model.restarted[s.path] == s.pid {
                         Pill(text: "restarted", symbol: "arrow.clockwise", color: Tab.rules.color)
-                            .help("Killed a moment ago and launched again under this new pid")
+                            .tip("Killed a moment ago and launched again under this new pid")
                     }
                 }
                 Text(subtitle(s)).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
@@ -216,13 +216,13 @@ private struct ProcessRow: View {
                         .foregroundStyle(Tab.processes.color)
                 }
                 .buttonStyle(.plain)
-                .help("What is this?")
+                .tip("What is this?")
                 .popover(isPresented: $showInfo, arrowEdge: .leading) { InfoPopover(model: model, sample: s) }
                 Button { model.explain(s) } label: {
                     Image(systemName: "sparkles").foregroundStyle(Tab.trends.color)
                 }
                 .buttonStyle(.plain)
-                .help("Explain: ask ChatGPT why this is busy and how to bring it down")
+                .tip("Explain: ask ChatGPT why this is busy and how to bring it down")
                 if model.canSlow(s) { SlowButton(model: model, sample: s) }
                 if s.pid == getpid() {
                     Pill(text: "this app", color: Tab.overview.color).frame(width: 96, alignment: .trailing)
@@ -267,9 +267,9 @@ private struct ProcessRow: View {
     private func menu(_ s: ProcessSample) -> some View {
         Section("Rule") {
             Button("Alert me (default)") { model.setPolicy(.alert, for: s) }
-            Button("Auto-kill") { model.setPolicy(.autoKill, for: s) }.disabled(!Safety.canAutoKill(s))
-            Button("Auto-kill on battery") { model.setPolicy(.autoKillOnBattery, for: s) }.disabled(!Safety.canAutoKill(s))
-            Button("Auto-kill when battery under 30%") { model.setPolicy(.autoKillBelow(percent: 30), for: s) }.disabled(!Safety.canAutoKill(s))
+            Button("Auto-kill") { model.confirmPolicy(.autoKill, for: s) }.disabled(!Safety.canAutoKill(s))
+            Button("Auto-kill on battery") { model.confirmPolicy(.autoKillOnBattery, for: s) }.disabled(!Safety.canAutoKill(s))
+            Button("Auto-kill when battery under 30%") { model.confirmPolicy(.autoKillBelow(percent: 30), for: s) }.disabled(!Safety.canAutoKill(s))
             Button("Ignore during work hours (9:00–17:00)") { model.setPolicy(.ignoreDuring(from: 9, to: 17), for: s) }
             Button("Ignore overnight (22:00–07:00)") { model.setPolicy(.ignoreDuring(from: 22, to: 7), for: s) }
             Button("Ignore for 1 hour") { model.setPolicy(.ignore(until: Date().addingTimeInterval(3600)), for: s) }
@@ -278,7 +278,7 @@ private struct ProcessRow: View {
         Divider()
         if let app = NSRunningApplication(processIdentifier: s.pid), app.bundleURL != nil {
             Button("Bring to front") { app.activate() }
-            Button("Quit gracefully") { app.terminate() }
+            Button("Quit gracefully") { model.confirmQuitGracefully(app, name: s.displayName) }
         }
         Button("Reveal in Finder") {
             let url = URL(fileURLWithPath: AppIdentity.bundlePath(of: s.path) ?? s.path)
@@ -431,14 +431,14 @@ struct KillButton: View {
                 }
                 .buttonStyle(.plain)
                 .fixedSize()
-                .help("Force kill (kill -9): stops it at once, with no chance to save. Asks first.")
+                .tip("Force kill (kill -9): stops it at once, with no chance to save. Asks first.")
             }
             kill
         }
     }
 
     private var kill: some View {
-        Button { model.kill(sample) } label: {
+        Button { model.confirmKill(sample) } label: {
             HStack(spacing: 4) {
                 if busy {
                     ProgressView().controlSize(.mini).tint(.white)
@@ -459,7 +459,7 @@ struct KillButton: View {
         .disabled(busy)
         .opacity(busy ? 0.75 : 1)
         .fixedSize()
-        .help(isRoot ? "Runs as root: asks for your password" : "Stop politely, force after 5 s")
+        .tip(isRoot ? "Runs as root: asks for your password" : "Stop politely, force after 5 s")
     }
 }
 
@@ -473,12 +473,12 @@ struct SlowButton: View {
         let ruled = model.slowRules.contains(sample.name)
         Menu {
             if on {
-                Button("Back to normal priority") { model.restore(sample) }
+                Button("Back to normal priority") { model.confirmRestore(sample) }
             } else {
-                Button("Lower priority now") { model.slowDown(sample) }
-                Button("Always lower \(sample.name)") { model.slowDown(sample, always: true) }
+                Button("Lower priority now") { model.confirmSlowDown(sample, always: false) }
+                Button("Always lower \(sample.name)") { model.confirmSlowDown(sample, always: true) }
             }
-            if on, !ruled { Button("Always lower \(sample.name)") { model.slowDown(sample, always: true) } }
+            if on, !ruled { Button("Always lower \(sample.name)") { model.confirmSlowDown(sample, always: true) } }
             if let note = BackgroundCandidates.note(sample.name) {
                 Divider()
                 Text(note)
@@ -490,7 +490,7 @@ struct SlowButton: View {
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .fixedSize()
-        .help(on ? "At background priority\(ruled ? ", always" : ""). Click to put it back." :
+        .tip(on ? "At background priority\(ruled ? ", always" : ""). Click to put it back." :
                    "Optimise: lower its priority so it runs on the efficiency cores and your apps stay quick. Undo any time.")
     }
 }
@@ -509,7 +509,7 @@ struct OptimiseScreenButton: View {
         .buttonStyle(.plain)
         .fixedSize()
         .frame(width: 96, alignment: .trailing)
-        .help("Settings that make WindowServer draw less, each with an undo")
+        .tip("Settings that make WindowServer draw less, each with an undo")
     }
 }
 
@@ -538,31 +538,10 @@ struct SudoButton: View {
         }
         .buttonStyle(.plain)
         .frame(width: 96, alignment: .trailing)
-        .help("Protected macOS process: kill it as admin")
+        .tip("Protected macOS process: kill it as admin")
     }
 
-    private func confirm() {
-        let alert = NSAlert()
-        alert.alertStyle = .critical
-        alert.messageText = "Kill \(sample.name) (pid \(sample.pid)) as admin?"
-        alert.informativeText = Self.consequence(of: sample.name)
-            + "\n\nCommand:\n\(Killer.sudoCommand(for: sample))"
-        alert.addButton(withTitle: "Open sudo shell")
-        alert.addButton(withTitle: "Kill with password")
-        alert.addButton(withTitle: "Copy command")
-        alert.addButton(withTitle: "Cancel")
-        alert.buttons[1].hasDestructiveAction = true
-        NSApp.activate(ignoringOtherApps: true)
-        switch alert.runModal() {
-        case .alertFirstButtonReturn: model.openSudoShell(sample)
-        case .alertSecondButtonReturn: model.killProtected(sample)
-        case .alertThirdButtonReturn:
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(Killer.sudoCommand(for: sample), forType: .string)
-            model.lastAction = "Copied: \(Killer.sudoCommand(for: sample))"
-        default: break
-        }
-    }
+    private func confirm() { model.confirmSudoKill(sample) }
 
     static func consequence(of name: String) -> String {
         switch name {
@@ -591,7 +570,7 @@ struct ExplainButton: View {
                 .contentShape(RoundedRectangle(cornerRadius: 9))
         }
         .buttonStyle(.plain)
-        .help("Opens ChatGPT with a prompt describing this process and your Mac")
+        .tip("Opens ChatGPT with a prompt describing this process and your Mac")
     }
 }
 
@@ -622,28 +601,8 @@ struct ForceKillButton: View {
         .buttonStyle(.plain)
         .disabled(busy || sample.pid <= 1 || sample.pid == getpid())
         .frame(width: 104, alignment: .trailing)
-        .help("kill -9: stops it at once, with no chance to save")
+        .tip("kill -9: stops it at once, with no chance to save")
     }
 
-    static func confirm(_ model: Model, _ s: ProcessSample) {
-        let protected = !Safety.canKillManually(s)
-        let alert = NSAlert()
-        alert.alertStyle = .critical
-        alert.messageText = "Force kill \(s.displayName) (pid \(s.pid))?"
-        var text = "Force kill (SIGKILL, kill -9) stops it at once. It cannot be ignored, and the process gets no chance to save or clean up."
-        if protected { text += "\n\n" + SudoButton.consequence(of: s.name) }
-        if s.uid != getuid() { text += "\n\nIt runs as \(s.isRoot ? "root" : "another user"), so macOS asks for your password." }
-        alert.informativeText = text
-        alert.addButton(withTitle: "Force kill")
-        alert.buttons[0].hasDestructiveAction = true
-        if s.uid != getuid() { alert.addButton(withTitle: "Open sudo shell") }
-        alert.addButton(withTitle: "Cancel")
-        NSApp.activate(ignoringOtherApps: true)
-        let r = alert.runModal()
-        if r == .alertFirstButtonReturn {
-            model.forceKill(s)
-        } else if r == .alertSecondButtonReturn, s.uid != getuid() {
-            model.openSudoShell(s, force: true)
-        }
-    }
+    static func confirm(_ model: Model, _ s: ProcessSample) { model.confirmForceKill(s) }
 }

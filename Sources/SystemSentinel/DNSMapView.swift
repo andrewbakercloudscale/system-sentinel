@@ -10,6 +10,7 @@ struct DNSMapView: View {
     @ObservedObject var store: DNSMapStore
     /// Everything at full height with no scrolling, for snapshots.
     var fullLength = false
+    @StateObject private var tips = TipCenter()
 
     var body: some View {
         VStack(spacing: 0) {
@@ -19,6 +20,7 @@ struct DNSMapView: View {
         }
         .frame(minWidth: 760, minHeight: fullLength ? nil : 520)
         .background(Color(nsColor: .windowBackgroundColor))
+        .tipsAndConfirmations(tips, surface: "dnsmap")
     }
 
     @ViewBuilder private var content: some View {
@@ -57,11 +59,13 @@ struct DNSMapView: View {
                     .textFieldStyle(.roundedBorder).font(.body.monospaced())
                     .onSubmit { store.start() }
                 if store.running {
-                    Button("Stop") { store.stop() }
+                    Button("Stop") { store.stop() }.tip("Stop the checks still running. What was found is kept")
                 } else {
                     Button("Map it") { store.start() }.keyboardShortcut(.defaultAction)
+                        .tip("Look the name up every way there is, then ping, connect to and trace every address. About a minute; only reads")
                 }
                 Button { store.copyReport() } label: { Label("Copy report", systemImage: "doc.on.doc") }
+                    .tip("Copy everything found as plain text, ready to paste into a ticket")
                     .disabled(store.result == nil)
             }
             HStack(spacing: 6) {
@@ -291,7 +295,7 @@ private struct RecordsCard: View {
                 }
             }
             if txt.count > 4 {
-                Button(showAllTXT ? "Show fewer TXT records" : "Show all \(txt.count) TXT records (site verifications, SPF mail rules)") { showAllTXT.toggle() }
+                Button(showAllTXT ? "Show fewer TXT records" : "Show all \(txt.count) TXT records (site verifications, SPF mail rules)") { showAllTXT.toggle() }.tip(showAllTXT ? "Show only the first few" : "Show every TXT record")
                     .buttonStyle(.link).font(.caption)
             }
             if let soa = result.soa {

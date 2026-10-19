@@ -226,6 +226,7 @@ private let amber = Color(hex: "#d97706")
 struct OptimiseView: View {
     @ObservedObject var model: Model
     @ObservedObject var store: TweakStore
+    @StateObject private var tips = TipCenter()
 
     var body: some View {
         ScrollView {
@@ -234,9 +235,11 @@ struct OptimiseView: View {
                 Card(title: "Draw less", symbol: "wand.and.stars", tint: optTint,
                      trailing: AnyView(HStack(spacing: 8) {
                          if store.working { ProgressView().controlSize(.small) }
-                         Button("Undo all") { store.undo(Tweaks.windowServer) }
+                         Button("Undo all") { askUndo(Tweaks.windowServer.filter { store.canUndo($0) }, store) }
+                             .tip("Put back every setting System Sentinel changed here, exactly as it was")
                              .disabled(!Tweaks.windowServer.contains { store.canUndo($0) })
-                         Button("Optimise all") { store.apply(Tweaks.windowServer) }.keyboardShortcut(.defaultAction)
+                         Button("Optimise all") { askApply(Tweaks.windowServer.filter { !store.isOptimised($0) }, store) }.keyboardShortcut(.defaultAction)
+                             .tip("Apply every setting below that is not on yet. Each can be undone")
                              .disabled(Tweaks.windowServer.allSatisfy { store.isOptimised($0) })
                      })) {
                     ForEach(Tweaks.windowServer) { t in TweakRow(tweak: t, store: store) }
@@ -244,7 +247,7 @@ struct OptimiseView: View {
                 ScreenDisplaysCard(store: store)
                 WindowsCard(store: store)
                 Card(title: "Menu bar icons hidden behind the notch", symbol: "menubar.rectangle", tint: optTint,
-                     trailing: AnyView(Button("Fit more icons") { store.apply(Tweaks.menuBar) }
+                     trailing: AnyView(Button("Fit more icons") { askApply(Tweaks.menuBar.filter { !store.isOptimised($0) }, store) }
                         .disabled(Tweaks.menuBar.allSatisfy { store.isOptimised($0) }))) {
                     ForEach(Tweaks.menuBar) { t in TweakRow(tweak: t, store: store) }
                 }
@@ -255,6 +258,7 @@ struct OptimiseView: View {
         }
         .frame(minWidth: 620, minHeight: 480)
         .background(Color(nsColor: .windowBackgroundColor))
+        .tipsAndConfirmations(tips, surface: "optimise")
     }
 
     private var header: some View {
@@ -278,6 +282,34 @@ struct OptimiseView: View {
     }
 }
 
+/// Asks before changing settings: which ones, when each takes effect, and that Undo exists.
+@MainActor
+private func askApply(_ list: [Tweak], _ store: TweakStore) {
+    guard !list.isEmpty else { return }
+    var points = list.map { "\($0.title): takes effect \($0.takes.text)." }
+    let restarts = Set(list.map(\.takes)).compactMap { t -> String? in
+        switch t { case .dock: "the Dock"; case .finder: "Finder"; case .windowManager: "the window manager"; default: nil }
+    }
+    if !restarts.isEmpty { points.append("\(restarts.joined(separator: " and ").capitalizingFirst) restart\(restarts.count == 1 ? "s" : "") for a second.") }
+    Confirm.ask(list.count == 1 ? "\(list[0].title)?" : "Apply \(list.count) settings?", "These are ordinary macOS settings.",
+                symbol: "wand.and.stars", tint: optTint, points: points,
+                undo: "System Sentinel keeps what each was before: Undo puts back exactly that.",
+                button: list.count == 1 ? "Apply" : "Apply \(list.count)", surface: "optimise") { store.apply(list) }
+}
+
+@MainActor
+private func askUndo(_ list: [Tweak], _ store: TweakStore) {
+    guard !list.isEmpty else { return }
+    Confirm.ask(list.count == 1 ? "Undo \(list[0].title.lowercased())?" : "Undo \(list.count) settings?",
+                "Each goes back to exactly what it was before System Sentinel changed it.",
+                symbol: "arrow.uturn.backward.circle.fill", tint: optTint, points: list.map(\.title),
+                button: "Undo", surface: "optimise") { store.undo(list) }
+}
+
+private extension String {
+    var capitalizingFirst: String { prefix(1).uppercased() + dropFirst() }
+}
+
 private struct TweakRow: View {
     let tweak: Tweak
     @ObservedObject var store: TweakStore
@@ -291,7 +323,7 @@ private struct TweakRow: View {
                     HStack(spacing: 6) {
                         Text(tweak.title).font(.callout.weight(.semibold))
                         Text(String(repeating: "●", count: tweak.impact) + String(repeating: "○", count: 3 - tweak.impact))
-                            .font(.caption).foregroundStyle(optTint).help("How much it helps")
+                            .font(.caption).foregroundStyle(optTint).tip("How much it helps")
                     }
                     Text(tweak.why).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     Text(on ? (store.canUndo(tweak) ? "On, set by System Sentinel" : "Already on") : "Off. Takes effect \(tweak.takes.text).")
@@ -299,14 +331,14 @@ private struct TweakRow: View {
                 }
                 Spacer(minLength: 8)
                 if store.canUndo(tweak) {
-                    Button("Undo") { store.undo([tweak]) }
+                    Button("Undo") { askUndo([tweak], store) }.tip("Put this setting back exactly as it was before")
                 }
                 if !on {
-                    Button("Apply") { store.apply([tweak]) }
+                    Button("Apply") { askApply([tweak], store) }.tip("Turn this on. Undo puts back what it was")
                 }
                 if let url = tweak.settingsURL {
                     Button { NSWorkspace.shared.open(URL(string: url)!) } label: { Image(systemName: "gearshape") }
-                        .buttonStyle(.borderless).help("Open the same setting in System Settings")
+                        .buttonStyle(.borderless).tip("Open the same setting in System Settings")
                 }
             }
             if let m = store.message[tweak.id] {
@@ -338,7 +370,10 @@ private struct ScreenDisplaysCard: View {
                             Label("Draws exactly the panel's pixels (looks like \(now.w) × \(now.h)).", systemImage: "checkmark.circle")
                                 .font(.caption).foregroundStyle(okColor)
                             Spacer()
-                            Button(String("Undo: back to \(back.w) × \(back.h)")) { store.restoreMode() }
+                            Button(String("Undo: back to \(back.w) × \(back.h)")) {
+                                Confirm.ask("Back to looks like \(back.w) × \(back.h)?", "Puts the built-in display back to the resolution it had before.",
+                                            symbol: "arrow.uturn.backward.circle.fill", tint: optTint, button: "Switch back", surface: "optimise") { store.restoreMode() }
+                            }
                         }
                     } else if let o = d.overdraw, o > 1.05, let n = d.native {
                         let lk = d.looksLike.map { "\($0.w) × \($0.h)" } ?? "this size"
@@ -349,7 +384,15 @@ private struct ScreenDisplaysCard: View {
                                 Text(String(format: "Optional: looks like %d × %d draws exactly the panel's pixels and is the sharpest, but everything is about %.0f%% larger. Only worth it if WindowServer stays high.", e.w, e.h, now.growth(to: e) * 100))
                                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                                 Spacer()
-                                Button(String("Use \(e.w) × \(e.h)")) { store.useExactPixels() }
+                                Button(String("Use \(e.w) × \(e.h)")) {
+                                    Confirm.ask("Switch to looks like \(e.w) × \(e.h)?", "The built-in display draws exactly its own pixels: the sharpest picture and the least work for WindowServer.",
+                                                symbol: "display", tint: optTint,
+                                                points: [String(format: "Everything on screen gets about %.0f%% larger, so less fits.", now.growth(to: e) * 100),
+                                                         "The screen flickers once while it switches."],
+                                                undo: "An Undo button appears here; Display settings can change it back too.",
+                                                button: "Switch", surface: "optimise") { store.useExactPixels() }
+                                }
+                                .tip("Change the built-in display's resolution. Asks first")
                             }
                         }
                     } else if let hz = d.hz, hz > 60 {
@@ -381,7 +424,14 @@ private struct WindowsCard: View {
                     Spacer()
                     Text("\(w.count)").font(.callout.monospacedDigit().weight(.semibold))
                     if let app = NSWorkspace.shared.runningApplications.first(where: { $0.localizedName == w.app }), app.activationPolicy == .regular {
-                        Button("Hide") { app.hide(); DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { store.refresh() } }
+                        Button("Hide") {
+                            Confirm.ask("Hide \(w.app)?", "Its \(w.count) window\(w.count == 1 ? "" : "s") leave the screen, as ⌘H would. It keeps running.",
+                                        symbol: "eye.slash.fill", tint: optTint, undo: "Click its icon in the Dock to show it again.",
+                                        button: "Hide", surface: "optimise") {
+                                app.hide(); DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { store.refresh() }
+                            }
+                        }
+                        .tip("Hide this app's windows, as ⌘H would")
                             .buttonStyle(.link).font(.caption)
                     }
                 }
