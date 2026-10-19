@@ -641,10 +641,19 @@ private struct RelatedRow: View {
             IconView(icon: IconCache.shared.icon(for: s), size: 24)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
-                    Text(s.displayName).font(.caption.weight(.semibold))
-                    Text(Fmt.pct(s.cpu)).font(.caption2.weight(.bold)).monospacedDigit().foregroundStyle(.white)
-                        .padding(.horizontal, 5).padding(.vertical, 1)
-                        .background(Capsule().fill(Theme.heat(s.cpu)))
+                    Text(related.title ?? s.displayName).font(.caption.weight(.semibold))
+                    // A memory insight shows memory; CPU there would read as the wrong number.
+                    if let bytes = related.memoryBytes {
+                        Text(ReportDocument.bytes(bytes)).font(.caption2.weight(.bold)).monospacedDigit().foregroundStyle(.white)
+                            .padding(.horizontal, 5).padding(.vertical, 1)
+                            .background(Capsule().fill(Tab.memory.color))
+                            .tip("Memory it holds: in RAM plus compressed or in swap")
+                    } else {
+                        Text(Fmt.pct(s.cpu)).font(.caption2.weight(.bold)).monospacedDigit().foregroundStyle(.white)
+                            .padding(.horizontal, 5).padding(.vertical, 1)
+                            .background(Capsule().fill(Theme.heat(s.cpu)))
+                            .tip("CPU now; 100% is one core")
+                    }
                     if s.isRoot { Pill(text: "root", symbol: "lock.fill", color: Color(hex: "#b45309")) }
                 }
                 if let about = related.about {
@@ -668,6 +677,18 @@ private struct RelatedRow: View {
             }
             if s.pid == getpid() {
                 EmptyView()
+            } else if let pids = related.pids, let name = related.title, Safety.canKillManually(s) {
+                // The row is the whole app, so its button quits the whole app.
+                Button { model.confirmAndPerform(.quit(pids: pids, name: name)) } label: {
+                    Label("Quit", systemImage: "xmark.circle.fill")
+                        .font(.caption.weight(.bold)).foregroundStyle(.white)
+                        .padding(.horizontal, 9).padding(.vertical, 5)
+                        .background(Capsule().fill(Theme.heat(100)))
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .fixedSize()
+                .tip("Quit \(name), all \(pids.count) processes. Asks first.")
             } else if force {
                 ForceKillButton(model: model, sample: s)
             } else if Safety.canKillManually(s) {

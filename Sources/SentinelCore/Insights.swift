@@ -194,6 +194,12 @@ public struct Insight: Equatable, Sendable, Identifiable {
         public let sample: ProcessSample
         public let about: String?
         public let parent: String?
+        /// Set where the insight is about memory: the row shows this, not CPU.
+        public var memoryBytes: UInt64?
+        /// The app's name, where the row stands for a whole app rather than one process.
+        public var title: String?
+        /// Every process of that app, so its button quits all of them, not just this one.
+        public var pids: [Int32]?
         public var id: Int32 { sample.pid }
 
         public init(sample: ProcessSample, about: String?, parent: String?) {

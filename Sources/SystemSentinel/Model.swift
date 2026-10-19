@@ -879,7 +879,11 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
         }
         x.related = memoryApps.prefix(4).map { a in
             let inRAM = a.bytes > a.outOfRAM ? a.bytes - a.outOfRAM : 0
-            return Insight.Related(sample: a.sample, about: "\(a.name)\(a.pids.count > 1 ? ", all \(a.pids.count) processes" : ""): \(gb(a.bytes)) (\(gb(inRAM)) in RAM, \(gb(a.outOfRAM)) compressed or in swap)", parent: nil)
+            var r = Insight.Related(sample: a.sample, about: "\(a.pids.count > 1 ? "All \(a.pids.count) processes: " : "")\(gb(inRAM)) in RAM, \(gb(a.outOfRAM)) compressed or in swap", parent: nil)
+            r.memoryBytes = a.bytes
+            r.title = a.name
+            if a.pids.count > 1 { r.pids = a.pids }
+            return r
         }
         guard let a = quittable.first else { return x }
         let target = Model.isVM(a.key) ? (vmHost() ?? a) : a

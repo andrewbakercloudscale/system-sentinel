@@ -223,7 +223,11 @@ extension Insights {
                             title: "Memory is \(m.pressure == .critical ? "critically short" : "tight"): \(ReportDocument.bytes(m.swapUsed)) in swap",
                             detail: "\(ReportDocument.bytes(m.used)) of \(ReportDocument.bytes(m.total)) in use. macOS is compressing memory and writing it to disk, which makes everything slower.")
             x.why = "When apps need more memory than the Mac has, macOS first compresses what is idle, then moves it to the swap file on disk. Swapping costs CPU and disk time and feels like a slow Mac, even when CPU figures look modest. The fix is to close what holds the most memory."
-            x.related = heavy.map { Insight.Related(sample: $0, about: "Using \(ReportDocument.bytes(UInt64($0.rssKB) * 1024))", parent: i.parents[$0.pid]) }
+            x.related = heavy.map {
+                var r = Insight.Related(sample: $0, about: ProcessGuide.note(for: $0.name)?.headline, parent: i.parents[$0.pid])
+                r.memoryBytes = UInt64($0.rssKB) * 1024
+                return r
+            }
             x.steps = ["Quit the apps at the top of this list that you are not using.", "Close browser tabs: each one holds its own memory.", "Restarting clears swap that has built up over days."]
             if let top = heavy.first(where: { $0.pid != getpid() && Safety.canKillManually($0) }) {
                 let name = AppIdentity.bundlePath(of: top.path) != nil ? AppIdentity.appName(of: top.path) : top.displayName
