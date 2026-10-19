@@ -426,7 +426,8 @@ private struct DNSDoctorCard: View {
 
     var body: some View {
         Card(title: "DNS doctor", symbol: "text.magnifyingglass", tint: netTint,
-             trailing: AnyView(Group {
+             trailing: AnyView(HStack(spacing: 6) {
+                 RowButton(title: "Map a name…", symbol: "point.3.connected.trianglepath.dotted", color: netTint) { DNSMapWindow.show() }
                  if store.doctorRunning { BusyButton(title: "Checking…") }
                  else { RowButton(title: "Check now", symbol: "arrow.clockwise", color: netTint) { store.runDNSDoctor() } }
              })) {

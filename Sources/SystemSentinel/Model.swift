@@ -213,6 +213,7 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
             Task { @MainActor in self?.tick() }
         }
         if let dir = Model.snapshotDir {
+            if let name = Model.argument("--dnsmap") { DNSMapStore.shared.input = name; DNSMapStore.shared.start() }
             DispatchQueue.main.asyncAfter(deadline: .now() + Model.snapshotDelay) { Snapshot.run(self, into: dir) }
         } else {
             watchForCrashes()

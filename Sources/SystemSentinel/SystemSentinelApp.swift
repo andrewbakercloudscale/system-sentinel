@@ -463,6 +463,25 @@ enum Snapshot {
                     .write(to: URL(fileURLWithPath: dir).appendingPathComponent("\(name)-\(appearance == .aqua ? "light" : "dark").png"))
             }
         }
+        // The DNS map window, when `--dnsmap <name>` started one.
+        if let r = DNSMapStore.shared.result {
+            try? DNSMap.report(r).write(to: URL(fileURLWithPath: dir).appendingPathComponent("dnsmap.txt"), atomically: true, encoding: .utf8)
+            for appearance in [NSAppearance.Name.aqua, .darkAqua] {
+                let host = NSHostingView(rootView: DNSMapView(store: .shared, fullLength: true).frame(width: 920))
+                host.appearance = NSAppearance(named: appearance)
+                let win = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 920, height: 800), styleMask: [.borderless], backing: .buffered, defer: false)
+                win.appearance = NSAppearance(named: appearance)
+                win.contentView = host
+                let size = host.fittingSize
+                win.setContentSize(size)
+                host.frame = NSRect(origin: .zero, size: size)
+                host.layoutSubtreeIfNeeded()
+                guard let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { continue }
+                host.cacheDisplay(in: host.bounds, to: rep)
+                try? rep.representation(using: .png, properties: [:])?
+                    .write(to: URL(fileURLWithPath: dir).appendingPathComponent("dnsmap-\(appearance == .aqua ? "light" : "dark").png"))
+            }
+        }
         exit(0)
     }
 }
