@@ -61,6 +61,8 @@ final class Permissions: ObservableObject {
                          symbol: "bell.badge.fill", state: current), at: 0)
         if list != items { items = list }
         UNUserNotificationCenter.current().getNotificationSettings { settings in
+            let style = settings.alertStyle
+            Task { @MainActor in if self.alertStyle != style { self.alertStyle = style } }
             let s: State
             switch settings.authorizationStatus {
             case .authorized, .provisional: s = .granted
@@ -112,6 +114,12 @@ final class Permissions: ObservableObject {
 
     func openFullDiskAccess() { Permissions.showFullDiskAccess() }
 
+    /// How notifications appear: banners, alerts, or only in Notification Centre.
+    @Published var alertStyle: UNAlertStyle?
+
+    /// Focus settings, where an app can be let through Do Not Disturb and the rest.
+    static func showFocusSettings() { showSettings("x-apple.systempreferences:com.apple.Focus-Settings.extension") }
+
     /// What the last Test said for each permission: passed, and what happened.
     @Published var tested: [String: (ok: Bool, text: String)] = [:]
 
@@ -126,7 +134,7 @@ final class Permissions: ObservableObject {
             content.sound = .default
             UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "test-\(Date().timeIntervalSince1970)", content: content, trigger: nil)) { error in
                 Task { @MainActor in
-                    self.tested[item.id] = error == nil ? (true, "Sent: it should appear at the top right now.")
+                    self.tested[item.id] = error == nil ? (true, "Sent. If it went straight to Notification Centre without popping up, a Focus is on (the moon in the menu bar): let System Sentinel through it below.")
                                                         : (false, "Not sent: \(error!.localizedDescription)")
                 }
             }
@@ -275,6 +283,7 @@ struct PermissionsCard: View {
                     Button("Test") { permissions.test(p) }
                         .help(p.id == "notifications" ? "Sends a test notification." : "Checks that the permission works now.")
                 }
+                if p.id == "notifications", p.state == .granted { NotificationStyleRow(permissions: permissions) }
                 if let t = permissions.tested[p.id] {
                     Label(t.text, systemImage: t.ok ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
                         .font(.caption).foregroundStyle(t.ok ? Tab.battery.color : Theme.heat(100))
@@ -284,6 +293,34 @@ struct PermissionsCard: View {
             Text("Admin password prompts (purge memory, Low Power Mode, killing root processes) cannot be granted in advance: macOS asks each time, by design. Permissions stay granted across updates as long as the app is signed with the same certificate.")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
+    }
+}
+
+/// How notifications show up, and the two settings that stop them popping up: the alert
+/// style and Focus (Do Not Disturb keeps them silent in Notification Centre).
+private struct NotificationStyleRow: View {
+    @ObservedObject var permissions: Permissions
+    var body: some View {
+        let style: String = switch permissions.alertStyle {
+        case .alert: "Alerts (stay until dismissed)"
+        case .banner: "Banners (pop up for a few seconds)"
+        case .some(.none): "Off: only listed in Notification Centre"
+        default: "checking…"
+        }
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                Text("Pops up as: \(style)").font(.caption).foregroundStyle(permissions.alertStyle == UNAlertStyle.none ? Theme.heat(100) : .secondary)
+                Spacer()
+                Button("Change") { Permissions.showNotificationSettings() }.buttonStyle(.link).font(.caption)
+            }
+            HStack(spacing: 6) {
+                Text("A Focus such as Do Not Disturb holds them silently in Notification Centre unless System Sentinel is an allowed app.")
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                Spacer()
+                Button("Allow through Focus") { Permissions.showFocusSettings() }.buttonStyle(.link).font(.caption)
+            }
+        }
+        .padding(.leading, 34)
     }
 }
 

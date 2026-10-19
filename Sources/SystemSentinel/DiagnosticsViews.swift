@@ -24,6 +24,7 @@ extension Model {
         var lines = ["System Sentinel \(Model.appVersion) (\(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?"))",
                      "macOS \(os), \(Int(cores)) cores, \(ReportDocument.bytes(ProcessInfo.processInfo.physicalMemory)) memory",
                      "Running since \(taskHealth.started.formatted(date: .abbreviated, time: .shortened))",
+                     "Own CPU, last minute: " + (SelfGuard.usage.map { String(format: "%.1f%% of one core", $0) } ?? "measuring") + String(format: " (background jobs wait above %.0f%%)", SelfGuard.budget.limit),
                      "", "Background jobs:"]
         let stale = Set(taskHealth.stale(at: now, skip: autoUpdateCheck ? [] : [.updateCheck]))
         for job in TaskHealth.Job.allCases {

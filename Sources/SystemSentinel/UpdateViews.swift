@@ -124,6 +124,7 @@ extension Model {
                         self.showToast(Toast(ok: false, title: "Update not installed", detail: "Could not start the installer: \(error.localizedDescription)"))
                         return
                     }
+                    FileManager.default.createFile(atPath: Model.updateMarker.path, contents: Data(rel.version.utf8))
                     let note = UNMutableNotificationContent()
                     note.title = "System Sentinel"
                     note.subtitle = "Restarting to update"

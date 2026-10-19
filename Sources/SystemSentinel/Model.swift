@@ -218,6 +218,7 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
         } else {
             watchForCrashes()
             saveOnQuit()
+            announceUpdate()
             scheduleUpdateChecks()
         }
     }
@@ -233,6 +234,7 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
     enum Level { case normal, busy, alert }
 
     func tick() {
+        SelfGuard.record()
         do {
             let events = try sentinel.tick()
             top = sentinel.top(30)
@@ -1262,6 +1264,24 @@ extension Model {
 
     /// Quit from the menu, logout and restart arrive as willTerminate; an installer or `kill`
     /// sends SIGTERM, which otherwise ends the app on the spot.
+    /// Written by an install just before it quits the app; read at the next launch.
+    nonisolated static var updateMarker: URL { supportDir.appendingPathComponent("update-pending") }
+
+    /// At launch: a new build since last time says so, so a restart is never a mystery.
+    func announceUpdate() {
+        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""
+        let last = UserDefaults.standard.string(forKey: "lastLaunchedBuild")
+        let marked = FileManager.default.fileExists(atPath: Model.updateMarker.path)
+        try? FileManager.default.removeItem(at: Model.updateMarker)
+        UserDefaults.standard.set(build, forKey: "lastLaunchedBuild")
+        guard marked || (last != nil && last != build) else { return }
+        let note = UNMutableNotificationContent()
+        note.title = "System Sentinel \(Model.appVersion) is running"
+        note.body = last == build ? "Restarted with a fresh build. Monitoring carried on where it left off."
+                                  : "Updated and restarted (build \(build)). Monitoring carried on where it left off."
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "updated-\(build)", content: note, trigger: nil))
+    }
+
     func saveOnQuit() {
         NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: .main) { _ in
             MainActor.assumeIsolated { Model.current?.saveAll(); Model.crashMarker.cleanExit() }
@@ -1271,7 +1291,15 @@ extension Model {
         source.setEventHandler {
             MainActor.assumeIsolated { Model.current?.saveAll() }
             Model.crashMarker.cleanExit()
-            exit(0)
+            // An install asked us to quit (it leaves a marker): say so from the app itself, which
+            // macOS shows reliably, unlike a script's notification.
+            guard FileManager.default.fileExists(atPath: Model.updateMarker.path) else { exit(0) }
+            let note = UNMutableNotificationContent()
+            note.title = "System Sentinel"
+            note.subtitle = "Restarting to update"
+            note.body = "Installing a new version. Back in a few seconds."
+            UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "restarting", content: note, trigger: nil)) { _ in exit(0) }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { exit(0) }
         }
         source.resume()
         Model.termSource = source

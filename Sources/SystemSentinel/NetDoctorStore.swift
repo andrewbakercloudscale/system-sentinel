@@ -32,11 +32,11 @@ extension NetworkStore {
         monitor.start(queue: .global(qos: .utility))
         Self.pathMonitor = monitor
         timers += [
-            Timer.scheduledTimer(withTimeInterval: 600, repeats: true) { [weak self] _ in Task { @MainActor in self?.runDNSDoctor() } },
-            Timer.scheduledTimer(withTimeInterval: 1800, repeats: true) { [weak self] _ in Task { @MainActor in self?.checkInspection() } },
+            Timer.scheduledTimer(withTimeInterval: 600, repeats: true) { [weak self] _ in Task { @MainActor in SelfGuard.when("DNS checks") { self?.runDNSDoctor() } } },
+            Timer.scheduledTimer(withTimeInterval: 1800, repeats: true) { [weak self] _ in Task { @MainActor in SelfGuard.when("HTTPS check") { self?.checkInspection() } } },
         ]
-        DispatchQueue.main.asyncAfter(deadline: .now() + 12) { [weak self] in self?.runDNSDoctor() }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 16) { [weak self] in self?.checkInspection() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 12) { [weak self] in SelfGuard.when("DNS checks") { self?.runDNSDoctor() } }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 16) { [weak self] in SelfGuard.when("HTTPS check") { self?.checkInspection() } }
     }
 
     func recordLookup(ok: Bool, ms: Double?) {

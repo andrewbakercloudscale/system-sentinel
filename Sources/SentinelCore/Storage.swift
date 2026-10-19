@@ -213,9 +213,11 @@ public enum DiskUsage {
         var out: [String: UInt64] = [:]
         let lock = NSLock()
         let list = StoragePlace.all.filter { p in !skip.contains { p.path.hasPrefix($0) } }
-        DispatchQueue.concurrentPerform(iterations: list.count) { i in
-            let p = list[i]
-            if let s = size(of: home.appendingPathComponent(p.path), deadline: Date().addingTimeInterval(deadline)) {
+        // One folder at a time: measuring them all at once took every core for several
+        // seconds. Slower, and never in the way.
+        let end = Date().addingTimeInterval(deadline)
+        for p in list {
+            if let s = size(of: home.appendingPathComponent(p.path), deadline: end) {
                 lock.lock(); out[p.key] = s.bytes; lock.unlock()
             }
         }
@@ -367,6 +369,7 @@ public enum Spotlight {
     public static func find(_ query: String, in dir: String? = nil) -> [String] {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/usr/bin/mdfind")
+        p.qualityOfService = .background
         p.arguments = (dir.map { ["-onlyin", $0] } ?? []) + ["-0", query]
         let pipe = Pipe()
         p.standardOutput = pipe

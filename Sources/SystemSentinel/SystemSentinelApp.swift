@@ -13,6 +13,7 @@ struct SystemSentinelApp: App {
     @State private var inserted = Model.snapshotDir == nil
 
     init() {
+        SelfGuard.start()
         // Before Model reads any settings.
         Migration.fromCPUSentinel()
     }

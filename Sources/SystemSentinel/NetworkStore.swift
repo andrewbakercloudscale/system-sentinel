@@ -61,7 +61,7 @@ final class NetworkStore: ObservableObject {
             Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in Task { @MainActor in self?.sample() } },
             Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in Task { @MainActor in self?.readTraffic() } },
             Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in Task { @MainActor in self?.readLink() } },
-            Timer.scheduledTimer(withTimeInterval: 180, repeats: true) { [weak self] _ in Task { @MainActor in self?.test() } },
+            Timer.scheduledTimer(withTimeInterval: 180, repeats: true) { [weak self] _ in Task { @MainActor in SelfGuard.when("network test") { self?.test() } } },
         ]
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in self?.readTraffic() }
         DispatchQueue.main.asyncAfter(deadline: .now() + 8) { [weak self] in self?.test() }

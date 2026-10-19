@@ -51,6 +51,7 @@ public enum ProcessSampler {
     public static func sample() throws -> [ProcessSample] {
         let task = Process()
         task.executableURL = URL(fileURLWithPath: "/bin/ps")
+        task.qualityOfService = .utility
         task.arguments = arguments
         let pipe = Pipe()
         task.standardOutput = pipe

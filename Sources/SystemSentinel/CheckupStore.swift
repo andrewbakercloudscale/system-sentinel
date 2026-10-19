@@ -20,9 +20,9 @@ final class CheckupStore: ObservableObject {
 
     init(readOnly: Bool) {
         if readOnly { run(); return }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 60) { [weak self] in self?.run() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 60) { [weak self] in SelfGuard.when("checkup") { self?.run() } }
         timer = Timer.scheduledTimer(withTimeInterval: 6 * 3600, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.run() }
+            Task { @MainActor in SelfGuard.when("checkup") { self?.run() } }
         }
     }
 
@@ -486,6 +486,8 @@ nonisolated func sh(_ path: String, _ args: [String], timeout: TimeInterval = 20
     let p = Process()
     p.executableURL = URL(fileURLWithPath: path)
     p.arguments = args
+    // Every command we run waits behind the apps you are using.
+    p.qualityOfService = .utility
     let pipe = Pipe()
     p.standardOutput = pipe
     p.standardError = pipe

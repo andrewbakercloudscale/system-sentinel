@@ -41,7 +41,7 @@ final class StorageStore: ObservableObject {
         timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.periodic() }
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 20) { [weak self] in self?.scan() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 20) { [weak self] in SelfGuard.when("storage scan") { self?.scan() } }
     }
 
     private func periodic() {
@@ -49,8 +49,8 @@ final class StorageStore: ObservableObject {
         let now = Date()
         // Full Disk Access just granted: measure the folders that were left out.
         if !fullAccess, !scanning, Permissions.hasFullDiskAccess() { fullAccess = true; scan() }
-        if !scanning, foundAt.map({ now.timeIntervalSince($0) >= 6 * 3600 }) ?? true { scan() }
-        if treeProgress == nil, tree.map({ now.timeIntervalSince($0.at) >= 86_400 }) ?? true, foundAt != nil { scanTree() }
+        if !scanning, foundAt.map({ now.timeIntervalSince($0) >= 6 * 3600 }) ?? true { SelfGuard.when("storage scan") { [weak self] in self?.scan() } }
+        if treeProgress == nil, tree.map({ now.timeIntervalSince($0.at) >= 86_400 }) ?? true, foundAt != nil { SelfGuard.when("folder sizes") { [weak self] in self?.scanTree() } }
     }
 
     func readDisk() {
@@ -73,7 +73,7 @@ final class StorageStore: ObservableObject {
         guard !scanning else { return }
         scanning = true
         let home = self.home
-        Task.detached(priority: .utility) {
+        Task.detached(priority: .background) {
             let result = StorageStore.findEverything(home: home)
             await MainActor.run {
                 self.found = result.found
@@ -370,6 +370,7 @@ final class StorageStore: ObservableObject {
     nonisolated static func run(_ path: String, _ args: [String]) -> String {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: path)
+        p.qualityOfService = .background
         p.arguments = args
         let pipe = Pipe()
         p.standardOutput = pipe
