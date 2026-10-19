@@ -108,7 +108,14 @@ struct MenuView: View {
                     // Banners scroll with the page: a window that changes height while open
                     // can make AppKit abort mid-layout.
                     ScrollViewReader { proxy in
-                        ScrollView(.vertical) { VStack(spacing: 10) { banners; page }.padding(.trailing, 2) }
+                        ScrollView(.vertical) {
+                            // Lazy only on Processes, whose bar pins; elsewhere scrollTo needs every card built.
+                            if tab == .processes {
+                                LazyVStack(spacing: 10, pinnedViews: [.sectionHeaders]) { banners; page }.padding(.trailing, 2)
+                            } else {
+                                VStack(spacing: 10) { banners; page }.padding(.trailing, 2)
+                            }
+                        }
                             .frame(height: Self.contentHeight)
                             .onChange(of: model.focus) { _, card in
                                 guard let card else { return }

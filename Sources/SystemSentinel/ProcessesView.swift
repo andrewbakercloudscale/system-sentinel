@@ -37,6 +37,23 @@ struct ProcessesView: View {
         let all = frozen?.rows ?? (model.top.isEmpty ? [] : model.sentinel.latest)
         let rows = Array(sorted(all.filter { search.isEmpty || $0.displayName.localizedCaseInsensitiveContains(search) }, by: sort).prefix(30))
         let window = sort.window ?? 900
+        // A Section so the menu's scroll view can pin this bar: Filter, Pause, Sort and the
+        // column headers stay in view however far the list is scrolled.
+        Section {
+            VStack(spacing: 2) {
+                let cols = ProcessColumns(trend: colTrend, now: colNow, avg: colAvg, mem: colMem)
+                ForEach(Array(rows.enumerated()), id: \.element.pid) { i, s in
+                    ProcessRow(model: model, sample: s, zebra: i.isMultiple(of: 2), window: window, cols: cols)
+                }
+            }
+            Text("100% is one full core; a busy process can use several. Averages count idle time, so they show what has been chewing the CPU, not how hot it runs when it does.")
+                .font(.caption2).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
+        } header: {
+            toolbar(sort: sort, window: window)
+        }
+    }
+
+    private func toolbar(sort: Sort, window: TimeInterval) -> some View {
         VStack(spacing: 8) {
             HStack(spacing: 8) {
                 HStack(spacing: 5) {
@@ -61,15 +78,10 @@ struct ProcessesView: View {
             }
             .font(.caption2.weight(.medium)).foregroundStyle(.secondary)
             .tip("Drag a column's left edge to resize it; double-click the edge to reset")
-            VStack(spacing: 2) {
-                let cols = ProcessColumns(trend: colTrend, now: colNow, avg: colAvg, mem: colMem)
-                ForEach(Array(rows.enumerated()), id: \.element.pid) { i, s in
-                    ProcessRow(model: model, sample: s, zebra: i.isMultiple(of: 2), window: window, cols: cols)
-                }
-            }
-            Text("100% is one full core; a busy process can use several. Averages count idle time, so they show what has been chewing the CPU, not how hot it runs when it does.")
-                .font(.caption2).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
         }
+        .padding(.vertical, 6)
+        // Opaque, so rows scrolling underneath the pinned bar do not show through it.
+        .background(Color(nsColor: .windowBackgroundColor))
     }
 
     private var pauseButton: some View {
