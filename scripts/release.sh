@@ -12,7 +12,7 @@
 # NOTARY_PROFILE is a keychain profile made once with
 #   xcrun notarytool store-credentials system-sentinel --apple-id you@example.com --team-id TEAMID
 #
-# Without them the app is ad-hoc signed: users must run `xattr -cr` on it (see the README).
+# Without them the app is ad-hoc signed: users must clear the quarantine flag, `xattr -dr com.apple.quarantine`, on it (see the README).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -48,7 +48,7 @@ if [[ -n "${DEVELOPER_ID:-}" ]]; then
     fi
 else
     source "$(dirname "$0")/sign-id.sh"
-    echo "== sign: $SENTINEL_SIGN_ID (no DEVELOPER_ID: users need xattr -cr)"
+    echo "== sign: $SENTINEL_SIGN_ID (no DEVELOPER_ID: users need xattr -dr com.apple.quarantine)"
     codesign --force --sign "$SENTINEL_SIGN_ID" "$APP"
     codesign --verify "$APP"
 fi

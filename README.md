@@ -51,7 +51,8 @@ rm -rf "/Applications/CPU Sentinel.app"
 ditto -x -k "$ZIP" "$TMP/unzipped"
 rm -rf "$APP"
 ditto "$(ls -d "$TMP"/unzipped/*.app | head -1)" "$APP"
-xattr -cr "$APP"
+# Not notarised by Apple: clear only the download quarantine flag.
+xattr -dr com.apple.quarantine "$APP"
 
 if [ -z "${SYSTEM_SENTINEL_NO_OPEN:-}" ]; then
   echo "== Launching"

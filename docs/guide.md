@@ -452,7 +452,7 @@ allowed to control Terminal. Allow it in **System Settings > Privacy & Security 
 Automation > System Sentinel > Terminal**.
 
 **macOS says the app is damaged or can't be opened (downloaded build).** Run
-`xattr -cr "/Applications/System Sentinel.app"`. The build isn't notarised by Apple.
+`xattr -dr com.apple.quarantine "/Applications/System Sentinel.app"`, or right-click the app, choose **Open** and confirm. The build isn't notarised by Apple, so this is you choosing to trust it; the source is public if you want to check it first. The command removes only the quarantine flag macOS adds to downloads.
 
 **A process shows over 100%.** That's normal: 100% is one core. See
 [the basics](#the-basics-what-the-percentages-mean).
