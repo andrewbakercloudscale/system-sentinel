@@ -7,9 +7,21 @@ import SwiftUI
 extension Model {
     private static let red = Theme.heat(100)
 
+    /// The same figures the insight quotes: the apps' whole footprint, split into RAM and what is
+    /// compressed or in swap. RSS alone counts only the RAM part and undersells a quit.
     func memoryText(_ pids: [Int32]) -> String? {
-        let kb = pids.compactMap { sample(pid: $0)?.rssKB }.reduce(0, +)
-        return kb > 0 ? "Frees about \(Fmt.memory(kb)) of memory." : nil
+        let wanted = Set(pids)
+        let apps = memoryApps.filter { !wanted.isDisjoint(with: $0.pids) }
+        let bytes = apps.map(\.bytes).reduce(0, +)
+        guard bytes > 0 else {
+            let kb = pids.compactMap { sample(pid: $0)?.rssKB }.reduce(0, +)
+            return kb > 0 ? "Frees about \(Fmt.memory(kb)) of memory." : nil
+        }
+        let away = apps.map(\.outOfRAM).reduce(0, +)
+        guard away > 0 else { return "Frees about \(ReportDocument.bytes(bytes)) of memory." }
+        let inRAM = bytes > away ? bytes - away : 0
+        return "Frees about \(ReportDocument.bytes(bytes)) of memory: \(ReportDocument.bytes(inRAM)) of RAM and "
+            + "\(ReportDocument.bytes(away)) that is compressed or in swap."
     }
 
     // MARK: Processes
