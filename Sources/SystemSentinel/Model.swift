@@ -100,6 +100,8 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
         let ok: Bool
         let title: String
         let detail: String?
+        /// Which window shows it: "main" (the menu and its pop-out) or "about".
+        var surface = "main"
     }
 
     let sentinel: Sentinel

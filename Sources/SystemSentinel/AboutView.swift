@@ -32,6 +32,12 @@ struct AboutView: View {
             }
             .padding(20)
         }
+        .overlay(alignment: .top) {
+            if let t = model.toast, t.surface == "about" {
+                ToastView(toast: t) { model.toast = nil }.padding(.horizontal, 16).padding(.top, 10)
+            }
+        }
+        .animation(.spring(duration: 0.3), value: model.toast)
         .frame(width: 560)
         .frame(minHeight: 520, idealHeight: 760)
         .tipsAndConfirmations(tips, surface: "about")
@@ -65,7 +71,7 @@ struct AboutView: View {
                         .tip("Download the new version, check it, install it and reopen. Asks first")
                 }
                 Button {
-                    model.checkForUpdates(manual: true)
+                    model.checkForUpdates(manual: true, surface: "about")
                 } label: {
                     if model.updateState == .checking {
                         HStack(spacing: 6) { ProgressView().controlSize(.small); Text("Checking…") }
@@ -73,6 +79,7 @@ struct AboutView: View {
                         Label("Check for updates", systemImage: "arrow.clockwise")
                     }
                 }
+                .buttonStyle(.borderedProminent).tint(tint)
                 .disabled(model.updateState == .checking || model.updateState == .installing)
                 .tip("Ask GitHub whether a newer release is out")
             }
@@ -102,7 +109,7 @@ struct AboutView: View {
                 linkRow("LinkedIn", "linkedin.com/in/andrew-baker-ninja", "person.2.fill", Color(hex: "#0a66c2"), Self.linkedIn)
                 linkRow("Blog", "andrewbaker.ninja", "text.book.closed.fill", Tab.battery.color, Self.blog)
                 linkRow("CloudScale Consulting", "cloudscale.consulting", "cloud.fill", Tab.network.color, Self.cloudScale)
-                linkRow("GitHub", "github.com/andrewbakercloudscale", "chevron.left.forwardslash.chevron.right", Color.primary, Self.gitHubProfile)
+                linkRow("GitHub", "github.com/andrewbakercloudscale", "chevron.left.forwardslash.chevron.right", Tab.overview.color, Self.gitHubProfile)
             }
         }
     }
@@ -110,11 +117,11 @@ struct AboutView: View {
     private var project: some View {
         Card(title: "The project", symbol: "shippingbox", tint: Tab.storage.color) {
             VStack(spacing: 6) {
-                linkRow("Source code", "github.com/\(Updates.repo)", "curlybraces", Tab.storage.color, Self.repoPage)
-                linkRow("User guide", "Every screen and setting explained", "book.fill", Tab.storage.color, Self.guide)
-                linkRow("Report a problem or ask for a feature", "GitHub issues", "exclamationmark.bubble.fill", Tab.storage.color, Self.issues)
-                linkRow("The story behind it", "andrewbaker.ninja blog post", "newspaper.fill", Tab.storage.color, Self.post)
-                linkRow("Licence", "MIT", "checkmark.seal.fill", Tab.storage.color, Self.licence)
+                linkRow("Source code", "github.com/\(Updates.repo)", "curlybraces", Tab.trends.color, Self.repoPage)
+                linkRow("User guide", "Every screen and setting explained", "book.fill", Tab.memory.color, Self.guide)
+                linkRow("Report a problem or ask for a feature", "GitHub issues", "exclamationmark.bubble.fill", Tab.events.color, Self.issues)
+                linkRow("The story behind it", "andrewbaker.ninja blog post", "newspaper.fill", Tab.checkup.color, Self.post)
+                linkRow("Licence", "MIT", "checkmark.seal.fill", Tab.rules.color, Self.licence)
             }
             Text("Monitoring runs on this Mac and nothing is uploaded. The app is not notarised by Apple; the source is public so anyone can check what it does.")
                 .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
@@ -131,6 +138,7 @@ struct AboutView: View {
              } label: {
                  Label(copied ? "Copied" : "Copy details", systemImage: copied ? "checkmark" : "doc.on.doc")
              }
+             .buttonStyle(.bordered).tint(Tab.trends.color)
              .tip("Copy these details, for a bug report or a support ticket"))) {
             Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 6) {
                 ForEach(rows, id: \.0) { row in
@@ -144,9 +152,11 @@ struct AboutView: View {
                 Button { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: Bundle.main.bundlePath)]) } label: {
                     Label("Show the app in Finder", systemImage: "folder")
                 }
+                .buttonStyle(.bordered).tint(Tab.processes.color)
                 Button { NSWorkspace.shared.open(Model.supportDir) } label: {
                     Label("Open the data folder", systemImage: "externaldrive")
                 }
+                .buttonStyle(.bordered).tint(Tab.storage.color)
                 .tip("History and settings live here: " + Model.supportDir.path)
             }
         }

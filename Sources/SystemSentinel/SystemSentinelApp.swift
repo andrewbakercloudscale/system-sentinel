@@ -128,7 +128,7 @@ struct MenuView: View {
                 }
             }
             .overlay(alignment: .top) {
-                if let t = model.toast { ToastView(toast: t) { model.toast = nil }.padding(.top, 6) }
+                if let t = model.toast, t.surface == "main" { ToastView(toast: t) { model.toast = nil }.padding(.top, 6) }
             }
             .animation(.spring(duration: 0.3), value: model.toast)
             footer
@@ -207,10 +207,10 @@ struct MenuView: View {
                 AboutWindow.show(model)
             }
             .tip("Version, updates, links and who made it")
-            FooterButton(title: "Activity Monitor", symbol: "waveform.path.ecg", color: Tab.processes.color) {
+            FooterButton(title: "Activity Monitor", symbol: "waveform.path.ecg", color: Tab.battery.color) {
                 NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/Utilities/Activity Monitor.app"))
             }
-            FooterButton(title: "Quit", symbol: "power", color: Tab.settings.color) {
+            FooterButton(title: "Quit", symbol: "power", color: Theme.heat(100)) {
                 model.sentinel.dailyUsage.save()
                 model.sentinel.recentUsage.save()
                 model.powerHistory.save()
@@ -403,6 +403,7 @@ struct SettingsView: View {
             Button { AboutWindow.show(model) } label: {
                 Label("About System Sentinel", systemImage: "info.circle")
             }
+            .buttonStyle(.bordered).tint(Tab.overview.color)
             .tip("Version, updates, links and who made it")
             PermissionsCard(permissions: model.permissions)
             DiagnosticsCard(model: model)
@@ -718,25 +719,29 @@ struct ToastView: View {
     let close: () -> Void
 
     var body: some View {
-        let color = toast.ok ? Theme.heat(0) : Theme.heat(100)
+        // Solid green or red with white text: it sits over busy, colourful cards and has to win.
+        let color = toast.ok ? Color(hex: "#15803d") : Color(hex: "#b91c1c")
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: toast.ok ? "checkmark.circle.fill" : "xmark.octagon.fill")
-                .font(.title3).foregroundStyle(color)
+                .font(.title2).foregroundStyle(.white)
             VStack(alignment: .leading, spacing: 3) {
-                Text(toast.title).font(.callout.weight(.semibold))
+                Text(toast.title).font(.body.weight(.semibold)).foregroundStyle(.white)
                 if let d = toast.detail {
-                    Text(d).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    Text(d).font(.callout).foregroundStyle(.white).fixedSize(horizontal: false, vertical: true)
                 }
             }
             Spacer(minLength: 4)
-            Button(action: close) { Image(systemName: "xmark").font(.caption.weight(.bold)).foregroundStyle(.secondary) }
-                .buttonStyle(.plain)
+            Button(action: close) {
+                Image(systemName: "xmark").font(.callout.weight(.bold)).foregroundStyle(.white)
+                    .padding(6).background(Circle().fill(.white.opacity(0.2)))
+            }
+            .buttonStyle(.plain)
         }
-        .padding(12)
+        .padding(14)
         .frame(maxWidth: 520)
-        .background(RoundedRectangle(cornerRadius: 12).fill(.regularMaterial))
-        .overlay(RoundedRectangle(cornerRadius: 12).stroke(color.opacity(0.6), lineWidth: 1.5))
-        .shadow(color: .black.opacity(0.18), radius: 10, y: 4)
+        .background(RoundedRectangle(cornerRadius: 12).fill(color))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(.white.opacity(0.35), lineWidth: 1))
+        .shadow(color: color.opacity(0.45), radius: 14, y: 6)
         .transition(.move(edge: .top).combined(with: .opacity))
     }
 }

@@ -22,8 +22,9 @@ extension Model {
         }
     }
 
-    /// `manual` reports the outcome on screen; the automatic check stays quiet unless it finds one.
-    func checkForUpdates(manual: Bool) {
+    /// `manual` reports the outcome on screen, in the window named by `surface`; the automatic
+    /// check stays quiet unless it finds one.
+    func checkForUpdates(manual: Bool, surface: String = "main") {
         guard updateState != .checking, updateState != .installing else { return }
         updateState = .checking
         let mine = Model.appVersion
@@ -43,12 +44,12 @@ extension Model {
                     } else {
                         self.update = nil
                         self.updateState = .upToDate
-                        if manual { self.showToast(Toast(ok: true, title: "System Sentinel is up to date", detail: nil)) }
+                        if manual { self.showToast(Toast(ok: true, title: "System Sentinel is up to date", detail: "You have the latest version, v\(Model.appVersion).", surface: surface)) }
                     }
                 case .failure(let e):
                     self.updateState = .failed(e.text)
                     Diagnostics.report("update", "Update check failed: \(e.text)")
-                    if manual { self.showToast(Toast(ok: false, title: "Could not check for updates", detail: e.text)) }
+                    if manual { self.showToast(Toast(ok: false, title: "Could not check for updates", detail: e.text, surface: surface)) }
                 }
             }
         }
@@ -217,6 +218,7 @@ struct UpdatesCard: View {
                                          "Settings and history are kept."], button: "Reinstall") { model.reinstallLatest() }
                 }
                 .tip("Download and install the latest release again, even if you already have it")
+                .buttonStyle(.bordered).tint(Tab.events.color)
                 .disabled(model.updateState == .checking || model.updateState == .installing)
                 Button {
                     model.checkForUpdates(manual: true)
@@ -227,6 +229,7 @@ struct UpdatesCard: View {
                         Label("Check for updates", systemImage: "arrow.clockwise")
                     }
                 }
+                .buttonStyle(.borderedProminent).tint(Color(hex: "#2563eb"))
                 .disabled(model.updateState == .checking || model.updateState == .installing)
             }
             ChangesList(changes: model.changes)
