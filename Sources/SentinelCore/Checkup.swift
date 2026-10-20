@@ -69,6 +69,14 @@ public struct Check: Identifiable, Equatable, Sendable {
     public var items: [String] = []
     /// One-click fixes that need the app, such as quitting an app or opening another tab.
     public var actions: [FixAction] = []
+    /// Who or what it is about (the apps holding the Mac awake, the app that crashes), so
+    /// ignoring it ignores just that: a different app doing the same thing shows again.
+    public var subject: String?
+
+    /// What Ignore remembers. A finding with a subject is ignored for good; one without (the
+    /// Mac running hot, the disk filling) is a passing state, so it is ignored for a day.
+    public var ignoreKey: String { id + (subject.map { ":" + $0 } ?? "") }
+    public var ignoreFor: TimeInterval { subject == nil ? 86_400 : .infinity }
 
     public init(id: String, area: Area, title: String, status: Status, detail: String, why: String? = nil,
                 steps: [String] = [], fixes: [Fix] = [], items: [String] = []) {

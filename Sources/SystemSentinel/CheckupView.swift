@@ -30,9 +30,10 @@ struct CheckupView: View {
 
     private var hero: some View {
         // Symptoms found from live numbers count too; network and restarts are already checks.
-        let live = Diagnose.found(model.vitals()).filter { $0.symptom != .network && $0.symptom != .restarts }.map(\.check)
-        let problems = (store.checks + live).filter { $0.status == .problem }.count
-        let warnings = (store.checks + live).filter { $0.status == .warning }.count
+        let live = Diagnose.found(model.vitals(), ignoring: store.ignoredKeys).filter { $0.symptom != .network && $0.symptom != .restarts }.map(\.check)
+        let shown = store.checks.filter { !store.isIgnored($0) } + live
+        let problems = shown.filter { $0.status == .problem }.count
+        let warnings = shown.filter { $0.status == .warning }.count
         let ok = store.checks.filter { $0.status == .ok }.count
         let colors: [Color] = problems > 0 ? [Color(hex: "#b91c1c"), Color(hex: "#9f1239")]
             : warnings > 0 ? [Color(hex: "#b45309"), Color(hex: "#c2410c")] : [Color(hex: "#047857"), Color(hex: "#0f766e")]

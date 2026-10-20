@@ -125,7 +125,8 @@ struct SymptomsCard: View {
 
     var body: some View {
         let v = model.vitals()
-        let found = Diagnose.found(v)
+        let found = Diagnose.found(v, ignoring: store.ignoredKeys)
+        let ignoredCount = store.ignoredKeys.count
         let flagged = Dictionary(found.map { ($0.symptom, $0.check.status) }, uniquingKeysWith: max)
         Card(title: "What's wrong?", symbol: "stethoscope", tint: tint) {
             if found.isEmpty {
@@ -143,6 +144,15 @@ struct SymptomsCard: View {
                                 Text(f.symptom.rawValue).font(.caption).foregroundStyle(.secondary)
                             }
                             Spacer(minLength: 6)
+                            Button { withAnimation { store.ignore(f.check) } } label: {
+                                Text("Ignore").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                                    .padding(.horizontal, 10).padding(.vertical, 4)
+                                    .background(Capsule().strokeBorder(Color.secondary.opacity(0.5)))
+                                    .contentShape(Capsule())
+                            }
+                            .buttonStyle(.plain)
+                            .tip(f.check.subject == nil ? "Hide this for a day. Show again below brings it back"
+                                                        : "It is on purpose: stop flagging this. Something else causing it still shows. Show again below brings it back")
                             Text(open == f.symptom ? "Hide" : "Fix it").font(.caption.weight(.semibold)).foregroundStyle(.white)
                                 .padding(.horizontal, 10).padding(.vertical, 4)
                                 .background(Capsule().fill(color(f.check.status)))
@@ -151,6 +161,14 @@ struct SymptomsCard: View {
                     }
                     .buttonStyle(.plain)
                     .tip("Show what was found and how to fix it")
+                }
+            }
+            if ignoredCount > 0 {
+                HStack(spacing: 6) {
+                    Text("\(ignoredCount) ignored").font(.callout).foregroundStyle(.secondary)
+                    Button("Show again") { withAnimation { store.showIgnoredAgain() } }
+                        .buttonStyle(.link).font(.callout)
+                        .tip("Flag everything you have ignored again")
                 }
             }
             Text("OR SAY WHAT FEELS WRONG").font(.caption.weight(.bold)).foregroundStyle(.secondary).padding(.top, 4)
