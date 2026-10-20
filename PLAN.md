@@ -1,7 +1,8 @@
 # System Sentinel: plan
 
-A macOS menu bar app that watches every process, alerts on the ones burning CPU, and kills
-them on request or automatically, per process.
+A macOS menu bar app that finds what is wrong with a Mac and fixes it in a click. It began
+as a watcher for processes burning CPU (it was called CPU Sentinel until v0.7.0) and now
+covers memory, energy, storage, network and a checkup of common problems.
 
 ## Why
 
@@ -14,7 +15,7 @@ On 2026-10-16 the Mac sat at load 55 to 70 for hours. The causes were found by h
 Nothing told the owner. The fix each time was one `kill`. This app makes that a notification
 and a click, or no click at all.
 
-## What it does (v1)
+## What v1 set out to do (all shipped)
 
 1. **Menu bar icon** that changes colour with load: normal, busy, alert. The menu lists
    the top processes with CPU %, how long each has been hot, and a Kill button.
@@ -66,21 +67,35 @@ not a promise.
   process; `ps` holds a private entitlement an ad-hoc app cannot. Cost: under 1% CPU.
 - **Notifications:** `UserNotifications` with action buttons.
 - **Kill:** `kill(2)` for user processes; an `osascript` admin prompt for root ones in v1.
-- **Settings and policies:** a JSON file in `~/Library/Application Support/CPUSentinel/`.
+- **Settings and policies:** a JSON file in `~/Library/Application Support/SystemSentinel/`.
 - **Launch at login:** `SMAppService.mainApp`.
-- **Build:** a Swift Package plus a script that assembles the `.app`. Ad-hoc signed for local
-  use; Developer ID and notarisation only if it is ever shared.
+- **Build:** a Swift Package plus `scripts/build-app.sh`, which assembles the `.app`.
+  Releases (`scripts/release.sh`) are signed with a stable local identity, so macOS keeps
+  its permissions across updates and the in-app updater can check the download came from
+  the same signer. Developer ID and notarisation are supported but not yet used.
 
-## Milestones
+## Where it stands (v0.8.16)
 
-| # | Deliverable | Done when |
-|---|---|---|
-| 1 | Sampler + menu listing top processes with CPU % | the numbers match Activity Monitor within 5 points |
-| 2 | Bad actor detection + notifications | a `yes > /dev/null` loop alerts after the window, a 30 s burst does not |
-| 3 | Manual kill (user + root via prompt) | kills the test loop; the deny list refuses WindowServer |
-| 4 | Per-process policy + auto-kill + rate limit | auto-kill fires, then stops at 3 an hour |
-| 5 | History, launch at login, settings UI | survives a reboot with policies intact |
-| 6 (v2) | Privileged helper, Chrome tab names | needs signing; research item |
+Milestones 1 to 5 shipped in v0.1 to v0.6. Since then:
+
+- **Checkup**, the first tab: what is wrong, found on its own or picked from eleven symptoms,
+  each with fixes; then security, network, startup items, crashes and backups, performance
+  first and security last; and the everyday restarts. Findings can be ignored.
+- **Rules** lists everything that starts by itself, each with a remove button.
+- **Overview** (load, now, last hour, cores, memory), **Processes**, **Trends**, **Memory**,
+  **Storage** (what grew, cleanups, large files), **Network** (connections by app, DNS map,
+  route test over time), **Energy** (power, battery health, sleep and wakes), **Events**,
+  **Rules**, **Settings**.
+- Plain-English insights with one-click fixes, alarms for heat and power, weekly reports,
+  and an in-app updater.
+
+## Next
+
+1. **Time Machine:** whether a backup is stuck, not only whether one is set up.
+2. **Fewer tabs:** Trends into Overview, Rules into Settings.
+3. **Developer ID and notarisation**, then a privileged helper (`SMAppService`) so root
+   kills need no password.
+4. **Chrome tab names** for renderer processes: research, as `chrome.processes` is dev-channel only.
 
 ## Tests
 
@@ -88,8 +103,3 @@ not a promise.
   policy matching by path, the deny list, the rate limiter.
 - Integration: spawn a CPU burner, assert alert then kill; assert the deny list holds.
 - Every test runs in `swift test`, no UI needed.
-
-## Open decisions
-
-- Default threshold and window (proposed: 80% for 2 min).
-- Whether `Ignore` should expire (proposed: per-entry choice of 1 h or forever).
