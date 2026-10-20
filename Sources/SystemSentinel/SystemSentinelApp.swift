@@ -93,6 +93,8 @@ struct MenuView: View {
     @StateObject private var tips = TipCenter()
 
     static let width: CGFloat = 660
+    /// The About button and version line when a newer release is out.
+    static let updateColor = Color(hex: "#ea580c")
     /// Fixed, so switching tabs never resizes the window (a resize made the menu jump).
     static let contentHeight: CGFloat = 560
 
@@ -145,7 +147,11 @@ struct MenuView: View {
                     SymbolTile(symbol: "cpu", color: Color(hex: "#dc2626"), size: 28)
                     VStack(alignment: .leading, spacing: 0) {
                         Text("System Sentinel").font(.headline)
-                        Text("v\(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev")  ·  \(Int(model.cores)) cores  ·  sampled every 5 s").font(.caption2).foregroundStyle(.secondary)
+                        if let rel = model.update {
+                            Text("v\(Model.appVersion) is out of date  ·  v\(rel.version) is out").font(.caption.weight(.semibold)).foregroundStyle(Self.updateColor)
+                        } else {
+                            Text("v\(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev")  ·  \(Int(model.cores)) cores  ·  sampled every 5 s").font(.caption2).foregroundStyle(.secondary)
+                        }
                     }
                 }
                 .contentShape(Rectangle())
@@ -203,10 +209,17 @@ struct MenuView: View {
                 }
                 .tip("Open in a window you can move around and keep open")
             }
-            FooterButton(title: "About", symbol: "info.circle", color: Tab.overview.color) {
-                AboutWindow.show(model)
+            if let rel = model.update {
+                FooterButton(title: "About: v\(rel.version) is out", symbol: "arrow.down.circle.fill", color: Self.updateColor, attention: true) {
+                    AboutWindow.show(model)
+                }
+                .tip("You are on v\(Model.appVersion), an old version. Open About to install v\(rel.version)")
+            } else {
+                FooterButton(title: "About", symbol: "info.circle", color: Tab.overview.color) {
+                    AboutWindow.show(model)
+                }
+                .tip("Version, updates, links and who made it")
             }
-            .tip("Version, updates, links and who made it")
             FooterButton(title: "Activity Monitor", symbol: "waveform.path.ecg", color: Tab.battery.color) {
                 NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/Utilities/Activity Monitor.app"))
             }
@@ -226,20 +239,33 @@ struct FooterButton: View {
     let title: String
     let symbol: String
     let color: Color
+    /// Flashes, solid colour on and off, until the thing it points at is dealt with.
+    var attention = false
     let action: () -> Void
     @State private var hover = false
 
     var body: some View {
         Button(action: action) {
-            Label(title, systemImage: symbol)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(color)
-                .padding(.horizontal, 10).padding(.vertical, 5)
-                .background(Capsule().fill(color.opacity(hover ? 0.2 : 0.1)))
-                .contentShape(Capsule())
+            if attention {
+                label.phaseAnimator([false, true]) { v, on in
+                    v.foregroundStyle(on ? Color.white : color)
+                        .background(Capsule().fill(on ? color : color.opacity(0.15)))
+                        .overlay(Capsule().strokeBorder(color, lineWidth: 1.5))
+                } animation: { _ in .easeInOut(duration: 0.8) }
+            } else {
+                label.foregroundStyle(color)
+                    .background(Capsule().fill(color.opacity(hover ? 0.2 : 0.1)))
+            }
         }
         .buttonStyle(.plain)
         .onHover { hover = $0 }
+    }
+
+    private var label: some View {
+        Label(title, systemImage: symbol)
+            .font(.caption.weight(.semibold))
+            .padding(.horizontal, 10).padding(.vertical, 5)
+            .contentShape(Capsule())
     }
 }
 

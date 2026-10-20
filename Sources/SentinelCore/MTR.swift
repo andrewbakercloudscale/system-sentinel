@@ -40,6 +40,27 @@ public struct MTRHop: Equatable, Sendable, Identifiable {
     }
 }
 
+/// One round's answer from the target, for the over-time view of a long test.
+public struct MTRSample: Equatable, Sendable {
+    public let at: Date
+    /// Nil when the ping was lost.
+    public let ms: Double?
+    public init(at: Date, ms: Double?) { self.at = at; self.ms = ms }
+}
+
+/// A stretch of a long test (a minute by default), end to end: when the loss or jitter happened.
+public struct MTRWindow: Equatable, Sendable, Identifiable {
+    public let start: Date
+    public let sent: Int
+    public let lost: Int
+    public let average: Double?
+    public let jitter: Double?
+    public var id: Date { start }
+    public var loss: Double { sent == 0 ? 0 : Double(lost) / Double(sent) * 100 }
+    /// Loss or jitter worth pointing at.
+    public var troubled: Bool { loss >= 2 || (jitter ?? 0) >= 30 }
+}
+
 public enum MTR {
     /// The round trip from one `ping -c 1`: "64 bytes from 1.1.1.1: icmp_seq=0 ttl=57 time=4.625 ms".
     public static func pingMS(_ out: String) -> Double? {
@@ -103,6 +124,46 @@ public enum MTR {
         return Verdict(tone: .good, title: "Clean: no loss to the end",
                        detail: lossy.isEmpty ? String(format: "Nothing lost on the way, %.0f ms to the target on average.", end.average ?? 0)
                                              : "Hop \(lossy.map { String($0.n) }.joined(separator: ", ")) drops some pings, but the hops after it do not: routers answer pings last when busy. Traffic is fine.")
+    }
+
+    /// The target's answers cut into windows of `size` rounds, oldest first.
+    public static func windows(_ samples: [MTRSample], size: Int = 60) -> [MTRWindow] {
+        guard size > 0 else { return [] }
+        return stride(from: 0, to: samples.count, by: size).map { i in
+            let part = samples[i..<min(i + size, samples.count)]
+            var h = MTRHop(n: 0, address: nil)
+            part.forEach { h.record($0.ms) }
+            return MTRWindow(start: part.first!.at, sent: h.sent, lost: h.sent - h.received, average: h.average, jitter: h.jitter)
+        }
+    }
+
+    /// For a test of several minutes: whether trouble was constant or came and went, and when
+    /// it was worst. Nil while there are fewer than two full windows, or nothing went wrong.
+    public static func timeline(_ windows: [MTRWindow], size: Int = 60) -> Verdict? {
+        let full = windows.filter { $0.sent >= size / 2 }
+        guard full.count >= 2 else { return nil }
+        let bad = full.filter(\.troubled)
+        guard let worst = bad.max(by: { ($0.loss, $0.jitter ?? 0) < ($1.loss, $1.jitter ?? 0) }) else { return nil }
+        let when = worst.start.formatted(date: .omitted, time: .shortened)
+        let what = worst.loss >= 2 ? String(format: "%.0f%% lost", worst.loss) : String(format: "the delay varied by %.0f ms", worst.jitter ?? 0)
+        if bad.count == full.count {
+            return Verdict(tone: .bad, title: "Trouble in every one of \(full.count) minutes",
+                           detail: "It is constant, not a passing burst. Worst at \(when): \(what).")
+        }
+        return Verdict(tone: .warning, title: "Trouble came and went: \(bad.count) of \(full.count) minutes",
+                       detail: "Worst at \(when): \(what). Bursts like this point at something that happens now and then: Wi-Fi interference, someone else's download, a busy hour at the provider.")
+    }
+
+    /// The windows as plain text under the report, for a test long enough to have several.
+    public static func timelineReport(_ windows: [MTRWindow]) -> String {
+        guard windows.count >= 2 else { return "" }
+        var s = "\nMinute by minute, to the target:\n   Time    Loss%   Sent    Avg  Jitter\n"
+        let f: (Double?) -> String = { $0.map { String(format: "%6.1f", $0) } ?? "     -" }
+        for w in windows {
+            s += "  " + w.start.formatted(date: .omitted, time: .shortened).padding(toLength: 8, withPad: " ", startingAt: 0)
+                + String(format: " %5.1f  %5d ", w.loss, w.sent) + f(w.average) + "  " + f(w.jitter) + (w.troubled ? "  <" : "") + "\n"
+        }
+        return s
     }
 
     /// The table as plain text, like `mtr --report`.
