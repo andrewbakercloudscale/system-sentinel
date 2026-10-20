@@ -109,7 +109,8 @@ extension Model {
         }
         v.bluetoothCPU = cpu(["bluetoothd"])
         v.syncCPU = cpu(["bird", "cloudd"])
-        v.restartChecks = checkup.checks.filter { $0.id == "panics" || $0.id == "crashes" }
+        v.restartChecks = checkup.checks.filter { $0.id == "panics" }
+        v.crashChecks = checkup.checks.filter { $0.id == "crashes" }
         return v
     }
 }

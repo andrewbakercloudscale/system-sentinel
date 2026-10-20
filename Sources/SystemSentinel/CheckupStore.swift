@@ -359,16 +359,19 @@ final class CheckupStore: ObservableObject {
         }
         let userReports = reports(home.appendingPathComponent("Library/Logs/DiagnosticReports").path)
         let sysReports = reports("/Library/Logs/DiagnosticReports")
-        let crashes = CheckParse.crashCounts(userReports + sysReports, since: Date().addingTimeInterval(-7 * 86_400)).filter { $0.count >= 3 }
-        if !crashes.isEmpty {
-            var crash = Check(id: "crashes", area: .apps, title: "\(crashes[0].process) crashed \(crashes[0].count) times this week", status: .warning,
-                             detail: crashes.count > 1 ? "Also: " + crashes.dropFirst().prefix(3).map { "\($0.process) ×\($0.count)" }.joined(separator: ", ") + "." : "An app that keeps crashing usually needs an update or a reset of its settings.",
-                             steps: ["Update the app.", "If it continues, reinstall it, or move its preferences out of ~/Library/Preferences."],
-                             fixes: [.reveal(label: "Show crash reports", path: home.appendingPathComponent("Library/Logs/DiagnosticReports").path)],
-                             items: crashes.map { "\($0.process): \($0.count) crashes" })
-            crash.subject = crashes[0].process
-            out.append(crash)
+        let weekAgo = Date().addingTimeInterval(-7 * 86_400)
+        let userDir = home.appendingPathComponent("Library/Logs/DiagnosticReports").path
+        let crashFiles = (userReports.map { (dir: userDir, file: $0) } + sysReports.map { (dir: "/Library/Logs/DiagnosticReports", file: $0) })
+            .filter { $0.file.date >= weekAgo }
+        let crashes = CheckParse.crashCounts(crashFiles.map(\.file), since: weekAgo).filter { $0.count >= 3 }.map { c -> CheckParse.Crashes in
+            let mine = crashFiles.filter { $0.file.name.hasPrefix(c.process + "-") && ($0.file.name.hasSuffix(".ips") || $0.file.name.hasSuffix(".crash")) }
+            // The newest report's header says whether it is an app (it has a bundle id).
+            let newest = mine.max { $0.file.date < $1.file.date }
+            let header = newest.flatMap { try? FileHandle(forReadingFrom: URL(fileURLWithPath: $0.dir + "/" + $0.file.name)).readData(ofLength: 4096) }
+            return CheckParse.Crashes(process: c.process, dates: mine.map(\.file.date),
+                                      bundleID: header.flatMap { CheckParse.crashBundleID(String(decoding: $0, as: UTF8.self)) })
         }
+        if let crash = CheckParse.crashCheck(crashes, reports: userDir) { out.append(crash) }
         let panics = sysReports.filter { $0.name.hasPrefix("panic") && $0.date >= Date().addingTimeInterval(-30 * 86_400) }
         if !panics.isEmpty {
             out.append(Check(id: "panics", area: .system, title: "\(panics.count) unexpected restart\(panics.count == 1 ? "" : "s") (kernel panic) in 30 days", status: panics.count >= 2 ? .problem : .warning,
