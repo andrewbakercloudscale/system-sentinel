@@ -19,7 +19,8 @@ enum Theme {
         startPoint: .topLeading, endPoint: .bottomTrailing)
 
     static let cardFill = Color(light: "#ffffff", dark: "#25252a").opacity(0.75)
-    static let cardStroke = Color.primary.opacity(0.07)
+    /// Strong enough that each card reads as its own panel against the window.
+    static let cardStroke = Color(light: "#c3cad6", dark: "#4a4f5c")
 
     /// Status colour for a CPU figure: calm, elevated, high, critical.
     static func heat(_ cpu: Double) -> Color {
@@ -110,7 +111,8 @@ struct Card<Content: View>: View {
         .padding(12)
         .frame(maxWidth: .infinity, maxHeight: fill ? .infinity : nil, alignment: .topLeading)
         .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Theme.cardFill))
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Theme.cardStroke))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Theme.cardStroke, lineWidth: 1.25))
+        .shadow(color: .black.opacity(0.06), radius: 3, y: 1)
     }
 }
 
