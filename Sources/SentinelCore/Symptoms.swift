@@ -11,6 +11,7 @@ public enum Symptom: String, CaseIterable, Sendable, Identifiable {
     case micCamera = "Mic or camera"
     case appWontOpen = "App crashes or won't open"
     case bluetooth = "Bluetooth"
+    case display = "Display or dock"
     case icloud = "iCloud stuck"
     case restarts = "Restarted by itself"
 
@@ -26,6 +27,7 @@ public enum Symptom: String, CaseIterable, Sendable, Identifiable {
         case .micCamera: return "mic.fill"
         case .appWontOpen: return "xmark.app.fill"
         case .bluetooth: return "dot.radiowaves.left.and.right"
+        case .display: return "display.2"
         case .icloud: return "icloud.slash.fill"
         case .restarts: return "restart.circle.fill"
         }
@@ -42,6 +44,7 @@ public enum Symptom: String, CaseIterable, Sendable, Identifiable {
         case .micCamera: return "Can apps use the microphone and camera?"
         case .appWontOpen: return "Is an app crashing, or being blocked?"
         case .bluetooth: return "Is Bluetooth working?"
+        case .display: return "Is a display or dock not working?"
         case .icloud: return "Is iCloud syncing?"
         case .restarts: return "Why did the Mac restart?"
         }
@@ -72,6 +75,23 @@ public struct BlockedApp: Equatable, Sendable {
     public let name: String
     public let path: String
     public init(name: String, path: String) { self.name = name; self.path = path }
+}
+
+/// What is plugged in for the display and dock symptom.
+public struct DisplaySetup: Equatable, Sendable {
+    public let displays: [DisplayPixels]
+    /// Thunderbolt and USB4 devices: docks, hubs, monitors with a port.
+    public let devices: [String]
+    /// "Apple M2", from sysctl.
+    public let chip: String
+    public init(displays: [DisplayPixels], devices: [String], chip: String) {
+        self.displays = displays; self.devices = devices; self.chip = chip
+    }
+
+    public var external: [DisplayPixels] { displays.filter { !$0.builtIn } }
+
+    /// The plain M1 and M2 drive one external display; a second needs a DisplayLink dock.
+    public var oneExternalOnly: Bool { chip == "Apple M1" || chip == "Apple M2" }
 }
 
 public struct BluetoothState: Equatable, Sendable {
@@ -106,6 +126,10 @@ public struct Vitals: Sendable {
     public var blockedApps: [BlockedApp] = []
     /// Nil until it has been read.
     public var bluetooth: BluetoothState?
+    /// Nil until it has been read.
+    public var displaySetup: DisplaySetup?
+    /// WindowServer, which draws every screen, in percent of one core over the last minute.
+    public var windowServerCPU: Double = 0
     /// bluetoothd, in percent of one core over the last minute.
     public var bluetoothCPU: Double = 0
     /// bird and cloudd together, in percent of one core over the last minute.
@@ -149,6 +173,7 @@ public enum Diagnose {
         case .micCamera: list = micCamera(v)
         case .appWontOpen: list = appWontOpen(v)
         case .bluetooth: list = bluetooth(v)
+        case .display: list = display(v)
         case .icloud: list = icloud(v)
         case .restarts: list = restarts(v)
         }
@@ -396,6 +421,55 @@ public enum Diagnose {
         return out
     }
 
+    // MARK: Display or dock
+
+    static func display(_ v: Vitals) -> [Check] {
+        var out: [Check] = []
+        let ext = v.displaySetup?.external ?? []
+        if let p = v.panic, p.contains("Thunderbolt") {
+            out.append(check(.display, "panic", "A dock or hub crashed the Mac this month", .problem, p,
+                             steps: ["Update the dock's firmware from its maker's site.", "Plug the dock straight into the Mac, not through another hub.",
+                                     "Try another cable: a cheap or long one is a common cause."]))
+        }
+        for d in ext {
+            if let hz = d.hz, hz < 50 {
+                out.append(check(.display, "hz-\(d.name)", String(format: "%@ runs at %.0f Hz", d.name, hz), .warning,
+                                 "The mouse and scrolling feel choppy. It is almost always the cable or adapter: older HDMI cannot carry 4K at 60 Hz.",
+                                 steps: ["Use a USB-C to DisplayPort cable, or an HDMI 2.0 cable and adapter.", "Plug it into the Mac directly, not through a hub.",
+                                         "Hold Option and click Scaled in Displays settings to pick a refresh rate."]))
+            }
+            if let n = d.native, d.rendered.w < n.w, d.overdraw.map({ $0 < 1 }) ?? false {
+                out.append(check(.display, "blur-\(d.name)", "\(d.name) is not at its full resolution", .warning,
+                                 "macOS draws \(d.rendered.w) x \(d.rendered.h) on a \(n.w) x \(n.h) panel, so text looks soft.",
+                                 steps: ["Pick Default in Displays settings.", "If it is missing, the cable or adapter cannot carry it: try a better one."],
+                                 fixes: [.settings(label: "Open Displays settings", url: "x-apple.systempreferences:com.apple.Displays-Settings.extension")]))
+            }
+        }
+        if let s = v.displaySetup, s.oneExternalOnly, ext.count >= 1 {
+            out.append(check(.display, "one", "\(s.chip) drives only one external display", .info,
+                             "A second one stays black whatever the dock promises, unless the dock uses DisplayLink and its app is installed.",
+                             steps: ["Use one external display, or a DisplayLink dock with the DisplayLink Manager app."]))
+        }
+        if v.windowServerCPU >= 60 {
+            out.append(check(.display, "draw", String(format: "Drawing the screens is busy: WindowServer at %.0f%% of a core", v.windowServerCPU), .warning,
+                             "Large scaled resolutions, many displays and transparency all add to it, and it makes everything lag.",
+                             steps: ["Pick Default resolution on big external displays.", "Turn on Reduce transparency in Accessibility > Display.", "Close windows you are not using."],
+                             actions: [.optimiseScreen]))
+        }
+        if out.isEmpty || out.allSatisfy({ $0.status == .info }) {
+            let names = ext.map(\.name)
+            out.append(check(.display, "ok", names.isEmpty ? "No external display found" : "Displays are working", names.isEmpty ? .info : .ok,
+                             names.isEmpty ? "macOS does not see a display on any port right now. That points at the cable, the port or the dock, not at macOS."
+                                           : "Connected: \(names.joined(separator: ", ")).",
+                             steps: ["Unplug the dock or display, wait ten seconds and plug it back in.", "Try another port on the Mac, and another cable.",
+                                     "Make sure the display's own input is set to the port you are using.",
+                                     "Update the dock's firmware, and macOS.", "Restart the Mac with the display connected."],
+                             fixes: [.settings(label: "Open Displays settings", url: "x-apple.systempreferences:com.apple.Displays-Settings.extension")],
+                             items: (v.displaySetup?.devices ?? []).map { "Plugged in: \($0)" }))
+        }
+        return out
+    }
+
     // MARK: iCloud
 
     static func icloud(_ v: Vitals) -> [Check] {
@@ -464,6 +538,21 @@ public enum SymptomParse {
         let state = (props?["controller_state"] as? String) ?? ""
         let connected = (first["device_connected"] as? [[String: Any]] ?? []).flatMap(\.keys)
         return BluetoothState(on: state.hasSuffix("_on") || state.lowercased() == "on", connected: connected.sorted())
+    }
+
+    /// `system_profiler SPThunderboltDataType -json`: every device plugged in, at any depth.
+    /// The Mac's own buses carry no `_items` of their own, so they are skipped.
+    public static func thunderbolt(_ data: Data) -> [String] {
+        guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let buses = root["SPThunderboltDataType"] as? [[String: Any]] else { return [] }
+        func walk(_ items: [[String: Any]]) -> [String] {
+            items.flatMap { d -> [String] in
+                let name = [d["vendor_name_key"] as? String, d["device_name_key"] as? String ?? d["_name"] as? String]
+                    .compactMap { $0 }.joined(separator: " ")
+                return [name] + walk(d["_items"] as? [[String: Any]] ?? [])
+            }
+        }
+        return buses.flatMap { walk($0["_items"] as? [[String: Any]] ?? []) }
     }
 
     /// A kernel panic report in a sentence: what kind it was, and the outside driver named in

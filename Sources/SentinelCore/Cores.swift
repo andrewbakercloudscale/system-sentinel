@@ -155,6 +155,18 @@ public enum BackgroundItems {
         return out.sorted { $0.label.lowercased() < $1.label.lowercased() }
     }
 
+    /// Stops it and moves its plist to the Trash, so Put Back undoes it. Items outside your own
+    /// folder belong to root, so this runs with administrator privileges.
+    public static func removeCommand(_ item: BackgroundItem, uid: uid_t, trash: String) -> String {
+        let domain = item.scope == .system ? "system" : "gui/\(uid)"
+        let dest = (trash as NSString).appendingPathComponent(
+            ((item.plist as NSString).lastPathComponent as NSString).deletingPathExtension + " \(Int(Date().timeIntervalSince1970)).plist")
+        return "/bin/launchctl bootout \(quote(domain + "/" + item.label)) 2>/dev/null; /bin/mv \(quote(item.plist)) \(quote(dest))"
+    }
+
+    /// A shell word in single quotes.
+    public static func quote(_ s: String) -> String { "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'" }
+
     public static func parse(_ d: [String: Any], plist: String, scope: BackgroundItem.Scope) -> BackgroundItem? {
         guard let label = d["Label"] as? String else { return nil }
         let args = d["ProgramArguments"] as? [String] ?? []

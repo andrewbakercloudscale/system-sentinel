@@ -841,6 +841,35 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
     /// "up 22d 2h", short enough for a row subtitle.
     @Published var purging = false
 
+    /// Stops a launch agent or daemon and moves its plist to the Trash.
+    func removeBackgroundItem(_ item: BackgroundItem) {
+        let cmd = BackgroundItems.removeCommand(item, uid: getuid(), trash: NSString(string: "~/.Trash").expandingTildeInPath)
+        Task.detached {
+            let task = Process()
+            if item.scope == .user {
+                task.executableURL = URL(fileURLWithPath: "/bin/sh")
+                task.arguments = ["-c", cmd]
+            } else {
+                let escaped = cmd.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
+                task.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+                task.arguments = ["-e", "do shell script \"\(escaped)\" with administrator privileges"]
+            }
+            task.standardError = FileHandle.nullDevice
+            let ok = (try? task.run()) != nil && { task.waitUntilExit(); return task.terminationStatus == 0 }()
+            let gone = !FileManager.default.fileExists(atPath: item.plist)
+            await MainActor.run {
+                self.backgroundItems = BackgroundItems.scan()
+                if ok && gone {
+                    self.showToast(Toast(ok: true, title: "Removed \(item.name)",
+                                         detail: "Stopped, and its file is in the Trash. Put it back from the Trash to undo, then log out and in."))
+                } else {
+                    self.showToast(Toast(ok: false, title: "\(item.name) was not removed",
+                                         detail: item.scope == .user ? "Its file could not be moved." : "The password prompt was cancelled or refused."))
+                }
+            }
+        }
+    }
+
     /// `purge`: drops cached files from memory (admin password). It does not touch app memory
     /// or swap, so the toast reports what it actually changed.
     func purgeCaches() {

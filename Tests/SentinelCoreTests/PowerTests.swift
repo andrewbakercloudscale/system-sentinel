@@ -280,6 +280,14 @@ final class CoreAndRuleTests: XCTestCase {
         _ = BackgroundItems.scan()
     }
 
+    func testBackgroundItemRemoveCommand() {
+        let u = BackgroundItems.parse(["Label": "it's.x", "Program": "/x"], plist: "/Users/me/Library/LaunchAgents/it's.x.plist", scope: .user)!
+        let cmd = BackgroundItems.removeCommand(u, uid: 501, trash: "/Users/me/.Trash")
+        XCTAssertTrue(cmd.hasPrefix("/bin/launchctl bootout 'gui/501/it'\\''s.x' 2>/dev/null; /bin/mv '/Users/me/Library/LaunchAgents/it'\\''s.x.plist' '/Users/me/.Trash/it'\\''s.x "), cmd)
+        let d = BackgroundItems.parse(["Label": "com.z", "Program": "/z"], plist: "/Library/LaunchDaemons/com.z.plist", scope: .system)!
+        XCTAssertTrue(BackgroundItems.removeCommand(d, uid: 501, trash: "/t").hasPrefix("/bin/launchctl bootout 'system/com.z'"))
+    }
+
     func testAutoKillOnBatteryOnlyOnBattery() throws {
         var killed: [Int32] = []
         let store = PolicyStore(fileURL: nil)

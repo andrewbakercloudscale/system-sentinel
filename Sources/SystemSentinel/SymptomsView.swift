@@ -7,6 +7,7 @@ struct SymptomProbes {
     var privacy: [PrivacyGrant]?
     var blockedApps: [BlockedApp] = []
     var bluetooth: BluetoothState?
+    var displays: DisplaySetup?
     var panic: String?
     var at: Date?
 }
@@ -26,7 +27,11 @@ extension CheckupStore {
         async let blocked = blockedApps()
         async let bluetooth = SymptomParse.bluetooth(Data(sh("/usr/sbin/system_profiler", ["SPBluetoothDataType", "-json"], timeout: 20).utf8))
         async let panic = latestPanic()
-        return await SymptomProbes(privacy: privacy, blockedApps: blocked, bluetooth: bluetooth, panic: panic, at: Date())
+        async let displays = DisplaySetup(
+            displays: DisplayPixels.parse(Data(sh("/usr/sbin/system_profiler", ["SPDisplaysDataType", "-json"], timeout: 15).utf8)),
+            devices: SymptomParse.thunderbolt(Data(sh("/usr/sbin/system_profiler", ["SPThunderboltDataType", "-json"], timeout: 15).utf8)),
+            chip: sh("/usr/sbin/sysctl", ["-n", "machdep.cpu.brand_string"], timeout: 5).trimmingCharacters(in: .whitespacesAndNewlines))
+        return await SymptomProbes(privacy: privacy, blockedApps: blocked, bluetooth: bluetooth, displays: displays, panic: panic, at: Date())
     }
 
     /// The microphone and camera rows of the person's privacy database. It needs Full Disk
@@ -102,6 +107,7 @@ extension Model {
         v.privacy = p.privacy
         v.blockedApps = p.blockedApps
         v.bluetooth = p.bluetooth
+        v.displaySetup = p.displays
         v.panic = p.panic
         let all = sentinel.latest
         func cpu(_ names: Set<String>) -> Double {
@@ -109,6 +115,7 @@ extension Model {
         }
         v.bluetoothCPU = cpu(["bluetoothd"])
         v.syncCPU = cpu(["bird", "cloudd"])
+        v.windowServerCPU = cpu(["WindowServer"])
         v.restartChecks = checkup.checks.filter { $0.id == "panics" }
         v.crashChecks = checkup.checks.filter { $0.id == "crashes" }
         return v

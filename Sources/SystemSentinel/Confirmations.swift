@@ -132,6 +132,17 @@ extension Model {
         }
     }
 
+    func confirmRemove(_ item: BackgroundItem) {
+        var points = ["Stops it now, and it no longer starts at login.",
+                      "Its file (\((item.plist as NSString).lastPathComponent)) goes to the Trash."]
+        if item.scope != .user { points.append("It is installed for every user, so macOS asks for your password.") }
+        points.append("If the app that installed it is still here, it may put it back next time it runs. Remove the app to stop that.")
+        Confirm.ask("Remove \(item.name)?", "\(item.vendor), \(item.label).", symbol: "trash.fill", tint: Self.red,
+                    points: points, undo: "Put Back from the Trash, then log out and in.", button: "Remove", destructive: true) {
+            self.removeBackgroundItem(item)
+        }
+    }
+
     // MARK: Fixes from insights
 
     /// Asks first for the fixes that change something; the ones that only open a window go at once.
