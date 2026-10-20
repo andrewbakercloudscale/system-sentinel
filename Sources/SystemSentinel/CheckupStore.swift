@@ -20,7 +20,8 @@ final class CheckupStore: ObservableObject {
 
     init(readOnly: Bool) {
         if readOnly { run(); return }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 60) { [weak self] in SelfGuard.when("checkup") { self?.run() } }
+        // Soon after launch: Checkup is the first tab, so an empty one would be the first thing seen.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 10) { [weak self] in SelfGuard.when("checkup") { self?.run() } }
         timer = Timer.scheduledTimer(withTimeInterval: 6 * 3600, repeats: true) { [weak self] _ in
             Task { @MainActor in SelfGuard.when("checkup") { self?.run() } }
         }
