@@ -85,7 +85,8 @@ struct SystemSentinelApp: App {
 
 struct MenuView: View {
     @ObservedObject var model: Model
-    @State var tab: Tab = .checkup
+    /// Opens where it was left, across relaunches; Checkup only the first time.
+    @State var tab: Tab = MenuView.lastTab
     /// Snapshots render the whole page instead of a scrolling window.
     var fullLength = false
     /// Shown in the movable window rather than under the menu bar icon.
@@ -93,6 +94,12 @@ struct MenuView: View {
     @StateObject private var tips = TipCenter()
 
     static let width: CGFloat = 660
+
+    /// Saved by title, not position, so reordering the tabs never reopens the wrong one.
+    static var lastTab: Tab {
+        let saved = UserDefaults.standard.string(forKey: "lastTab")
+        return Tab.allCases.first { $0.title == saved } ?? .checkup
+    }
     /// The About button and version line when a newer release is out.
     static let updateColor = Color(hex: "#ea580c")
     /// Fixed, so switching tabs never resizes the window (a resize made the menu jump).
@@ -102,6 +109,7 @@ struct MenuView: View {
         VStack(alignment: .leading, spacing: 10) {
             header
             TabBar(selection: $tab, badges: [.events: model.flagged.count, .checkup: model.checkup.problems.count])
+                .onChange(of: tab) { _, t in if !fullLength { UserDefaults.standard.set(t.title, forKey: "lastTab") } }
             Group {
                 if fullLength {
                     banners
