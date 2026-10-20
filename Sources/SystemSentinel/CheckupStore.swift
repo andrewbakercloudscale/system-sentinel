@@ -30,7 +30,27 @@ final class CheckupStore: ObservableObject {
         }
     }
 
-    var problems: [Check] { checks.filter { $0.status >= .warning } }
+    var problems: [Check] { checks.filter { $0.status >= .warning && !isIgnored($0) } }
+
+    /// Findings the person said are on purpose, by `Check.ignoreKey`, with when that ends.
+    @Published var ignored: [String: Double] = UserDefaults.standard.dictionary(forKey: "ignoredFindings") as? [String: Double] ?? [:]
+
+    var ignoredKeys: Set<String> {
+        let now = Date().timeIntervalSince1970
+        return Set(ignored.filter { $0.value > now }.keys)
+    }
+
+    func isIgnored(_ c: Check) -> Bool { ignoredKeys.contains(c.ignoreKey) }
+
+    func ignore(_ c: Check) {
+        ignored[c.ignoreKey] = c.ignoreFor == .infinity ? Double.greatestFiniteMagnitude : Date().timeIntervalSince1970 + c.ignoreFor
+        UserDefaults.standard.set(ignored, forKey: "ignoredFindings")
+    }
+
+    func showIgnoredAgain() {
+        ignored = [:]
+        UserDefaults.standard.removeObject(forKey: "ignoredFindings")
+    }
 
     func run() {
         guard !running else { return }
@@ -341,11 +361,13 @@ final class CheckupStore: ObservableObject {
         let sysReports = reports("/Library/Logs/DiagnosticReports")
         let crashes = CheckParse.crashCounts(userReports + sysReports, since: Date().addingTimeInterval(-7 * 86_400)).filter { $0.count >= 3 }
         if !crashes.isEmpty {
-            out.append(Check(id: "crashes", area: .apps, title: "\(crashes[0].process) crashed \(crashes[0].count) times this week", status: .warning,
+            var crash = Check(id: "crashes", area: .apps, title: "\(crashes[0].process) crashed \(crashes[0].count) times this week", status: .warning,
                              detail: crashes.count > 1 ? "Also: " + crashes.dropFirst().prefix(3).map { "\($0.process) ×\($0.count)" }.joined(separator: ", ") + "." : "An app that keeps crashing usually needs an update or a reset of its settings.",
                              steps: ["Update the app.", "If it continues, reinstall it, or move its preferences out of ~/Library/Preferences."],
                              fixes: [.reveal(label: "Show crash reports", path: home.appendingPathComponent("Library/Logs/DiagnosticReports").path)],
-                             items: crashes.map { "\($0.process): \($0.count) crashes" }))
+                             items: crashes.map { "\($0.process): \($0.count) crashes" })
+            crash.subject = crashes[0].process
+            out.append(crash)
         }
         let panics = sysReports.filter { $0.name.hasPrefix("panic") && $0.date >= Date().addingTimeInterval(-30 * 86_400) }
         if !panics.isEmpty {

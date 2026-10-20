@@ -121,4 +121,23 @@ final class SymptomsTests: XCTestCase {
         XCTAssertFalse(s.contains("com.apple"), s)
         XCTAssertNil(SymptomParse.panic("nothing to see"))
     }
+
+    func testIgnoringABlockerHidesOnlyThoseApps() {
+        var v = Vitals()
+        v.blockers = SleepBlockers.parse([92: [["AssertType": "PreventUserIdleSystemSleep", "AssertName": "z", "Process Name": "caffeinate",
+                                                "Details": "caffeinate asserting on behalf of 'claude' (pid 61739)"]]])
+        let c = Diagnose.found(v)[0].check
+        XCTAssertEqual(c.ignoreFor, .infinity)
+        XCTAssertTrue(Diagnose.found(v, ignoring: [c.ignoreKey]).isEmpty)
+        v.blockers += SleepBlockers.parse([93: [["AssertType": "PreventUserIdleSystemSleep", "AssertName": "x", "Process Name": "Zoom"]]])
+        XCTAssertEqual(Diagnose.found(v, ignoring: [c.ignoreKey]).count, 1, "another app keeping it awake still shows")
+    }
+
+    func testIgnoringAPassingStateLastsADay() {
+        var v = Vitals()
+        v.thermal = 2
+        let c = Diagnose.found(v)[0].check
+        XCTAssertNil(c.subject)
+        XCTAssertEqual(c.ignoreFor, 86_400)
+    }
 }

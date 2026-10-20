@@ -123,10 +123,11 @@ public enum Diagnose {
 
     /// What the Mac shows without being asked: for each symptom with a warning or worse, the
     /// most serious finding. Worst first.
-    public static func found(_ v: Vitals) -> [(symptom: Symptom, check: Check)] {
+    public static func found(_ v: Vitals, ignoring ignored: Set<String> = []) -> [(symptom: Symptom, check: Check)] {
         // Problems before warnings; within each, in symptom order, so performance comes first.
         Symptom.allCases.enumerated().compactMap { i, s -> (Int, Symptom, Check)? in
-            guard let worst = checks(s, v).max(by: { $0.status < $1.status }), worst.status >= .warning else { return nil }
+            guard let worst = checks(s, v).filter({ !ignored.contains($0.ignoreKey) }).max(by: { $0.status < $1.status }),
+                  worst.status >= .warning else { return nil }
             return (i, s, worst)
         }
         .sorted { ($0.2.status, -$0.0) > ($1.2.status, -$1.0) }
@@ -290,10 +291,12 @@ public enum Diagnose {
             return (name, b.onBehalfOfPID ?? b.pid)
         }
         if !apps.isEmpty {
-            out.append(check(.sleep, "blockers", "\(apps.map(\.name).prefix(3).joined(separator: ", ")) \(apps.count == 1 ? "is" : "are") keeping the Mac awake", .warning,
+            var c = check(.sleep, "blockers", "\(apps.map(\.name).prefix(3).joined(separator: ", ")) \(apps.count == 1 ? "is" : "are") keeping the Mac awake", .warning,
                              "While \(apps.count == 1 ? "it holds" : "they hold") the Mac awake it will not sleep on its own, even with you away.",
                              actions: apps.prefix(3).map { .quit(pids: [$0.pid], name: $0.name) },
-                             items: awake.map { "\($0.onBehalfOf ?? $0.name): \($0.reason)" }))
+                             items: awake.map { "\($0.onBehalfOf ?? $0.name): \($0.reason)" })
+            c.subject = apps.map(\.name).sorted().joined(separator: ",")
+            out.append(c)
         }
         if let s = v.sleep, s.darkWakes >= 24, s.asleep >= 3600 {
             let causes = s.wakeCauses.prefix(3).map { "\($0.cause) ×\($0.count)" }
@@ -350,12 +353,14 @@ public enum Diagnose {
 
     static func appWontOpen(_ v: Vitals) -> [Check] {
         var out = v.blockedApps.map { a in
-            check(.appWontOpen, a.path, "macOS will not open \(a.name)", .warning,
+            var c = check(.appWontOpen, a.path, "macOS will not open \(a.name)", .warning,
                   "It was downloaded and fails Apple's check, so macOS calls it damaged or from an unidentified developer.",
                   why: "Only allow it if you trust where it came from. Allowing it removes the download flag, as Open Anyway in Privacy & Security does.",
                   fixes: [.run(label: "Allow \(a.name) to open", path: "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", a.path]),
                           .settings(label: "Privacy & Security", url: "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension"),
                           .reveal(label: "Show in Finder", path: a.path)])
+            c.subject = a.path
+            return c
         }
         if out.isEmpty {
             out.append(check(.appWontOpen, "ok", "No downloaded app is being blocked", .ok,
