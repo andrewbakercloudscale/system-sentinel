@@ -147,7 +147,9 @@ struct SymbolTile: View {
 }
 
 enum Tab: Int, CaseIterable, Identifiable {
-    case overview, processes, trends, memory, storage, network, battery, checkup, events, rules, settings
+    // Checkup first: it answers "is anything wrong, and how do I fix it", which is why most
+    // people open the app.
+    case checkup, overview, processes, trends, memory, storage, network, battery, events, rules, settings
     var id: Int { rawValue }
 
     var title: String {

@@ -85,7 +85,7 @@ struct SystemSentinelApp: App {
 
 struct MenuView: View {
     @ObservedObject var model: Model
-    @State var tab: Tab = .overview
+    @State var tab: Tab = .checkup
     /// Snapshots render the whole page instead of a scrolling window.
     var fullLength = false
     /// Shown in the movable window rather than under the menu bar icon.
