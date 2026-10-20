@@ -28,6 +28,8 @@ public enum FixAction: Equatable, Sendable, Identifiable {
     case leaveHotspot
     /// Opens the WindowServer optimiser: settings that make the screen cheaper to draw, each with an undo.
     case optimiseScreen
+    /// Switch to another tab (by its title) and scroll to a card on it.
+    case goTo(tab: String, card: String?, label: String)
 
     public enum Settings: String, Sendable {
         case battery, displays, accessibilityDisplay, screenRecording, timeMachine, loginItems, wifi, network
@@ -77,6 +79,7 @@ public enum FixAction: Equatable, Sendable, Identifiable {
         case .openURL(_, let label): return label
         case .leaveHotspot: return "Leave the hotspot"
         case .optimiseScreen: return "Optimise the screen…"
+        case .goTo(_, _, let label): return label
         }
     }
 
@@ -96,6 +99,7 @@ public enum FixAction: Equatable, Sendable, Identifiable {
         case .openURL: return "safari.fill"
         case .leaveHotspot: return "wifi.exclamationmark"
         case .optimiseScreen: return "wand.and.stars"
+        case .goTo: return "arrow.right.circle.fill"
         }
     }
 
@@ -103,7 +107,7 @@ public enum FixAction: Equatable, Sendable, Identifiable {
     public var acts: Bool {
         switch self {
         case .quit, .kill, .lowPowerMode, .emptyTrash, .cleanPlaces, .trashFound, .leaveHotspot: return true
-        case .openSettings, .reveal, .archiveFound, .review, .openApp, .openURL, .optimiseScreen: return false
+        case .openSettings, .reveal, .archiveFound, .review, .openApp, .openURL, .optimiseScreen, .goTo: return false
         }
     }
 

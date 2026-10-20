@@ -7,8 +7,9 @@ public struct Check: Identifiable, Equatable, Sendable {
         public static func < (a: Status, b: Status) -> Bool { a.rawValue < b.rawValue }
     }
 
+    /// In the order the Checkup tab shows them: what slows the Mac first, security last.
     public enum Area: String, CaseIterable, Sendable {
-        case security = "Security", network = "Network", system = "System", apps = "Apps", backup = "Backup"
+        case system = "System", apps = "Apps", network = "Network", backup = "Backup", security = "Security"
         public var symbol: String {
             switch self {
             case .security: return "lock.shield.fill"
@@ -66,6 +67,8 @@ public struct Check: Identifiable, Equatable, Sendable {
     public var fixes: [Fix] = []
     /// Things worth naming under the check: ports, processes, files.
     public var items: [String] = []
+    /// One-click fixes that need the app, such as quitting an app or opening another tab.
+    public var actions: [FixAction] = []
 
     public init(id: String, area: Area, title: String, status: Status, detail: String, why: String? = nil,
                 steps: [String] = [], fixes: [Fix] = [], items: [String] = []) {

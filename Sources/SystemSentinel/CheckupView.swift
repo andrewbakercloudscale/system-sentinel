@@ -1,17 +1,20 @@
 import SentinelCore
 import SwiftUI
 
-/// Checkup: security posture, network doctor, leftovers and crashes, backups, each with a fix,
+/// Checkup: what is wrong (found on its own, or picked from a list of symptoms), then security
+/// posture, network doctor, leftovers and crashes, backups, each with a fix,
 /// and a toolbox of the everyday restarts.
 struct CheckupView: View {
     @ObservedObject var model: Model
     @ObservedObject var store: CheckupStore
     @State private var open: Set<String> = []
+    /// Snapshots show one symptom open, so the screenshot shows what a panel looks like.
+    @State private var symptom: Symptom? = Model.snapshotDir == nil ? nil : .slow
 
     var body: some View {
         VStack(spacing: 10) {
             hero
-            SlownessCard(model: model)
+            SymptomsCard(model: model, store: store, open: $symptom) { AnyView(row($0)) }
             ForEach(Check.Area.allCases, id: \.self) { area in
                 let list = store.checks.filter { $0.area == area }
                 if !list.isEmpty {
@@ -26,8 +29,10 @@ struct CheckupView: View {
     }
 
     private var hero: some View {
-        let problems = store.checks.filter { $0.status == .problem }.count
-        let warnings = store.checks.filter { $0.status == .warning }.count
+        // Symptoms found from live numbers count too; network and restarts are already checks.
+        let live = Diagnose.found(model.vitals()).filter { $0.symptom != .network && $0.symptom != .restarts }.map(\.check)
+        let problems = (store.checks + live).filter { $0.status == .problem }.count
+        let warnings = (store.checks + live).filter { $0.status == .warning }.count
         let ok = store.checks.filter { $0.status == .ok }.count
         let colors: [Color] = problems > 0 ? [Color(hex: "#b91c1c"), Color(hex: "#9f1239")]
             : warnings > 0 ? [Color(hex: "#b45309"), Color(hex: "#c2410c")] : [Color(hex: "#047857"), Color(hex: "#0f766e")]
@@ -37,7 +42,7 @@ struct CheckupView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(store.checks.isEmpty ? "Running the checkup…" : problems + warnings == 0 ? "All \(ok) checks passed" : "\(problems + warnings) thing\(problems + warnings == 1 ? "" : "s") to look at")
                     .font(.title3.weight(.bold)).foregroundStyle(.white)
-                Text("Security, network, startup items, crashes and backups. \(store.ranAt.map { "Checked \(RelativeDateTimeFormatter().localizedString(for: $0, relativeTo: Date())); again every 6 hours." } ?? "")")
+                Text("Performance, startup items, crashes, network, backups and security. \(store.ranAt.map { "Checked \(RelativeDateTimeFormatter().localizedString(for: $0, relativeTo: Date())); again every 6 hours." } ?? "")")
                     .font(.callout).foregroundStyle(.white.opacity(0.9))
             }
             Spacer()
@@ -121,6 +126,9 @@ struct CheckupView: View {
                 }
                 .padding(.leading, 32)
             }
+            if !c.actions.isEmpty {
+                FixButtons(model: model, fixes: c.actions).padding(.leading, 32)
+            }
         }
         .padding(.vertical, 2)
     }
@@ -187,104 +195,6 @@ struct CheckupView: View {
             }
             Text("Buttons with a lock ask for your admin password and show the exact command when you hover. Nothing here turns a security setting off.")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-        }
-    }
-}
-
-/// Is the Mac slow right now, and what is doing it: the apps using the most CPU over the last
-/// minute and the most memory, each with Quit and Force Quit.
-struct SlownessCard: View {
-    @ObservedObject var model: Model
-
-    struct Row: Identifiable {
-        let id: String
-        let name: String
-        let figure: String
-        let pids: [Int32]
-        let sample: ProcessSample
-    }
-
-    var body: some View {
-        let load = model.machineAverage(60)
-        let pressure = model.memory?.pressure ?? .normal
-        let swap = model.memory?.swapUsed ?? 0
-        let hot = model.thermal.rawValue >= ProcessInfo.ThermalState.serious.rawValue
-        let cpu = cpuRows()
-        let mem = memoryRows()
-        // Slow means the whole Mac is short of something. One app busy on one of ten cores
-        // is not that, so it is listed below without the verdict.
-        let reasons = [load >= 60 ? "CPU \(Int(load))% busy" : nil,
-                       pressure != .normal ? "memory \(pressure.label.lowercased())" : nil,
-                       hot ? "running hot" : nil].compactMap { $0 }
-        let slow = !reasons.isEmpty
-        let color = slow ? Theme.heat(50) : Tab.battery.color
-        // The answer straight after the question, not across the card from it.
-        Card(title: "Is the Mac slow?", symbol: "tortoise.fill", tint: Tab.checkup.color,
-             besideTitle: AnyView(Label(slow ? "Yes: " + reasons.joined(separator: ", ") : "No, it has room to spare",
-                                        systemImage: slow ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
-                .font(.subheadline.weight(.semibold)).foregroundStyle(color))) {
-            HStack(spacing: 8) {
-                chip("CPU \(Int(load))% busy", load >= 60, ok: "under 60% is fine")
-                chip("Memory \(pressure.label.lowercased())", pressure != .normal, ok: "normal means apps fit in memory")
-                chip("Swap \(ReportDocument.bytes(swap))", swap >= 8 << 30, ok: "memory parked on disk; a few GB is normal")
-                if hot { chip("Running hot", true, ok: "") }
-            }
-            Text(slow ? "The apps below are the likely cause. Quitting the top one usually helps most."
-                      : "Nothing is short: if an app feels slow, it is that app, not the Mac. The busiest apps are listed anyway.")
-                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            section("Busiest apps, last minute", cpu,
-                    empty: "No app is using more than a third of a core.")
-            section("Using the most memory", mem,
-                    empty: "No app is using more than 2 GB.")
-            Text("Quit lets the app save first. Force Quit stops it at once and loses anything unsaved. System processes are left alone.")
-                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-        }
-    }
-
-    private func chip(_ text: String, _ bad: Bool, ok: String) -> some View {
-        Text(text).font(.caption.weight(.semibold))
-            .tip(bad ? "Higher than it should be" : "Fine: \(ok)")
-            .foregroundStyle(bad ? Theme.heat(100) : .secondary)
-            .padding(.horizontal, 8).padding(.vertical, 3)
-            .background(Capsule().fill((bad ? Theme.heat(100) : Color.secondary).opacity(0.1)))
-    }
-
-    @ViewBuilder
-    private func section(_ title: String, _ rows: [Row], empty: String) -> some View {
-        Text(title.uppercased()).font(.caption2.weight(.bold)).foregroundStyle(.secondary).padding(.top, 4)
-        if rows.isEmpty {
-            Text(empty).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-        }
-        ForEach(rows) { r in
-            HStack(spacing: 8) {
-                IconView(icon: IconCache.shared.icon(for: r.sample), size: 22)
-                Text(r.name).font(.callout.weight(.semibold)).lineLimit(1)
-                Text(r.figure).font(.callout).foregroundStyle(.secondary).monospacedDigit()
-                Spacer(minLength: 6)
-                if r.sample.pid != getpid(), Safety.canKillManually(r.sample) {
-                    FixButtons(model: model, fixes: [.quit(pids: r.pids, name: r.name)])
-                } else {
-                    Text("part of macOS").font(.caption).foregroundStyle(.secondary)
-                }
-            }
-        }
-    }
-
-    /// Apps, not processes: a browser's helpers count together. Over a third of a core.
-    private func cpuRows() -> [Row] {
-        let groups = Dictionary(grouping: model.top, by: { Model.appKey($0.path) })
-        return groups.compactMap { key, list -> (Row, Double)? in
-            let cpu = list.reduce(0) { $0 + model.average($1, 60) }
-            guard cpu >= 33, let big = list.max(by: { $0.cpu < $1.cpu }) else { return nil }
-            return (Row(id: "cpu-" + key, name: Model.appName(key), figure: "\(Int(cpu))% of a core",
-                        pids: list.map(\.pid), sample: big), cpu)
-        }
-        .sorted { $0.1 > $1.1 }.prefix(4).map(\.0)
-    }
-
-    private func memoryRows() -> [Row] {
-        model.memoryApps.filter { $0.bytes >= 2 << 30 }.prefix(4).map {
-            Row(id: "mem-" + $0.key, name: $0.name, figure: ReportDocument.bytes($0.bytes), pids: $0.pids, sample: $0.sample)
         }
     }
 }

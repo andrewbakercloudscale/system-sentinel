@@ -16,6 +16,9 @@ final class CheckupStore: ObservableObject {
     @Published var updates: [String]?
     private var updatesAt: Date?
     private var timer: Timer?
+    /// What the symptom checks read beyond the live numbers: privacy grants, blocked apps,
+    /// Bluetooth and the last panic. Refreshed with the checkup and when a symptom is opened.
+    @Published var probes = SymptomProbes()
     var toast: (Model.Toast) -> Void = { _ in }
 
     init(readOnly: Bool) {
@@ -38,12 +41,15 @@ final class CheckupStore: ObservableObject {
             async let security = CheckupStore.securityChecks()
             async let network = CheckupStore.networkChecks()
             async let system = CheckupStore.systemChecks()
+            async let probes = CheckupStore.readProbes()
             let pending: [String]? = needUpdates ? CheckParse.pendingUpdates(sh("/usr/sbin/softwareupdate", ["-l"], timeout: 180)) : known
             var all = await security + network + system
             all.append(CheckupStore.updatesCheck(pending))
             let sorted = all.sorted { ($0.status, $1.area.rawValue) > ($1.status, $0.area.rawValue) }
+            let read = await probes
             await MainActor.run {
                 self.checks = sorted
+                self.probes = read
                 if needUpdates { self.updates = pending; self.updatesAt = Date() }
                 self.ranAt = Date()
                 self.running = false
@@ -73,9 +79,11 @@ final class CheckupStore: ObservableObject {
                                  detail: stealth ? "Incoming connections are filtered and the Mac does not answer probes." : "Stealth mode would stop the Mac answering pings and port scans on public networks.",
                                  fixes: stealth ? [] : [.admin(label: "Turn on stealth mode", command: .stealthOn)]))
             } else {
-                out.append(Check(id: "firewall", area: .security, title: "Firewall is off", status: .warning,
-                                 detail: "Any app or service listening for connections can be reached from the network you are on.",
-                                 why: "On café, hotel and office Wi-Fi, other devices can connect to sharing services and apps that listen on a port. The firewall asks before letting an app accept connections.",
+                // Info, not a warning: work Macs often sit behind a company firewall or a zero
+                // trust client (Zscaler and the like) that this switch says nothing about.
+                out.append(Check(id: "firewall", area: .security, title: "The Mac's own firewall is off", status: .info,
+                                 detail: "Fine behind a company firewall or zero trust network. On café and hotel Wi-Fi, turn it on.",
+                                 why: "On public Wi-Fi, other devices can connect to sharing services and apps that listen on a port. The firewall asks before letting an app accept connections. Company networks usually filter this before it reaches the Mac, so it is often left off on purpose.",
                                  fixes: [.admin(label: "Turn firewall on", command: .firewallOn), .settings(label: "Firewall settings", url: "x-apple.systempreferences:com.apple.Network-Settings.extension?Firewall")]))
             }
         }
@@ -464,11 +472,7 @@ final class CheckupStore: ObservableObject {
          .admin(label: "Restart Software Update", command: .restartSoftwareUpdate)),
     ]
 
-    /// Finds the Wi-Fi interface (en0 on most Macs, not all) and turns it off and on.
-    static let wifiCycle = """
-        d=$(/usr/sbin/networksetup -listallhardwareports | /usr/bin/awk '/Wi-Fi|AirPort/{getline; print $2; exit}'); \
-        [ -n "$d" ] && /usr/sbin/networksetup -setairportpower "$d" off && /bin/sleep 2 && /usr/sbin/networksetup -setairportpower "$d" on
-        """
+    nonisolated static var wifiCycle: String { Diagnose.wifiCycle }
 
     nonisolated static func status(_ path: String, _ args: [String]) -> Int32 {
         let p = Process()
