@@ -549,7 +549,7 @@ struct InsightList: View {
     }
 
     var body: some View {
-        Card(title: title, symbol: "sparkles", tint: Tab.trends.color) {
+        Card(title: title, symbol: "sparkles", tint: Theme.trends) {
             if items.isEmpty {
                 Text("Nothing to report yet. Insights appear as System Sentinel learns this Mac's patterns.")
                     .font(.caption).foregroundStyle(.secondary)
@@ -568,9 +568,9 @@ struct InsightList: View {
             if let held, held.items != live {
                 Button { self.held = (live, Date()) } label: {
                     Label("Held while you read · Show latest", systemImage: "pause.circle.fill")
-                        .font(.caption.weight(.semibold)).foregroundStyle(Tab.trends.color)
+                        .font(.caption.weight(.semibold)).foregroundStyle(Theme.trends)
                         .padding(.horizontal, 9).padding(.vertical, 4)
-                        .background(Capsule().fill(Tab.trends.color.opacity(0.12)))
+                        .background(Capsule().fill(Theme.trends.opacity(0.12)))
                         .contentShape(Capsule())
                 }
                 .buttonStyle(.plain)
@@ -727,7 +727,7 @@ private struct RelatedRow: View {
             }
             Spacer(minLength: 4)
             Button { model.explain(s) } label: {
-                Image(systemName: "sparkles").foregroundStyle(Tab.trends.color)
+                Image(systemName: "sparkles").foregroundStyle(Theme.trends)
             }
             .buttonStyle(.plain)
             .tip("Explain \(s.name) with ChatGPT")

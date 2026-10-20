@@ -87,6 +87,8 @@ tab you were last on.
 
 ![Overview tab](images/overview-light.png)
 
+Overview has two pages, picked at the top: **Now** (below) and **[Trends](#trends)**.
+
 The answer to "is my Mac busy, and why?" in one screen:
 
 - **Gauge and headline.** The whole Mac's load, how many cores are busy and a thermal chip:
@@ -230,9 +232,9 @@ Manager) to match them up.
 
 ## Trends
 
-![Trends tab](images/trends-light.png)
+![Trends page](images/trends-light.png)
 
-What used the CPU over time, kept across restarts.
+The second page of Overview. What used the CPU over time, kept across restarts.
 
 - **30 min / 3 hours / 6 hours / 24 hours / 7 days.** Bars of 1 minute, 5 minutes,
   10 minutes, 1 hour and 6 hours. Up to 6 hours comes from a one-minute record, longer from
@@ -319,9 +321,9 @@ with its time and CPU.
 
 ## Rules
 
-![Rules tab](images/rules-light.png)
+![Rules page](images/rules-light.png)
 
-Every app you have set a rule for, and a button to remove each one. Below them,
+The second page of Settings. Every app you have set a rule for, and a button to remove each one. Below them,
 **Starts by itself** lists every launch agent and daemon (from `~/Library/LaunchAgents`,
 `/Library/LaunchAgents` and `/Library/LaunchDaemons`): whether it runs at login, stays
 running or runs on a timer, whether it is running now and its CPU, heaviest first.
@@ -347,6 +349,8 @@ path, so a rule for one tab applies to every tab.
 ## Settings
 
 ![Settings tab](images/settings-light.png)
+
+Settings has two pages, picked at the top: **Settings** (below) and **[Rules](#rules)**.
 
 - **Over N% CPU for N minutes without a break** decides when a process is flagged. The
   default is 80% (of one core) for 2 minutes. Builds and other short bursts never count;
@@ -374,7 +378,7 @@ When a process is flagged you get a notification with:
 
 - **Kill**: kill it now.
 - **Ignore for 1 hour**: no more alerts for it for an hour.
-- **Always ignore**: never alert for this app again (removable on the Rules tab).
+- **Always ignore**: never alert for this app again (removable on Settings, then Rules).
 - **Always auto-kill**: kill it now and every time from now on.
 
 Heat and power alerts carry the same buttons for the likely culprit. If the culprit has
@@ -469,7 +473,7 @@ To reset everything, quit System Sentinel and delete that folder.
 **The menu bar icon is missing.** The menu bar may be full: quit a few menu bar apps or
 hold Cmd and drag icons around. Check it's running with `pgrep -l CPUSentinel`.
 
-**Trends is empty or says "0 min recorded".** It fills in while System Sentinel runs. The
+**Trends (on Overview) is empty or says "0 min recorded".** It fills in while System Sentinel runs. The
 last-hour chart needs a few minutes and the daily insights need 30 minutes.
 
 **Kill on a root process does nothing.** The password prompt may have been cancelled. The

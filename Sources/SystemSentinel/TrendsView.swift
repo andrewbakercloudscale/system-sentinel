@@ -75,7 +75,7 @@ struct TrendsView: View {
         let d = data()
         VStack(spacing: 10) {
             HStack {
-                ChipPicker(options: Range.allCases.map(\.rawValue), selection: $range, color: Tab.trends.color)
+                ChipPicker(options: Range.allCases.map(\.rawValue), selection: $range, color: Theme.trends)
                 Spacer()
                 Toggle("Group by app", isOn: $byApp).toggleStyle(.switch).controlSize(.mini).font(.caption)
             }
@@ -195,7 +195,7 @@ private struct UsageRow: View {
             Text(Insights.duration(row.coreSeconds)).font(.caption).monospacedDigit().frame(width: 60, alignment: .trailing)
         }
         .padding(.vertical, 3).padding(.horizontal, 4)
-        .background(RoundedRectangle(cornerRadius: 7).fill(hover ? Tab.trends.color.opacity(0.07) : .clear))
+        .background(RoundedRectangle(cornerRadius: 7).fill(hover ? Theme.trends.opacity(0.07) : .clear))
         .onHover { hover = $0 }
         .tip(ProcessGuide.note(for: (row.key as NSString).lastPathComponent).map { "\($0.headline). \($0.detail)" } ?? row.key)
     }
@@ -207,7 +207,7 @@ private struct TrendStats: View {
     var body: some View {
         let load = d.sampled > 0 ? d.total / d.sampled * 100 / d.cores : 0
         HStack(spacing: 8) {
-            StatTile(symbol: "clock.fill", color: Tab.trends.color, value: Insights.duration(d.sampled), label: "recorded")
+            StatTile(symbol: "clock.fill", color: Theme.trends, value: Insights.duration(d.sampled), label: "recorded")
             StatTile(symbol: "cpu.fill", color: Tab.overview.color, value: Insights.duration(d.total), label: "CPU time used")
             StatTile(symbol: "gauge.with.dots.needle.50percent", color: Theme.machineHeat(load), value: Fmt.pct(load), label: "average load")
             StatTile(symbol: "crown.fill", color: d.colors[d.rows.first?.key ?? ""] ?? Theme.other,
@@ -226,7 +226,7 @@ private struct TrendChart: View {
     private var domain: [String] { hideOther ? d.domain.filter { $0 != "other" } : d.domain }
 
     var body: some View {
-        Card(title: d.range.barTitle, symbol: "chart.bar.fill", tint: Tab.trends.color,
+        Card(title: d.range.barTitle, symbol: "chart.bar.fill", tint: Theme.trends,
              trailing: AnyView(HStack(spacing: 10) {
                  Text("% of whole Mac, stacked by \(byApp ? "app" : "process")").font(.caption2).foregroundStyle(.secondary)
                  Button { hideOther.toggle() } label: {
@@ -234,7 +234,7 @@ private struct TrendChart: View {
                            systemImage: hideOther ? "eye" : "eye.slash")
                          .font(.caption2.weight(.medium))
                          .padding(.horizontal, 7).padding(.vertical, 3)
-                         .background(Capsule().fill(hideOther ? Tab.trends.color.opacity(0.15) : Color.primary.opacity(0.06)))
+                         .background(Capsule().fill(hideOther ? Theme.trends.opacity(0.15) : Color.primary.opacity(0.06)))
                  }
                  .buttonStyle(.plain)
                  .tip("Leave out the grey bar of all the smaller processes, so the named apps fill the chart")
@@ -302,7 +302,7 @@ private struct HeaviestCard: View {
     let byApp: Bool
 
     var body: some View {
-        Card(title: "Heaviest users", symbol: "list.number", tint: Tab.trends.color,
+        Card(title: "Heaviest users", symbol: "list.number", tint: Theme.trends,
              trailing: AnyView(Text("share of all CPU time").font(.caption2).foregroundStyle(.secondary))) {
             HStack(spacing: 8) {
                 Text("").frame(width: 16)

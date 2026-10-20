@@ -14,7 +14,7 @@ struct OptimiseButton: View {
         Button { open.toggle() } label: {
             Image(systemName: lowered ? "tortoise.fill" : "wand.and.stars")
                 .font(.callout.weight(.semibold))
-                .foregroundStyle(specific ? Color.white : lowered ? Tab.rules.color : Tab.processes.color)
+                .foregroundStyle(specific ? Color.white : lowered ? Theme.rules : Tab.processes.color)
                 .frame(width: 26, height: 22)
                 .background(Capsule().fill(specific ? Tab.processes.color : Tab.processes.color.opacity(0.10)))
                 .contentShape(Capsule())

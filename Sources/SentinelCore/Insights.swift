@@ -46,7 +46,7 @@ public enum ProcessGuide {
             return "A command-line tool you installed (Homebrew or similar), at \(p). Something you or a script started runs it."
         }
         if p.contains("/Library/") {
-            return "A background service an installed app added, at \(p). The app that installed it controls it; see the Rules tab's background items."
+            return "A background service an installed app added, at \(p). The app that installed it controls it; see Settings, then Rules, under Starts by itself."
         }
         return p.isEmpty
             ? "System Sentinel has no notes on \(name) yet. Explain asks for a full answer."
@@ -523,7 +523,7 @@ public enum Insights {
                 ? ["Close tabs you are not using; background tabs with video, ads or live dashboards cost the most.", "Chrome's Window > Task Manager shows which tab is which process."]
                 : ["Close the sessions or windows you no longer need.", "Check none of them is stuck in a loop: compare their 15 minute averages on the Processes tab."]
         case "top24", "split", "peakhour":
-            x.steps = ["Open the Trends tab for the hour-by-hour breakdown and the full ranking."]
+            x.steps = ["Open Overview, then Trends, for the hour-by-hour breakdown and the full ranking."]
         case _ where x.id.hasPrefix("repeat-"):
             let name = String(x.id.dropFirst("repeat-".count))
             let path = i.events.last(where: { $0.name == name })?.path ?? name

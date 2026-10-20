@@ -74,28 +74,27 @@ not a promise.
   its permissions across updates and the in-app updater can check the download came from
   the same signer. Developer ID and notarisation are supported but not yet used.
 
-## Where it stands (v0.8.16)
+## Where it stands (v0.8.18)
 
 Milestones 1 to 5 shipped in v0.1 to v0.6. Since then:
 
 - **Checkup**, the first tab: what is wrong, found on its own or picked from eleven symptoms,
   each with fixes; then security, network, startup items, crashes and backups, performance
   first and security last; and the everyday restarts. Findings can be ignored.
-- **Rules** lists everything that starts by itself, each with a remove button.
-- **Overview** (load, now, last hour, cores, memory), **Processes**, **Trends**, **Memory**,
-  **Storage** (what grew, cleanups, large files), **Network** (connections by app, DNS map,
-  route test over time), **Energy** (power, battery health, sleep and wakes), **Events**,
-  **Rules**, **Settings**.
+- Nine tabs: **Checkup**, **Overview** (load, now, last hour, cores, memory; a **Trends** page
+  for CPU over time), **Processes**, **Memory**, **Storage** (what grew, cleanups, large
+  files), **Network** (connections by app, DNS map, route test over time), **Energy** (power,
+  battery health, sleep and wakes), **Events**, **Settings** (a **Rules** page, which also
+  lists everything that starts by itself, each with a remove button).
 - Plain-English insights with one-click fixes, alarms for heat and power, weekly reports,
   and an in-app updater.
 
 ## Next
 
 1. **Time Machine:** whether a backup is stuck, not only whether one is set up.
-2. **Fewer tabs:** Trends into Overview, Rules into Settings.
-3. **Developer ID and notarisation**, then a privileged helper (`SMAppService`) so root
+2. **Developer ID and notarisation**, then a privileged helper (`SMAppService`) so root
    kills need no password.
-4. **Chrome tab names** for renderer processes: research, as `chrome.processes` is dev-channel only.
+3. **Chrome tab names** for renderer processes: research, as `chrome.processes` is dev-channel only.
 
 ## Tests
 

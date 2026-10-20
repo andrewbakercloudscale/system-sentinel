@@ -96,7 +96,7 @@ extension Model {
         if always { points.append("Every new \(s.name) process is lowered as soon as it starts, until you put it back.") }
         if let note = BackgroundCandidates.note(s.name) { points.append(note) }
         Confirm.ask(always ? "Always lower \(s.name)?" : "Lower \(s.displayName)'s priority?", "pid \(s.pid), \(Fmt.pct(s.cpu)) CPU now.",
-                    symbol: "tortoise.fill", tint: Tab.rules.color, points: points,
+                    symbol: "tortoise.fill", tint: Theme.rules, points: points,
                     undo: "The tortoise button puts it back to normal priority at any time.", button: always ? "Always lower" : "Lower priority") {
             self.slowDown(s, always: always)
         }
@@ -106,7 +106,7 @@ extension Model {
         let ruled = slowRules.contains(s.name)
         Confirm.ask("Put \(s.displayName) back to normal priority?",
                     ruled ? "Also stops lowering new \(s.name) processes." : "It competes with your apps for the performance cores again.",
-                    symbol: "hare.fill", tint: Tab.rules.color, button: "Back to normal") { self.restore(s) }
+                    symbol: "hare.fill", tint: Theme.rules, button: "Back to normal") { self.restore(s) }
     }
 
     func confirmInstallUpdate() {
@@ -124,7 +124,7 @@ extension Model {
                         symbol: "bolt.fill", tint: Theme.heat(100),
                         points: ["It is asked to stop politely first, then forced after 5 seconds.", "Anything unsaved in it is lost each time.",
                                  "Auto-kill stops after 3 kills of the same app in an hour."],
-                        undo: "Right-click it and pick Alert me (default), or remove the rule in the Rules tab.", button: p.label, destructive: true) {
+                        undo: "Right-click it and pick Alert me (default), or remove the rule on Settings, then Rules.", button: p.label, destructive: true) {
                 self.setPolicy(p, for: s)
             }
         default:

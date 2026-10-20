@@ -97,7 +97,7 @@ struct AboutView: View {
     }
 
     private var author: some View {
-        Card(title: "Made by", symbol: "person.crop.circle", tint: Tab.trends.color) {
+        Card(title: "Made by", symbol: "person.crop.circle", tint: Theme.trends) {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Andrew Baker").font(.title3.weight(.semibold))
                 Text("Group Chief Information Officer at Capitec Bank, and the person behind CloudScale Consulting. He writes about technology, leadership and the tools he builds at andrewbaker.ninja.")
@@ -117,11 +117,11 @@ struct AboutView: View {
     private var project: some View {
         Card(title: "The project", symbol: "shippingbox", tint: Tab.storage.color) {
             VStack(spacing: 6) {
-                linkRow("Source code", "github.com/\(Updates.repo)", "curlybraces", Tab.trends.color, Self.repoPage)
+                linkRow("Source code", "github.com/\(Updates.repo)", "curlybraces", Theme.trends, Self.repoPage)
                 linkRow("User guide", "Every screen and setting explained", "book.fill", Tab.memory.color, Self.guide)
                 linkRow("Report a problem or ask for a feature", "GitHub issues", "exclamationmark.bubble.fill", Tab.events.color, Self.issues)
                 linkRow("The story behind it", "andrewbaker.ninja blog post", "newspaper.fill", Tab.checkup.color, Self.post)
-                linkRow("Licence", "MIT", "checkmark.seal.fill", Tab.rules.color, Self.licence)
+                linkRow("Licence", "MIT", "checkmark.seal.fill", Theme.rules, Self.licence)
             }
             Text("Monitoring runs on this Mac and nothing is uploaded. The app is not notarised by Apple; the source is public so anyone can check what it does.")
                 .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
@@ -138,7 +138,7 @@ struct AboutView: View {
              } label: {
                  Label(copied ? "Copied" : "Copy details", systemImage: copied ? "checkmark" : "doc.on.doc")
              }
-             .buttonStyle(.bordered).tint(Tab.trends.color)
+             .buttonStyle(.bordered).tint(Theme.trends)
              .tip("Copy these details, for a bug report or a support ticket"))) {
             Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 6) {
                 ForEach(rows, id: \.0) { row in

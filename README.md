@@ -106,7 +106,7 @@ System Sentinel answers each of those. It was built after a macOS energy logger
 | **History from 30 minutes to a week** | CPU by app over the last 30 minutes, 3, 6 or 24 hours, or 7 days, the heaviest users and when each one peaked. Kept across restarts and sleep. |
 | **Know when a process started** | Every process shows its uptime, so a renderer that has been busy for 13 days is easy to spot. |
 | **Kill anything, carefully** | One-click kill for your own processes, your password for root ones, a separate sudo button with a warning for core macOS processes, and Force kill (kill -9) for anything that ignores a kill. A banner says whether it worked and who relaunched it if it came back. |
-| **Rules that remember** | Per app: alert (the default), ignore, ignore during work hours or overnight, auto-kill, auto-kill on battery, or auto-kill only under 30% battery. Auto-kill is limited to 3 kills an hour per app. The Rules tab also lists every launch agent and daemon that starts by itself, with its CPU. |
+| **Rules that remember** | Per app: alert (the default), ignore, ignore during work hours or overnight, auto-kill, auto-kill on battery, or auto-kill only under 30% battery. Auto-kill is limited to 3 kills an hour per app. Rules (a page on Settings) also lists every launch agent and daemon that starts by itself, with its CPU. |
 | **Dark mode, and a window you can move** | Every screen is designed for light and dark. **Pop out** moves the panel into a normal window you can drag. The menu bar can show CPU load, watts or battery beside the icon. |
 
 ## Screenshots
@@ -122,9 +122,9 @@ The top 30, each with uptime, a 15 minute trend, averages, memory and Kill.
 ![Processes tab](docs/images/processes-light.png)
 
 ### Trends
-CPU by hour, stacked by app, and the heaviest users over 24 hours or 7 days.
+A page on Overview. CPU by hour, stacked by app, and the heaviest users over 24 hours or 7 days.
 
-![Trends tab](docs/images/trends-light.png)
+![Trends page](docs/images/trends-light.png)
 
 ### Energy
 
@@ -145,7 +145,7 @@ What counts as a stuck process, and launch at login.
 ### Dark mode
 Every screen has its own dark design.
 
-![Trends tab in dark mode](docs/images/trends-dark.png)
+![Trends page in dark mode](docs/images/trends-dark.png)
 
 ## Documentation
 

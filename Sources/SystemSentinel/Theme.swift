@@ -13,6 +13,9 @@ enum Theme {
     static let other = Color(light: "#a3a29d", dark: "#6b6a66")
 
     static let accent = Color(light: "#5b4fd6", dark: "#8f86f0")
+    /// Trends (on Overview) and Rules (on Settings) kept their colours when they stopped being tabs.
+    static let trends = Color(light: "#9333ea", dark: "#c084fc")
+    static let rules = Color(light: "#0d9488", dark: "#2dd4bf")
 
     static let heroGradient = LinearGradient(
         colors: [Color(light: "#4f46e5", dark: "#3b33b8"), Color(light: "#9333ea", dark: "#6d28b0")],
@@ -151,21 +154,38 @@ struct SymbolTile: View {
 enum Tab: Int, CaseIterable, Identifiable {
     // Checkup first: it answers "is anything wrong, and how do I fix it", which is why most
     // people open the app.
-    case checkup, overview, processes, trends, memory, storage, network, battery, events, rules, settings
+    case checkup, overview, processes, memory, storage, network, battery, events, settings
     var id: Int { rawValue }
+
+    /// Pages inside a tab, picked at the top of it. Trends lives on Overview and Rules on
+    /// Settings, so the bar has nine tabs instead of eleven.
+    var pages: [(title: String, symbol: String, color: Color)] {
+        switch self {
+        case .overview: return [("Now", symbol, color), ("Trends", "chart.bar.xaxis", Theme.trends)]
+        case .settings: return [("Settings", symbol, color), ("Rules", "slider.horizontal.3", Theme.rules)]
+        default: return []
+        }
+    }
+    /// Where the last page picked in this tab is remembered.
+    var pageKey: String { "page.\(title)" }
+
+    /// The tab, and the page in it, for a name: a tab title or a page title such as "Trends".
+    static func named(_ name: String) -> (tab: Tab, page: String?)? {
+        if let t = allCases.first(where: { $0.title == name }) { return (t, nil) }
+        if let t = allCases.first(where: { $0.pages.contains { $0.title == name } }) { return (t, name) }
+        return nil
+    }
 
     var title: String {
         switch self {
         case .overview: return "Overview"
         case .processes: return "Processes"
-        case .trends: return "Trends"
         case .memory: return "Memory"
         case .storage: return "Storage"
         case .network: return "Network"
         case .checkup: return "Checkup"
         case .battery: return "Energy"
         case .events: return "Events"
-        case .rules: return "Rules"
         case .settings: return "Settings"
         }
     }
@@ -174,14 +194,12 @@ enum Tab: Int, CaseIterable, Identifiable {
         switch self {
         case .overview: return "gauge.with.dots.needle.50percent"
         case .processes: return "list.bullet.rectangle.fill"
-        case .trends: return "chart.bar.xaxis"
         case .memory: return "memorychip.fill"
         case .storage: return "internaldrive.fill"
         case .network: return "network"
         case .checkup: return "stethoscope"
         case .battery: return "bolt.batteryblock.fill"
         case .events: return "bell.badge.fill"
-        case .rules: return "slider.horizontal.3"
         case .settings: return "gearshape.fill"
         }
     }
@@ -190,15 +208,50 @@ enum Tab: Int, CaseIterable, Identifiable {
         switch self {
         case .overview: return Color(light: "#4f46e5", dark: "#818cf8")
         case .processes: return Color(light: "#2563eb", dark: "#60a5fa")
-        case .trends: return Color(light: "#9333ea", dark: "#c084fc")
         case .memory: return Color(light: "#0891b2", dark: "#22d3ee")
         case .storage: return Color(light: "#b45309", dark: "#fbbf24")
         case .network: return Color(light: "#0284c7", dark: "#38bdf8")
         case .checkup: return Color(light: "#db2777", dark: "#f472b6")
         case .battery: return Color(light: "#16a34a", dark: "#4ade80")
         case .events: return Color(light: "#ea580c", dark: "#fb923c")
-        case .rules: return Color(light: "#0d9488", dark: "#2dd4bf")
         case .settings: return Color(light: "#64748b", dark: "#94a3b8")
+        }
+    }
+}
+
+/// A tab with more than one page: the picker across the top, then the page. `forced` shows
+/// that page whatever was picked last (snapshots).
+struct TabPages<Content: View>: View {
+    let tab: Tab
+    var forced: String?
+    @ViewBuilder let content: (String) -> Content
+    @AppStorage private var picked: String
+
+    init(tab: Tab, forced: String? = nil, @ViewBuilder content: @escaping (String) -> Content) {
+        self.tab = tab
+        self.forced = forced
+        self.content = content
+        _picked = AppStorage(wrappedValue: tab.pages.first?.title ?? "", tab.pageKey)
+    }
+
+    var body: some View {
+        let current = forced ?? picked
+        VStack(spacing: 10) {
+            HStack(spacing: 6) {
+                ForEach(tab.pages, id: \.title) { p in
+                    let on = p.title == current
+                    Button { picked = p.title } label: {
+                        Label(p.title, systemImage: p.symbol)
+                            .font(.callout.weight(.semibold))
+                            .foregroundStyle(on ? Color.white : p.color)
+                            .frame(maxWidth: .infinity).padding(.vertical, 6)
+                            .background(Capsule().fill(on ? p.color : p.color.opacity(0.12)))
+                            .contentShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            content(current)
         }
     }
 }

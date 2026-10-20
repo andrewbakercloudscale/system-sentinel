@@ -202,7 +202,7 @@ struct MTRCard: View {
     private var trailing: some View {
         HStack(spacing: 6) {
             if !store.hops.isEmpty {
-                RowButton(title: copied ? "Copied" : "Copy report", symbol: copied ? "checkmark" : "doc.on.doc", color: Tab.trends.color) {
+                RowButton(title: copied ? "Copied" : "Copy report", symbol: copied ? "checkmark" : "doc.on.doc", color: Theme.trends) {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(store.reportText, forType: .string)
                     copied = true

@@ -217,11 +217,11 @@ private struct ProcessRow: View {
                     if s.isRoot { Pill(text: "root", symbol: "lock.fill", color: Color(hex: "#b45309")) }
                     policyPill(model.policy(for: s))
                     if model.isSlowed(s) {
-                        Pill(text: "background", symbol: "tortoise.fill", color: Tab.rules.color)
+                        Pill(text: "background", symbol: "tortoise.fill", color: Theme.rules)
                             .tip("Running at background priority: efficiency cores, disk access last. The tortoise button puts it back.")
                     }
                     if model.restarted[s.path] == s.pid {
-                        Pill(text: "restarted", symbol: "arrow.clockwise", color: Tab.rules.color)
+                        Pill(text: "restarted", symbol: "arrow.clockwise", color: Theme.rules)
                             .tip("Killed a moment ago and launched again under this new pid")
                     }
                 }
@@ -248,7 +248,7 @@ private struct ProcessRow: View {
                 .buttonStyle(.plain)
                 .tip("What is this?")
                 Button { model.explain(s) } label: {
-                    Image(systemName: "sparkles").foregroundStyle(Tab.trends.color)
+                    Image(systemName: "sparkles").foregroundStyle(Theme.trends)
                 }
                 .buttonStyle(.plain)
                 .tip("Explain: ask ChatGPT why this is busy and how to bring it down")
@@ -292,7 +292,7 @@ private struct ProcessRow: View {
     private func policyPill(_ p: Policy) -> some View {
         switch p {
         case .alert: EmptyView()
-        case .ignore, .ignoreDuring: Pill(text: p.label, symbol: "moon.fill", color: Tab.rules.color)
+        case .ignore, .ignoreDuring: Pill(text: p.label, symbol: "moon.fill", color: Theme.rules)
         default: Pill(text: p.label, symbol: p == .autoKill ? "bolt.fill" : "battery.50percent", color: Theme.heat(p == .autoKill ? 100 : 80))
         }
     }
@@ -439,7 +439,7 @@ private struct InfoPopover: View {
         case .wait: Pill(text: "Normal: it settles on its own", symbol: "hourglass", color: Theme.heat(0))
         case .safe: Pill(text: "Safe to stop: it comes back when needed", symbol: "checkmark.circle.fill", color: Color(light: "#2563eb", dark: "#60a5fa"))
         case .avoid: Pill(text: "Do not kill: macOS depends on it", symbol: "hand.raised.fill", color: Theme.heat(100))
-        case .yours: Pill(text: "Something you started: your call", symbol: "person.fill", color: Tab.trends.color)
+        case .yours: Pill(text: "Something you started: your call", symbol: "person.fill", color: Theme.trends)
         }
     }
 }
