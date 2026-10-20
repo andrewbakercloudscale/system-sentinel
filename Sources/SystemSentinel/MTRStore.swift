@@ -1,9 +1,11 @@
 import AppKit
+import Charts
 import SentinelCore
 import SwiftUI
 
 /// An mtr-style route test: trace the route once, then ping every hop once a second, so loss
-/// and delay at each step build up over a minute. Done with macOS's own `traceroute` and
+/// and delay at each step build up over a minute, or up to an hour to catch trouble that comes
+/// and goes. Done with macOS's own `traceroute` and
 /// `ping`, because real mtr needs root.
 @MainActor
 final class MTRStore: ObservableObject {
@@ -19,15 +21,25 @@ final class MTRStore: ObservableObject {
     @Published private(set) var started: Date?
     /// Set when the route leaves through a VPN or Zscaler tunnel, whose inside a trace cannot see.
     @Published private(set) var tunnel: String?
+    /// The target's answer each round, for the over-time chart and the minute-by-minute windows.
+    @Published private(set) var samples: [MTRSample] = []
+    @AppStorage("mtrDuration") var duration = "1 min"
+    /// Rounds the running test will do, fixed when it starts.
+    @Published private(set) var planned = 60
 
     enum Phase: Equatable { case idle, resolving, tracing, pinging, failed(String) }
 
-    static let maxRounds = 60
+    static let durations = ["1 min", "5 min", "15 min", "1 hour"]
+    static func seconds(_ d: String) -> Int {
+        switch d { case "5 min": 300; case "15 min": 900; case "1 hour": 3600; default: 60 }
+    }
     private var generation = 0
 
     var running: Bool { phase == .resolving || phase == .tracing || phase == .pinging }
 
     var verdict: MTR.Verdict? { MTR.verdict(hops, isPrivate: DNSMap.isPrivate) }
+    var windows: [MTRWindow] { MTR.windows(samples) }
+    var timeline: MTR.Verdict? { MTR.timeline(windows) }
 
     func start() {
         let name = input.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -38,10 +50,13 @@ final class MTRStore: ObservableObject {
         address = nil
         hops = []
         rounds = 0
+        samples = []
+        planned = Self.seconds(duration)
         tunnel = nil
         started = Date()
         phase = .resolving
-        Task.detached(priority: .utility) { await self.run(name, gen: gen) }
+        let rounds = planned
+        Task.detached(priority: .utility) { await self.run(name, rounds: rounds, gen: gen) }
     }
 
     func stop() {
@@ -52,11 +67,13 @@ final class MTRStore: ObservableObject {
     var reportText: String {
         MTR.report(target: target, address: address, hops: hops, owners: owners, at: started ?? Date())
             + (verdict.map { "\n\($0.title). \($0.detail)\n" } ?? "")
+            + MTR.timelineReport(windows)
+            + (timeline.map { "\n\($0.title). \($0.detail)\n" } ?? "")
     }
 
     private func current(_ gen: Int) -> Bool { gen == generation }
 
-    private nonisolated func run(_ name: String, gen: Int) async {
+    private nonisolated func run(_ name: String, rounds total: Int, gen: Int) async {
         let ip = DNSMap.isIP(name) ? name : NetworkStore.resolve(name).addresses.first { !$0.contains(":") } ?? NetworkStore.resolve(name).addresses.first
         guard let ip else {
             await MainActor.run { if self.current(gen) { self.phase = .failed("Could not look up \(name).") } }
@@ -83,7 +100,8 @@ final class MTRStore: ObservableObject {
         }
         Task.detached(priority: .utility) { await self.lookUpOwners(hops.compactMap(\.address), gen: gen) }
 
-        for _ in 0..<Self.maxRounds {
+        let end = hops.last?.n
+        for _ in 0..<total {
             let t0 = Date()
             guard await MainActor.run(body: { self.current(gen) }) else { return }
             let results: [Int: Double?] = await withTaskGroup(of: (Int, Double?).self) { g in
@@ -102,6 +120,7 @@ final class MTRStore: ObservableObject {
             await MainActor.run {
                 guard self.current(gen) else { return }
                 for i in self.hops.indices { if let r = results[self.hops[i].n] { self.hops[i].record(r) } }
+                if let end, let r = results[end] { self.samples.append(MTRSample(at: t0, ms: r)) }
                 self.rounds += 1
             }
             let wait = 1 - Date().timeIntervalSince(t0)
@@ -151,11 +170,19 @@ struct MTRCard: View {
                         .buttonStyle(.bordered).tint(tint).disabled(store.running)
                 }
             }
+            HStack(spacing: 8) {
+                Text("Run for").font(.callout).foregroundStyle(.secondary)
+                ChipPicker(options: MTRStore.durations, selection: $store.duration, color: tint)
+                    .disabled(store.running)
+                    .tip("Longer tests catch loss and jitter that come and go, and show when it happened")
+                Spacer()
+            }
             if store.hops.isEmpty {
                 Text(intro).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             } else {
                 if let v = store.verdict { verdict(v) }
                 table
+                if store.samples.count >= 2 { overTime }
             }
             if let t = store.tunnel {
                 Text("This route leaves through a tunnel (\(t)), such as Zscaler or a VPN. The hops inside it are hidden, so the trace shows little; the last row still measures the whole way to the target.")
@@ -168,7 +195,7 @@ struct MTRCard: View {
     }
 
     private var intro: String {
-        "Traces the route to a server, then pings every hop once a second for a minute: loss and delay at each step, like mtr. Loss that starts at one hop and carries on to the end is where the problem is."
+        "Traces the route to a server, then pings every hop once a second, for a minute or up to an hour: loss, delay and jitter at each step, like mtr, and a chart of when it happened. Loss that starts at one hop and carries on to the end is where the problem is."
     }
 
     @ViewBuilder
@@ -188,7 +215,7 @@ struct MTRCard: View {
                     .tip("Stop the test")
             } else {
                 RowButton(title: store.hops.isEmpty ? "Run" : "Run again", symbol: "play.fill", color: tint, filled: true) { store.start() }
-                    .tip("Trace the route, then ping each hop once a second for a minute")
+                    .tip("Trace the route, then ping each hop once a second for \(store.duration == "1 hour" ? "an hour" : store.duration)")
             }
         }
     }
@@ -197,8 +224,57 @@ struct MTRCard: View {
         switch store.phase {
         case .resolving: return "Looking up…"
         case .tracing: return "Tracing…"
-        case .pinging: return "Stop  \(store.rounds)/\(MTRStore.maxRounds)"
+        case .pinging: return "Stop  \(clock(store.rounds)) / \(clock(store.planned))"
         default: return "Stop"
+        }
+    }
+
+    private func clock(_ s: Int) -> String {
+        s >= 3600 ? String(format: "%d:%02d:%02d", s / 3600, s / 60 % 60, s % 60) : String(format: "%d:%02d", s / 60, s % 60)
+    }
+
+    /// The target's delay each second, with lost pings as red ticks along the top, so a burst
+    /// of trouble shows where it happened in a long test.
+    @ViewBuilder
+    private var overTime: some View {
+        let pts = store.samples
+        let top = max(10, (pts.compactMap(\.ms).max() ?? 10) * 1.1)
+        let lost = pts.filter { $0.ms == nil }.count
+        VStack(alignment: .leading, spacing: 6) {
+            Divider()
+            HStack {
+                Text("To \(store.target), over time").font(.callout.weight(.semibold))
+                Spacer()
+                Text(lost == 0 ? "No pings lost" : "\(lost) of \(pts.count) pings lost")
+                    .font(.callout).foregroundStyle(lost == 0 ? Theme.heat(0) : Theme.heat(100))
+            }
+            Chart {
+                ForEach(pts, id: \.at) { p in
+                    if let ms = p.ms {
+                        LineMark(x: .value("Time", p.at), y: .value("ms", ms))
+                            .foregroundStyle(tint).interpolationMethod(.monotone)
+                    } else {
+                        RuleMark(x: .value("Time", p.at), yStart: .value("ms", top * 0.85), yEnd: .value("ms", top))
+                            .foregroundStyle(Theme.heat(100)).lineStyle(StrokeStyle(lineWidth: 2))
+                    }
+                }
+            }
+            .chartYScale(domain: 0...top)
+            .chartYAxis {
+                AxisMarks(position: .leading, values: .automatic(desiredCount: 3)) { v in
+                    AxisGridLine().foregroundStyle(Color.primary.opacity(0.08))
+                    AxisValueLabel { if let d = v.as(Double.self) { Text("\(Int(d)) ms").font(.caption) } }
+                }
+            }
+            .chartXAxis { AxisMarks(values: .automatic(desiredCount: 4)) { _ in AxisValueLabel(format: .dateTime.hour().minute()).font(.caption) } }
+            .frame(height: 110)
+            HStack(spacing: 14) {
+                Label("Delay to the target", systemImage: "circle.fill").foregroundStyle(tint)
+                Label("Lost ping", systemImage: "circle.fill").foregroundStyle(Theme.heat(100))
+                Spacer()
+            }
+            .font(.callout)
+            if let t = store.timeline { verdict(t) }
         }
     }
 

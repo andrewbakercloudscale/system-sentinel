@@ -79,4 +79,45 @@ final class MTRTests: XCTestCase {
         XCTAssertTrue(r.contains("???"))
         XCTAssertTrue(r.contains("AS13335 CLOUDFLARENET"))
     }
+
+    /// `minutes` of one-a-second answers; the minutes listed in `lossy` lose 6 pings in 60.
+    private func run(minutes: Int, lossy: Set<Int> = [], ms: Double = 10) -> [MTRSample] {
+        let t0 = Date(timeIntervalSince1970: 1_800_000_000)
+        return (0..<minutes * 60).map { i in
+            MTRSample(at: t0.addingTimeInterval(Double(i)), ms: lossy.contains(i / 60) && i % 60 < 6 ? nil : ms)
+        }
+    }
+
+    func testWindowsCutTheRunIntoMinutes() {
+        let w = MTR.windows(run(minutes: 3, lossy: [1]))
+        XCTAssertEqual(w.map(\.sent), [60, 60, 60])
+        XCTAssertEqual(w.map(\.lost), [0, 6, 0])
+        XCTAssertEqual(w[1].loss, 10)
+        XCTAssertEqual(w.map(\.troubled), [false, true, false])
+        XCTAssertEqual(MTR.windows(Array(run(minutes: 2).prefix(90))).map(\.sent), [60, 30])
+    }
+
+    func testTimelineSaysWhetherTroubleCameAndWent() {
+        XCTAssertNil(MTR.timeline(MTR.windows(run(minutes: 1, lossy: [0]))), "one minute has nothing to compare")
+        XCTAssertNil(MTR.timeline(MTR.windows(run(minutes: 5))), "nothing went wrong")
+        let burst = MTR.timeline(MTR.windows(run(minutes: 5, lossy: [3])))
+        XCTAssertEqual(burst?.tone, .warning)
+        XCTAssertEqual(burst?.title, "Trouble came and went: 1 of 5 minutes")
+        XCTAssertEqual(MTR.timeline(MTR.windows(run(minutes: 3, lossy: [0, 1, 2])))?.tone, .bad)
+    }
+
+    func testJitterAloneMarksAMinute() {
+        let t0 = Date()
+        let spiky = (0..<120).map { MTRSample(at: t0.addingTimeInterval(Double($0)), ms: $0 >= 60 && $0 % 2 == 0 ? 100 : 10) }
+        let w = MTR.windows(spiky)
+        XCTAssertEqual(w.map(\.troubled), [false, true])
+        XCTAssertTrue(MTR.timeline(w)?.detail.contains("varied by 45 ms") ?? false)
+    }
+
+    func testTimelineReportListsEveryMinuteAndMarksTheBadOnes() {
+        XCTAssertEqual(MTR.timelineReport(MTR.windows(run(minutes: 1))), "")
+        let r = MTR.timelineReport(MTR.windows(run(minutes: 3, lossy: [2])))
+        XCTAssertEqual(r.components(separatedBy: "\n").filter { $0.hasSuffix("<") }.count, 1)
+        XCTAssertTrue(r.contains("Minute by minute"))
+    }
 }
