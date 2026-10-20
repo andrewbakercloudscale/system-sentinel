@@ -42,8 +42,10 @@ final class CheckupStore: ObservableObject {
 
     func isIgnored(_ c: Check) -> Bool { ignoredKeys.contains(c.ignoreKey) }
 
-    func ignore(_ c: Check) {
-        ignored[c.ignoreKey] = c.ignoreFor == .infinity ? Double.greatestFiniteMagnitude : Date().timeIntervalSince1970 + c.ignoreFor
+    func ignore(_ c: Check) { ignore(key: c.ignoreKey, for: c.ignoreFor) }
+
+    func ignore(key: String, for duration: TimeInterval) {
+        ignored[key] = duration == .infinity ? Double.greatestFiniteMagnitude : Date().timeIntervalSince1970 + duration
         UserDefaults.standard.set(ignored, forKey: "ignoredFindings")
     }
 

@@ -29,12 +29,9 @@ struct CheckupView: View {
     }
 
     private var hero: some View {
-        // Symptoms found from live numbers count too, once: some are checks already listed.
-        let listed = Set(store.checks.map(\.ignoreKey))
-        let live = Diagnose.found(model.vitals(), ignoring: store.ignoredKeys).map(\.check).filter { !listed.contains($0.ignoreKey) }
-        let shown = store.checks.filter { !store.isIgnored($0) } + live
-        let problems = shown.filter { $0.status == .problem }.count
-        let warnings = shown.filter { $0.status == .warning }.count
+        let a = model.attention()
+        let problems = a.problems
+        let warnings = a.count - a.problems
         let ok = store.checks.filter { $0.status == .ok }.count
         let colors: [Color] = problems > 0 ? [Color(hex: "#b91c1c"), Color(hex: "#9f1239")]
             : warnings > 0 ? [Color(hex: "#b45309"), Color(hex: "#c2410c")] : [Color(hex: "#047857"), Color(hex: "#0f766e")]

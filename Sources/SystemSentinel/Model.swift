@@ -1081,7 +1081,7 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
 
     private static func advice(_ o: KillOutcome) -> String? {
         if case .failed(let why) = o, why.contains("SIGTERM") || why.contains("SIGKILL") {
-            return "It is still running. Right-click it and choose Force kill, or use Force kill in the insight on the Overview."
+            return "It is still running. Right-click it and choose Force kill, or use Force kill in its finding on Checkup."
         }
         return nil
     }
