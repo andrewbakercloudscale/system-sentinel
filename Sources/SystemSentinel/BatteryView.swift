@@ -126,7 +126,7 @@ struct PowerChart: View {
                 StatTile(symbol: "bolt.fill", color: Tab.battery.color, value: summary.averageWatts.map { String(format: "%.1f W", $0) } ?? "–", label: "average")
                 StatTile(symbol: "arrow.up.to.line", color: Theme.heat(80), value: summary.peakWatts.map { String(format: "%.0f W", $0) } ?? "–", label: "peak")
                 StatTile(symbol: "battery.50percent", color: Color(hex: "#d97706"), value: Insights.duration(Double(summary.batteryMinutes) * 60), label: "on battery")
-                StatTile(symbol: "chart.line.downtrend.xyaxis", color: Tab.trends.color, value: summary.drainPerHour.map { String(format: "%.0f%%/h", $0) } ?? "–", label: "drain on battery")
+                StatTile(symbol: "chart.line.downtrend.xyaxis", color: Theme.trends, value: summary.drainPerHour.map { String(format: "%.0f%%/h", $0) } ?? "–", label: "drain on battery")
             }
             if bars.isEmpty {
                 Text("Collecting: the chart fills in as System Sentinel runs. Readings are kept for 7 days.")
@@ -549,7 +549,7 @@ private struct TodayCard: View {
     let lines: [String]
 
     var body: some View {
-        Card(title: "Today in brief", symbol: "text.quote", tint: Tab.trends.color) {
+        Card(title: "Today in brief", symbol: "text.quote", tint: Theme.trends) {
             if lines.isEmpty {
                 Text("A summary appears after about ten minutes of recording.").font(.caption).foregroundStyle(.secondary)
             }
@@ -562,7 +562,7 @@ private struct TodayCard: View {
     struct BulletLabel: LabelStyle {
         func makeBody(configuration: Configuration) -> some View {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Circle().fill(Tab.trends.color).frame(width: 5, height: 5).alignmentGuide(.firstTextBaseline) { $0[.bottom] + 1 }
+                Circle().fill(Theme.trends).frame(width: 5, height: 5).alignmentGuide(.firstTextBaseline) { $0[.bottom] + 1 }
                 configuration.title.fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -679,8 +679,8 @@ struct BackgroundItemsCard: View {
             return x != y ? x > y : a.label.lowercased() < b.label.lowercased()
         }
         let shown = showAll ? items : Array(items.prefix(8))
-        Card(title: "Starts by itself", symbol: "power.circle.fill", tint: Tab.rules.color,
-             trailing: AnyView(FooterButton(title: "Login Items", symbol: "gearshape", color: Tab.rules.color) {
+        Card(title: "Starts by itself", symbol: "power.circle.fill", tint: Theme.rules,
+             trailing: AnyView(FooterButton(title: "Login Items", symbol: "gearshape", color: Theme.rules) {
                  NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.LoginItems-Settings.extension")!)
              })) {
             Text("Launch agents and daemons installed by apps. They run in the background, often at login and around the clock, and are a common source of battery drain. Remove the ones you do not want with the bin, or turn them off in System Settings > General > Login Items & Extensions > Allow in the Background.")
@@ -699,7 +699,7 @@ struct BackgroundItemsCard: View {
                             Text(item.vendor).font(.caption2).foregroundStyle(.secondary)
                         }
                         HStack(spacing: 4) {
-                            Pill(text: scope(item.scope), color: item.scope == .system ? Theme.heat(80) : Tab.rules.color)
+                            Pill(text: scope(item.scope), color: item.scope == .system ? Theme.heat(80) : Theme.rules)
                             if item.runAtLoad { Pill(text: "at login", color: .secondary) }
                             if item.keepAlive { Pill(text: "always on", color: .secondary) }
                             if let i = item.interval { Pill(text: "every \(Model.duration(Double(i)))", color: .secondary) }
@@ -752,7 +752,7 @@ struct WeeklyCard: View {
             } else {
                 HStack(spacing: 8) {
                     StatTile(symbol: "cpu", color: Tab.overview.color, value: String(format: "%.1f", report.coreHours), label: "core-hours used")
-                    StatTile(symbol: "eye.fill", color: Tab.trends.color, value: String(format: "%.0f h", report.hoursWatched), label: "watched")
+                    StatTile(symbol: "eye.fill", color: Theme.trends, value: String(format: "%.0f h", report.hoursWatched), label: "watched")
                     StatTile(symbol: "battery.50percent", color: Color(hex: "#d97706"), value: String(format: "%.1f h", report.batteryHours), label: "on battery")
                     StatTile(symbol: "bolt.fill", color: Tab.battery.color, value: report.averageWatts.map { String(format: "%.1f W", $0) } ?? "–", label: "average draw")
                 }

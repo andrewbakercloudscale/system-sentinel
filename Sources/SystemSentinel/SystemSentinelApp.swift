@@ -87,6 +87,8 @@ struct MenuView: View {
     @ObservedObject var model: Model
     /// Opens where it was left, across relaunches; Checkup only the first time.
     @State var tab: Tab = MenuView.lastTab
+    /// Snapshots pick the page inside a tab rather than using the remembered one.
+    var forcedPage: String?
     /// Snapshots render the whole page instead of a scrolling window.
     var fullLength = false
     /// Shown in the movable window rather than under the menu bar icon.
@@ -98,7 +100,7 @@ struct MenuView: View {
     /// Saved by title, not position, so reordering the tabs never reopens the wrong one.
     static var lastTab: Tab {
         let saved = UserDefaults.standard.string(forKey: "lastTab")
-        return Tab.allCases.first { $0.title == saved } ?? .checkup
+        return saved.flatMap(Tab.named)?.tab ?? .checkup
     }
     /// The About button and version line when a newer release is out.
     static let updateColor = Color(hex: "#ea580c")
@@ -111,8 +113,9 @@ struct MenuView: View {
             TabBar(selection: $tab, badges: [.events: model.flagged.count, .checkup: model.attention().count])
                 .onChange(of: tab) { _, t in if !fullLength { UserDefaults.standard.set(t.title, forKey: "lastTab") } }
                 .onChange(of: model.goTab) { _, t in
-                    guard let t, let to = Tab.allCases.first(where: { $0.title == t }) else { return }
-                    tab = to
+                    guard let t, let to = Tab.named(t) else { return }
+                    if let page = to.page { UserDefaults.standard.set(page, forKey: to.tab.pageKey) }
+                    tab = to.tab
                     DispatchQueue.main.async { model.goTab = nil }
                 }
             Group {
@@ -194,17 +197,21 @@ struct MenuView: View {
     @ViewBuilder
     private var page: some View {
         switch tab {
-        case .overview: OverviewView(model: model)
+        case .overview:
+            TabPages(tab: .overview, forced: forcedPage) { page in
+                if page == "Trends" { TrendsView(model: model) } else { OverviewView(model: model) }
+            }
         case .processes: ProcessesView(model: model)
-        case .trends: TrendsView(model: model)
         case .memory: MemoryView(model: model)
         case .storage: StorageView(model: model, store: model.storage)
         case .network: NetworkView(model: model, store: model.network)
         case .checkup: CheckupView(model: model, store: model.checkup)
         case .battery: BatteryView(model: model)
         case .events: EventsView(model: model)
-        case .rules: RulesView(model: model)
-        case .settings: SettingsView(model: model)
+        case .settings:
+            TabPages(tab: .settings, forced: forcedPage) { page in
+                if page == "Rules" { RulesView(model: model) } else { SettingsView(model: model) }
+            }
         }
     }
 
@@ -217,7 +224,7 @@ struct MenuView: View {
             }
             Spacer()
             if !inWindow {
-                FooterButton(title: "Pop out", symbol: "macwindow.on.rectangle", color: Tab.trends.color) {
+                FooterButton(title: "Pop out", symbol: "macwindow.on.rectangle", color: Theme.trends) {
                     PopOut.show(model)
                 }
                 .tip("Open in a window you can move around and keep open")
@@ -292,10 +299,10 @@ struct RulesView: View {
         VStack(spacing: 10) {
             HStack(spacing: 8) {
                 StatTile(symbol: "bolt.fill", color: Theme.heat(100), value: "\(autoKill)", label: "auto-kill")
-                StatTile(symbol: "moon.fill", color: Tab.rules.color, value: "\(ignored)", label: "ignored")
+                StatTile(symbol: "moon.fill", color: Theme.rules, value: "\(ignored)", label: "ignored")
                 StatTile(symbol: "bell.fill", color: Tab.events.color, value: "Alert", label: "everything else")
             }
-            Card(title: "Rules", symbol: "slider.horizontal.3", tint: Tab.rules.color) {
+            Card(title: "Rules", symbol: "slider.horizontal.3", tint: Theme.rules) {
                 if rules.isEmpty {
                     Text("No rules yet. Every process alerts by default. Right-click a process on the Processes tab, or use a notification's buttons, to set one.")
                         .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
@@ -325,7 +332,7 @@ struct RulesView: View {
     private func rulePill(_ p: Policy) -> some View {
         switch p {
         case .alert: Pill(text: "alert", symbol: "bell.fill", color: Tab.events.color)
-        case .ignore, .ignoreDuring: Pill(text: p.label, symbol: "moon.fill", color: Tab.rules.color)
+        case .ignore, .ignoreDuring: Pill(text: p.label, symbol: "moon.fill", color: Theme.rules)
         default: Pill(text: p.label, symbol: p == .autoKill ? "bolt.fill" : "battery.50percent", color: Theme.heat(p == .autoKill ? 100 : 80))
         }
     }
@@ -462,7 +469,7 @@ struct SettingsView: View {
                     Label("Save", systemImage: "checkmark").frame(minWidth: 60)
                 }
                 .buttonStyle(.borderedProminent)
-                .tint(Tab.rules.color)
+                .tint(Theme.rules)
                 .keyboardShortcut(.defaultAction)
                 .disabled(!dirty)
             }
@@ -497,8 +504,8 @@ enum Snapshot {
                 .write(to: URL(fileURLWithPath: dir).appendingPathComponent("menubar-\(alert ? "alert" : "normal").png"))
         }
         for appearance in [NSAppearance.Name.aqua, .darkAqua] {
-            for tab in Tab.allCases {
-                let view = MenuView(model: model, tab: tab, fullLength: true)
+            for (tab, page) in Tab.allCases.flatMap({ t in t.pages.isEmpty ? [(t, nil)] : t.pages.map { (t, Optional($0.title)) } }) {
+                let view = MenuView(model: model, tab: tab, forcedPage: page, fullLength: true)
                     .background(Color(nsColor: .windowBackgroundColor))
                 let host = NSHostingView(rootView: view)
                 host.appearance = NSAppearance(named: appearance)
@@ -512,7 +519,9 @@ enum Snapshot {
                 host.layoutSubtreeIfNeeded()
                 guard let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { continue }
                 host.cacheDisplay(in: host.bounds, to: rep)
-                let name = "\(tab.rawValue)-\(tab.title.lowercased())-\(appearance == .aqua ? "light" : "dark").png"
+                // The first page keeps the tab's name; later ones are named after themselves.
+                let title = page == nil || page == tab.pages.first?.title ? tab.title : page!
+                let name = "\(tab.rawValue)-\(title.lowercased())-\(appearance == .aqua ? "light" : "dark").png"
                 try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: dir).appendingPathComponent(name))
             }
         }
