@@ -12,7 +12,7 @@ awake and how the battery is wearing. When
 something gets stuck at high CPU it tells you, and it can kill that process in one click or
 automatically.
 
-![The Overview tab: a load gauge, a donut of what is using CPU now, a last-hour chart by app and insights](docs/images/overview-light.png)
+![The Overview tab: a load gauge, a donut of what is using CPU now, and a last-hour chart by app](docs/images/overview-light.png)
 
 ## Install
 

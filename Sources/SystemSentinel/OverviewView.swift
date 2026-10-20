@@ -3,12 +3,14 @@ import Charts
 import SentinelCore
 import SwiftUI
 
-/// The first screen: how busy the Mac is, who is responsible, and what it means.
+/// How busy the Mac is and who is responsible. What is wrong is on Checkup, with a line
+/// here pointing at it.
 struct OverviewView: View {
     @ObservedObject var model: Model
 
     var body: some View {
         VStack(spacing: 10) {
+            LookAtBanner(model: model)
             Hero(model: model)
             // Same height side by side; each opens a larger, live version when clicked.
             HStack(alignment: .top, spacing: 10) {
@@ -20,7 +22,38 @@ struct OverviewView: View {
             .fixedSize(horizontal: false, vertical: true)
             CoresCard(model: model)
             MemoryCard(model: model)
-            InsightList(model: model)
+        }
+    }
+}
+
+/// "3 things to look at", linking to Checkup, where they are listed with their fixes.
+private struct LookAtBanner: View {
+    @ObservedObject var model: Model
+    @State private var hover = false
+
+    var body: some View {
+        let a = model.attention()
+        if a.count > 0 {
+            let color = a.problems > 0 ? Theme.heat(100) : Color(hex: "#d97706")
+            let first = a.symptoms.first?.check.title ?? a.insights.first?.title ?? a.checks.first?.title ?? ""
+            Button { model.goTab = Tab.checkup.title } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "stethoscope").font(.title3.weight(.semibold)).foregroundStyle(color)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("\(a.count) thing\(a.count == 1 ? "" : "s") to look at").font(.callout.weight(.semibold))
+                        Text(first).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    }
+                    Spacer()
+                    Label("Checkup", systemImage: "arrow.right.circle.fill").font(.callout.weight(.semibold)).foregroundStyle(color)
+                }
+                .padding(.horizontal, 12).padding(.vertical, 8)
+                .background(RoundedRectangle(cornerRadius: 10).fill(color.opacity(hover ? 0.16 : 0.1)))
+                .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(color.opacity(0.4)))
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .onHover { hover = $0 }
+            .tip("Open Checkup: each one with what to do and a Fix it button")
         }
     }
 }
@@ -561,10 +594,12 @@ func toneColor(_ t: Insight.Tone) -> Color {
 
 /// One finding: headline and summary, opening to the full story, every process involved
 /// (what it is, who started it, buttons to act on it) and the steps to fix it.
-private struct InsightCard: View {
+struct InsightCard: View {
     @ObservedObject var model: Model
     let insight: Insight
     @Binding var expanded: Bool
+    /// Shows an Ignore button, for the Checkup list.
+    var onIgnore: (() -> Void)?
 
     var body: some View {
         let i = insight
@@ -577,6 +612,7 @@ private struct InsightCard: View {
                     Text(i.detail).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 0)
+                if let onIgnore { IgnoreButton(subject: !i.related.isEmpty, action: onIgnore) }
                 if i.expandable {
                     Button { withAnimation(.easeInOut(duration: 0.15)) { expanded.toggle() } } label: {
                         Label(expanded ? "Less" : "More", systemImage: expanded ? "chevron.up" : "chevron.down")

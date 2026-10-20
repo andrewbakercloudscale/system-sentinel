@@ -115,6 +115,64 @@ extension Model {
     }
 }
 
+/// Everything that needs a look, in one place: what the checks found, what the symptoms
+/// found from live numbers, and the insights. Ignored ones left out. Checkup lists it; the
+/// tab badge and the Overview's banner count it.
+struct Attention {
+    var checks: [Check] = []
+    var symptoms: [(symptom: Symptom, check: Check)] = []
+    var insights: [Insight] = []
+    /// Insights worth knowing but not a problem.
+    var notes: [Insight] = []
+
+    var problems: Int {
+        checks.filter { $0.status == .problem }.count + symptoms.filter { $0.check.status == .problem }.count
+            + insights.filter { $0.tone == .critical }.count
+    }
+    var count: Int { checks.count + symptoms.count + insights.count }
+}
+
+extension Insight {
+    /// What Ignore remembers for an insight. One about particular processes is ignored for
+    /// good, like an app the person runs on purpose; a general one for a day.
+    var ignoreKey: String { "insight:" + id }
+    var ignoreFor: TimeInterval { related.isEmpty ? 86_400 : .infinity }
+}
+
+extension Model {
+    /// The insight ids (as prefixes) that report the same thing as a symptom finding.
+    static func sameAsInsight(_ c: Check) -> [String] {
+        let map: [String: [String]] = ["-blockers": ["blockers"], "-hot": ["thermal"], "-draw": ["drain-"],
+                                       "-free": ["disk-low", "disk-critical"], "-wakes": ["darkwakes"],
+                                       "-asleep": ["sleepdrain"], "-memory": ["mem-thrash"]]
+        return map.first { c.id.hasSuffix($0.key) }?.value ?? []
+    }
+
+    func attention() -> Attention {
+        let ignored = checkup.ignoredKeys
+        var a = Attention()
+        a.checks = checkup.checks.filter { $0.status >= .warning && !ignored.contains($0.ignoreKey) }
+        // A symptom finding that is one of the checks above is counted there.
+        let listed = Set(a.checks.map(\.ignoreKey))
+        var open = insights.filter { !ignored.contains($0.ignoreKey) }
+        // Some symptom findings and insights say the same thing. Show it once, as the
+        // insight (it lists the processes); ignoring either hides both.
+        a.symptoms = Diagnose.found(vitals()).filter { f in
+            guard !listed.contains(f.check.ignoreKey) else { return false }
+            let same = Model.sameAsInsight(f.check)
+            if ignored.contains(f.check.ignoreKey) {
+                open.removeAll { i in same.contains { i.id.hasPrefix($0) } }
+                return false
+            }
+            if same.contains(where: { p in ignored.contains { $0.hasPrefix("insight:" + p) } }) { return false }
+            return !open.contains { i in same.contains { i.id.hasPrefix($0) } }
+        }
+        a.insights = open.filter { $0.tone >= .warning }
+        a.notes = open.filter { $0.tone < .warning }
+        return a
+    }
+}
+
 /// The top of the Checkup tab: what the Mac found wrong on its own, and a row of symptoms to
 /// say what feels wrong. One symptom opens at a time, so the tab stays short.
 struct SymptomsCard: View {
@@ -122,15 +180,18 @@ struct SymptomsCard: View {
     @ObservedObject var store: CheckupStore
     @Binding var open: Symptom?
     let row: (Check) -> AnyView
+    @State private var openInsights: Set<String> = []
+    @State private var showNotes = false
     private let tint = Tab.checkup.color
 
     var body: some View {
         let v = model.vitals()
-        let found = Diagnose.found(v, ignoring: store.ignoredKeys)
+        let attention = model.attention()
+        let found = attention.symptoms
         let ignoredCount = store.ignoredKeys.count
         let flagged = Dictionary(found.map { ($0.symptom, $0.check.status) }, uniquingKeysWith: max)
         Card(title: "What's wrong?", symbol: "stethoscope", tint: tint) {
-            if found.isEmpty {
+            if found.isEmpty && attention.insights.isEmpty {
                 Label("Nothing wrong found on its own right now. If something feels wrong, pick it below.", systemImage: "checkmark.circle.fill")
                     .font(.callout).foregroundStyle(Tab.battery.color).fixedSize(horizontal: false, vertical: true)
             } else {
@@ -145,15 +206,7 @@ struct SymptomsCard: View {
                                 Text(f.symptom.rawValue).font(.caption).foregroundStyle(.secondary)
                             }
                             Spacer(minLength: 6)
-                            Button { withAnimation { store.ignore(f.check) } } label: {
-                                Text("Ignore").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                                    .padding(.horizontal, 10).padding(.vertical, 4)
-                                    .background(Capsule().strokeBorder(Color.secondary.opacity(0.5)))
-                                    .contentShape(Capsule())
-                            }
-                            .buttonStyle(.plain)
-                            .tip(f.check.subject == nil ? "Hide this for a day. Show again below brings it back"
-                                                        : "It is on purpose: stop flagging this. Something else causing it still shows. Show again below brings it back")
+                            IgnoreButton(subject: f.check.subject != nil) { withAnimation { store.ignore(f.check) } }
                             Text(open == f.symptom ? "Hide" : "Fix it").font(.caption.weight(.semibold)).foregroundStyle(.white)
                                 .padding(.horizontal, 10).padding(.vertical, 4)
                                 .background(Capsule().fill(color(f.check.status)))
@@ -163,6 +216,16 @@ struct SymptomsCard: View {
                     .buttonStyle(.plain)
                     .tip("Show what was found and how to fix it")
                 }
+            }
+            ForEach(attention.insights) { i in insight(i) }
+            if !attention.notes.isEmpty {
+                Button { withAnimation(.easeInOut(duration: 0.2)) { showNotes.toggle() } } label: {
+                    Label("Worth knowing (\(attention.notes.count))", systemImage: showNotes ? "chevron.down" : "chevron.right")
+                        .font(.callout.weight(.semibold)).foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .tip("Findings that are not problems: patterns and things to be aware of")
+                if showNotes { ForEach(attention.notes) { i in insight(i) } }
             }
             if ignoredCount > 0 {
                 HStack(spacing: 6) {
@@ -178,6 +241,13 @@ struct SymptomsCard: View {
             }
             if let s = open { panel(s, v) }
         }
+    }
+
+    private func insight(_ i: Insight) -> some View {
+        InsightCard(model: model, insight: i, expanded: Binding(
+            get: { openInsights.contains(i.id) || (Model.snapshotDir != nil && i.tone >= .warning) },
+            set: { if $0 { openInsights.insert(i.id) } else { openInsights.remove(i.id) } }),
+            onIgnore: { withAnimation { store.ignore(key: i.ignoreKey, for: i.ignoreFor) } })
     }
 
     private func toggle(_ s: Symptom) {
@@ -223,5 +293,24 @@ struct SymptomsCard: View {
 
     private func color(_ s: Check.Status) -> Color {
         s == .problem ? Theme.heat(100) : Color(hex: "#d97706")
+    }
+}
+
+/// Ignore, beside a finding: for good when it is about a particular app, for a day otherwise.
+struct IgnoreButton: View {
+    /// Whether the finding names a particular app or process.
+    let subject: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Text("Ignore").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                .padding(.horizontal, 10).padding(.vertical, 4)
+                .background(Capsule().strokeBorder(Color.secondary.opacity(0.5)))
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .tip(subject ? "It is on purpose: stop flagging this. Something else causing it still shows. Show again on Checkup brings it back"
+                     : "Hide this for a day. Show again on Checkup brings it back")
     }
 }

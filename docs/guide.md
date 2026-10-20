@@ -4,6 +4,7 @@
 
 - [The basics: what the percentages mean](#the-basics-what-the-percentages-mean)
 - [The menu bar icon](#the-menu-bar-icon)
+- [Checkup](#checkup)
 - [Overview](#overview)
 - [Insights](#insights)
 - [Processes](#processes)
@@ -57,6 +58,29 @@ to amber to red as the load rises.
 
 ---
 
+## Checkup
+
+The first tab, and the one the app opens on the first time. After that it reopens on the
+tab you were last on.
+
+- **What's wrong?** at the top. **Found on its own** lists what System Sentinel noticed
+  without being asked: the Mac running hot, the processor or memory short, the battery
+  draining fast, the disk nearly full, an app keeping the Mac awake, an app that keeps
+  crashing, and the insights below. Each has **Fix it** and **Ignore**. **Worth knowing**
+  holds findings that are not problems.
+- **Or say what feels wrong:** ten symptoms (Slow or hot, Battery drains, Disk full, Wi-Fi
+  or internet, Won't sleep, Mic or camera, App crashes or won't open, Bluetooth, iCloud
+  stuck, Restarted by itself). A dot means something was found there. Picking one opens a
+  panel with what was found and the fixes.
+- **Ignore** a finding that is on purpose. One about a particular app stays ignored until
+  you click **Show again**; a passing state such as running hot is hidden for a day.
+- **The checks**, performance first and security last: System, Apps, Network, Backup,
+  Security, each with fix buttons. Buttons with a lock ask for your admin password.
+- **Quick fixes:** the everyday restarts (sound, Bluetooth, Wi-Fi, Finder, Dock, iCloud
+  sync and more), each saying when you would need it.
+
+---
+
 ## Overview
 
 ![Overview tab](images/overview-light.png)
@@ -82,14 +106,16 @@ The answer to "is my Mac busy, and why?" in one screen:
   most of the power goes.
 - **Memory.** Memory pressure as macOS judges it (Normal, Under pressure, Critical), memory
   used, compressed and swapped to disk. Pressure matters, not how full memory looks.
-- **Insights.** See below.
+- **Things to look at.** When Checkup has found something, a line at the top of the
+  Overview says how many and names the first. Click it to go to Checkup.
 
 ---
 
 ## Insights
 
-Insights are short findings worked out from what System Sentinel has seen. The most urgent
-ones come first. Each has a coloured edge: red is urgent, amber is worth a look, blue is
+Insights are short findings worked out from what System Sentinel has seen. They are listed
+on Checkup: the ones worth acting on under **Found on its own**, the rest under **Worth
+knowing**. The most urgent ones come first. Each has a coloured edge: red is urgent, amber is worth a look, blue is
 for your information and green means all is well.
 
 Click **More** on an insight to open it:
@@ -368,7 +394,7 @@ Things to know:
   cooling the Mac and can't be killed usefully. The [process guide](processes.md) gives a
   verdict for each common process.
 - **Force kill.** Some processes ignore the polite signal, and the kill then shows as
-  **Kill failed**. The Overview's "survived a kill" insight lists the process with a
+  **Kill failed**. Checkup's "survived a kill" finding lists the process with a
   **Force kill** button, and right-clicking any process offers **Force kill (kill -9)…**.
   It confirms first, because the process can't save or clean up. Root and macOS processes
   ask for your password, or you can open a Terminal with `sudo kill -9 <pid>` typed in.
