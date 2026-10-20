@@ -110,6 +110,11 @@ struct MenuView: View {
             header
             TabBar(selection: $tab, badges: [.events: model.flagged.count, .checkup: model.checkup.problems.count])
                 .onChange(of: tab) { _, t in if !fullLength { UserDefaults.standard.set(t.title, forKey: "lastTab") } }
+                .onChange(of: model.goTab) { _, t in
+                    guard let t, let to = Tab.allCases.first(where: { $0.title == t }) else { return }
+                    tab = to
+                    DispatchQueue.main.async { model.goTab = nil }
+                }
             Group {
                 if fullLength {
                     banners

@@ -111,6 +111,8 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
     static var termSource: DispatchSourceSignal?
     /// A card to scroll to (and its view, after a colon), set by an insight's Review button.
     @Published var focus: String?
+    /// A tab to switch to, by title, set by a Go to button; the menu clears it once it has moved.
+    @Published var goTab: String?
     /// When each background job last finished, for the Diagnostics card.
     @Published var taskHealth = TaskHealth()
     /// macOS's report of the crash that ended the last run, shown once on the next launch.
@@ -556,6 +558,9 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
             if let u = URL(string: url) { NSWorkspace.shared.open(u) }
         case .leaveHotspot:
             network.leaveHotspot()
+        case .goTo(let tab, let card, _):
+            goTab = tab
+            if let card { DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { self.focus = card } }
         case .optimiseScreen:
             OptimiseWindow.show(self)
         case .openApp(let id, _):
