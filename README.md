@@ -1,18 +1,20 @@
 # System Sentinel
 
-**Find out what is using your Mac's CPU, memory and battery, why, and what to do about it.**
+**Find out what is wrong with your Mac, why, and fix it in a click.**
 
 _Formerly CPU Sentinel: installing 0.7.0 replaces it and keeps your settings and history._
 
-System Sentinel lives in the menu bar. It samples every process every 5 seconds and shows the
-load on a gauge, as charts and as plain-English insights. It records which apps used the
+System Sentinel lives in the menu bar. It opens on **Checkup**, which finds what is wrong on
+its own (running hot, memory short, battery draining fast, the disk filling, an app keeping
+the Mac awake or crashing) and lets you pick what feels wrong from eleven symptoms, each with
+fix buttons. It samples every process every 5 seconds and shows the load on a gauge, as charts and as plain-English insights. It records which apps used the
 most CPU over the last day and week, and explains what each macOS process is for. The
 Energy tab shows the Mac's power draw, which apps cost the most battery, what keeps the Mac
 awake and how the battery is wearing. When
 something gets stuck at high CPU it tells you, and it can kill that process in one click or
 automatically.
 
-![The Overview tab: a load gauge, a donut of what is using CPU now, and a last-hour chart by app](docs/images/overview-light.png)
+![The Checkup tab: what was found on its own, each with Fix it and Ignore, and eleven symptoms to pick from](docs/images/checkup-light.png)
 
 ## Install
 
@@ -91,6 +93,8 @@ System Sentinel answers each of those. It was built after a macOS energy logger
 
 | | |
 |---|---|
+| **Checkup: what's wrong, and the fix** | Found on its own, or picked from eleven symptoms (Slow or hot, Battery drains, Disk full, Wi-Fi or internet, Won't sleep, Mic or camera, App crashes or won't open, Bluetooth, Display or dock, iCloud stuck, Restarted by itself). Then the checks, performance first and security last, and the everyday restarts (sound, Bluetooth, Wi-Fi, Finder, iCloud sync). **Ignore** what is on purpose. |
+| **Route test** | mtr-style, for a minute up to an hour: loss, delay and jitter at every hop, a chart of when it happened, and a report to send your provider. |
 | **Insights in plain English** | "WindowServer is busy because the screen is being captured", "Photos is analysing your library", "3 Chrome tab processes use 40% together". Click **More** to see what is happening, each process involved and who started it, and numbered steps to fix it. |
 | **One-click fixes** | Insights carry buttons that act, not just advise: **Quit Slack**, **Let the Mac sleep (stop 5 caffeinate)**, **Turn on Low Power Mode**, or the exact System Settings page. A minute after you quit or kill something it tells you what changed: "power 14 W → 6 W, about 4 hours more battery". |
 | **Heat and power alerts** | A pop-up when the Mac runs hot or draws more than your chosen watts (default 25 W) for your chosen minutes (default 3), naming the likely culprit with Kill and Ignore buttons. |
@@ -106,6 +110,11 @@ System Sentinel answers each of those. It was built after a macOS energy logger
 | **Dark mode, and a window you can move** | Every screen is designed for light and dark. **Pop out** moves the panel into a normal window you can drag. The menu bar can show CPU load, watts or battery beside the icon. |
 
 ## Screenshots
+
+### Overview
+The load on a gauge, what is using the CPU now and over the last hour, cores and memory.
+
+![The Overview tab: a load gauge, a donut of what is using CPU now, and a last-hour chart by app](docs/images/overview-light.png)
 
 ### Processes
 The top 30, each with uptime, a 15 minute trend, averages, memory and Kill.
@@ -144,7 +153,7 @@ Every screen has its own dark design.
   processes, rules, notifications, privacy and troubleshooting.
 - **[Process guide](docs/processes.md):** what the common macOS background processes are,
   why they get busy, and whether to kill them.
-- **[PLAN.md](PLAN.md):** design and reasoning.
+- **[PLAN.md](PLAN.md):** why it was built, the design and what is next.
 
 ## Safety, in short
 

@@ -60,6 +60,8 @@ to amber to red as the load rises.
 
 ## Checkup
 
+![Checkup tab](images/checkup-light.png)
+
 The first tab, and the one the app opens on the first time. After that it reopens on the
 tab you were last on.
 
@@ -68,10 +70,10 @@ tab you were last on.
   draining fast, the disk nearly full, an app keeping the Mac awake, an app that keeps
   crashing, and the insights below. Each has **Fix it** and **Ignore**. **Worth knowing**
   holds findings that are not problems.
-- **Or say what feels wrong:** ten symptoms (Slow or hot, Battery drains, Disk full, Wi-Fi
-  or internet, Won't sleep, Mic or camera, App crashes or won't open, Bluetooth, iCloud
-  stuck, Restarted by itself). A dot means something was found there. Picking one opens a
-  panel with what was found and the fixes.
+- **Or say what feels wrong:** eleven symptoms (Slow or hot, Battery drains, Disk full, Wi-Fi
+  or internet, Won't sleep, Mic or camera, App crashes or won't open, Bluetooth, Display or
+  dock, iCloud stuck, Restarted by itself). A dot means something was found there. Picking
+  one opens a panel with what was found and the fixes.
 - **Ignore** a finding that is on purpose. One about a particular app stays ignored until
   you click **Show again**; a passing state such as running hot is hidden for a day.
 - **The checks**, performance first and security last: System, Apps, Network, Backup,
@@ -323,8 +325,11 @@ Every app you have set a rule for, and a button to remove each one. Below them,
 **Starts by itself** lists every launch agent and daemon (from `~/Library/LaunchAgents`,
 `/Library/LaunchAgents` and `/Library/LaunchDaemons`): whether it runs at login, stays
 running or runs on a timer, whether it is running now and its CPU, heaviest first.
-**Login Items** opens System Settings, where you can switch them off.
- Rules are keyed by the
+The bin stops one and moves its file to the Trash (Put Back undoes it); ones installed for
+every user ask for your password. **Login Items** opens System Settings, where you can
+switch them off instead.
+
+Rules are keyed by the
 program's path, so they survive restarts and new process IDs. All Chrome tabs share one
 path, so a rule for one tab applies to every tab.
 
