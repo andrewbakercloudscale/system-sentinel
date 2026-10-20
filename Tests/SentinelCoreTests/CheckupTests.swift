@@ -88,4 +88,30 @@ final class CheckupTests: XCTestCase {
         XCTAssertEqual(c.first?.count, 2)
         XCTAssertEqual(c.count, 1)
     }
+
+    func testCrashesInOneOldBurstAreHistoryNotAWarning() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let burst = (0..<8).map { now.addingTimeInterval(-86_400 - Double($0) * 15) }
+        let c = CheckParse.crashCheck([.init(process: "swift-frontend", dates: burst, bundleID: nil)], reports: "/r", now: now)
+        XCTAssertEqual(c?.status, .info)
+        XCTAssertTrue(c?.detail.contains("none since") ?? false, c?.detail ?? "")
+        XCTAssertEqual(c?.steps.count, 1)
+        XCTAssertEqual(c?.subject, "swift-frontend")
+    }
+
+    func testACommandLineProgramStillCrashingIsNotToldToReinstall() {
+        let now = Date()
+        let recent = [now.addingTimeInterval(-600), now.addingTimeInterval(-3 * 86_400), now.addingTimeInterval(-5 * 86_400)]
+        let tool = CheckParse.crashCheck([.init(process: "zsp", dates: recent, bundleID: nil)], reports: "/r", now: now)
+        XCTAssertEqual(tool?.status, .warning)
+        XCTAssertTrue(tool?.steps.first?.contains("command-line program") ?? false)
+        let app = CheckParse.crashCheck([.init(process: "Slack", dates: recent, bundleID: "com.tinyspeck.slackmacgap")], reports: "/r", now: now)
+        XCTAssertEqual(app?.steps.first, "Update the app.")
+        XCTAssertNil(CheckParse.crashCheck([.init(process: "x", dates: [now, now], bundleID: nil)], reports: "/r", now: now), "two is not a pattern")
+    }
+
+    func testReadsTheBundleIDFromACrashReportHeader() {
+        XCTAssertNil(CheckParse.crashBundleID(#"{"app_name":"swift-frontend","bundleID":"","name":"swift-frontend"}"# + "\n{"))
+        XCTAssertEqual(CheckParse.crashBundleID(#"{"app_name":"Slack","bundleID":"com.tinyspeck.slackmacgap"}"# + "\n{"), "com.tinyspeck.slackmacgap")
+    }
 }

@@ -301,6 +301,57 @@ public enum CheckParse {
     }
 
     /// Crash reports by process: "Name-2026-10-18-110706.ips" counted per Name.
+    /// The bundle id from the one-line JSON header of a `.ips` crash report. Apps have one;
+    /// command-line programs (compilers, scripts, helpers) do not.
+    public static func crashBundleID(_ header: String) -> String? {
+        guard let line = header.split(separator: "\n", maxSplits: 1).first,
+              let obj = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any],
+              let id = obj["bundleID"] as? String, !id.isEmpty else { return nil }
+        return id
+    }
+
+    /// One program's crashes this week.
+    public struct Crashes: Equatable, Sendable {
+        public let process: String
+        public let dates: [Date]
+        /// Nil for a command-line program.
+        public let bundleID: String?
+        public init(process: String, dates: [Date], bundleID: String?) { self.process = process; self.dates = dates; self.bundleID = bundleID }
+    }
+
+    /// The crash check: which program keeps crashing, and whether it still does. Crashes that
+    /// all came in one burst hours ago (a build that hit a compiler bug) are history,
+    /// not a warning. A command-line program gets advice about what ran it, not "reinstall the app".
+    public static func crashCheck(_ all: [Crashes], reports: String, now: Date = Date()) -> Check? {
+        let list = all.filter { $0.dates.count >= 3 }.sorted { $0.dates.count > $1.dates.count }
+        guard let top = list.first, let first = top.dates.min(), let last = top.dates.max() else { return nil }
+        let burst = last.timeIntervalSince(first) <= 3600
+        // A burst with six quiet hours after it is over; spread-out crashes need a quiet day.
+        let quiet = now.timeIntervalSince(last) >= (burst ? 6 * 3600 : 86_400)
+        let isApp = top.bundleID != nil
+        let day = last.formatted(.dateTime.day().month(.abbreviated))
+        let span = burst ? "all on \(day) between \(first.formatted(date: .omitted, time: .shortened)) and \(last.formatted(date: .omitted, time: .shortened))"
+                         : "the last on \(day) at \(last.formatted(date: .omitted, time: .shortened))"
+        let others = list.dropFirst().prefix(3).map { "\($0.process) ×\($0.dates.count)" }
+        var detail = "\(top.dates.count) crashes, \(span)" + (quiet ? ", and none since." : ".")
+        if !others.isEmpty { detail += " Also: " + others.joined(separator: ", ") + "." }
+        let steps: [String]
+        if quiet {
+            steps = ["Nothing to do unless it happens again. The reports age out after a week."]
+        } else if isApp {
+            steps = ["Update the app.", "If it continues, reinstall it, or move its preferences out of ~/Library/Preferences."]
+        } else {
+            steps = ["\(top.process) is a command-line program, not an app: something ran it, such as a build, a script or a developer tool.",
+                     "The cause is in that tool's output or its crash report. Updating the tool that ran it usually fixes it."]
+        }
+        var c = Check(id: "crashes", area: .apps, title: "\(top.process) crashed \(top.dates.count) times this week", status: quiet ? .info : .warning,
+                      detail: detail, why: "A crash ends that one program. It does not restart the Mac; that is a kernel panic, checked separately.",
+                      steps: steps, fixes: [.reveal(label: "Show crash reports", path: reports)],
+                      items: list.map { "\($0.process)\($0.bundleID == nil ? " (command-line)" : ""): \($0.dates.count) crashes" })
+        c.subject = top.process
+        return c
+    }
+
     public static func crashCounts(_ files: [(name: String, date: Date)], since: Date) -> [(process: String, count: Int)] {
         var counts: [String: Int] = [:]
         for f in files where f.date >= since && (f.name.hasSuffix(".ips") || f.name.hasSuffix(".crash")) {

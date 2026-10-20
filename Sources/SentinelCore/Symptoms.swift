@@ -9,7 +9,7 @@ public enum Symptom: String, CaseIterable, Sendable, Identifiable {
     case network = "Wi-Fi or internet"
     case sleep = "Won't sleep"
     case micCamera = "Mic or camera"
-    case appWontOpen = "App won't open"
+    case appWontOpen = "App crashes or won't open"
     case bluetooth = "Bluetooth"
     case icloud = "iCloud stuck"
     case restarts = "Restarted by itself"
@@ -40,7 +40,7 @@ public enum Symptom: String, CaseIterable, Sendable, Identifiable {
         case .network: return "Is the Wi-Fi or internet the problem?"
         case .sleep: return "What keeps the Mac awake?"
         case .micCamera: return "Can apps use the microphone and camera?"
-        case .appWontOpen: return "Is macOS blocking an app?"
+        case .appWontOpen: return "Is an app crashing, or being blocked?"
         case .bluetooth: return "Is Bluetooth working?"
         case .icloud: return "Is iCloud syncing?"
         case .restarts: return "Why did the Mac restart?"
@@ -110,8 +110,10 @@ public struct Vitals: Sendable {
     public var bluetoothCPU: Double = 0
     /// bird and cloudd together, in percent of one core over the last minute.
     public var syncCPU: Double = 0
-    /// The checkup's crash and panic checks.
+    /// The checkup's kernel panic check: the Mac restarting itself.
     public var restartChecks: [Check] = []
+    /// The checkup's crash check: one program ending, which is not a restart.
+    public var crashChecks: [Check] = []
     /// The newest kernel panic in plain words, when there is one this month.
     public var panic: String?
 
@@ -352,7 +354,7 @@ public enum Diagnose {
     // MARK: Apps that will not open
 
     static func appWontOpen(_ v: Vitals) -> [Check] {
-        var out = v.blockedApps.map { a in
+        var out = v.crashChecks + v.blockedApps.map { a in
             var c = check(.appWontOpen, a.path, "macOS will not open \(a.name)", .warning,
                   "It was downloaded and fails Apple's check, so macOS calls it damaged or from an unidentified developer.",
                   why: "Only allow it if you trust where it came from. Allowing it removes the download flag, as Open Anyway in Privacy & Security does.",
@@ -363,9 +365,9 @@ public enum Diagnose {
             return c
         }
         if out.isEmpty {
-            out.append(check(.appWontOpen, "ok", "No downloaded app is being blocked", .ok,
-                             "Every app in Applications passes Apple's check or has been allowed.",
-                             steps: ["If an app opens and then quits at once, look at Restarted by itself for its crash count.", "Reinstall the app from its maker."]))
+            out.append(check(.appWontOpen, "ok", "No app keeps crashing, and none is blocked", .ok,
+                             "Nothing crashed three times this week, and every app in Applications passes Apple's check or has been allowed.",
+                             steps: ["If one app misbehaves, quit it and open it again.", "Reinstall the app from its maker."]))
         }
         return out
     }
@@ -417,8 +419,8 @@ public enum Diagnose {
             out[i].detail = "Last one: \(p)"
         }
         if out.isEmpty {
-            out.append(check(.restarts, "ok", "No crashes or unexpected restarts", .ok,
-                             "No kernel panic in 30 days, and no app crashing again and again this week."))
+            out.append(check(.restarts, "ok", "No unexpected restarts", .ok,
+                             "No kernel panic in 30 days. An app crashing does not restart the Mac: that shows under App crashes or won't open."))
         }
         return out
     }
