@@ -683,7 +683,7 @@ struct BackgroundItemsCard: View {
              trailing: AnyView(FooterButton(title: "Login Items", symbol: "gearshape", color: Tab.rules.color) {
                  NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.LoginItems-Settings.extension")!)
              })) {
-            Text("Launch agents and daemons installed by apps. They run in the background, often at login and around the clock, and are a common source of battery drain. Turn off the ones you do not want in System Settings > General > Login Items & Extensions > Allow in the Background.")
+            Text("Launch agents and daemons installed by apps. They run in the background, often at login and around the clock, and are a common source of battery drain. Remove the ones you do not want with the bin, or turn them off in System Settings > General > Login Items & Extensions > Allow in the Background.")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             if items.isEmpty {
                 Text("None found.").font(.caption).foregroundStyle(.secondary)
@@ -710,7 +710,7 @@ struct BackgroundItemsCard: View {
                     VStack(alignment: .trailing, spacing: 1) {
                         Text(live.map { "running · \(Fmt.pct($0.cpu))" } ?? (item.processPath == nil ? "script" : "not running"))
                             .font(.caption.weight(live == nil ? .regular : .semibold))
-                            .foregroundStyle(live == nil ? .tertiary : .primary)
+                            .foregroundStyle(live == nil ? .secondary : .primary)
                         if let d = day { Text("24 h avg \(Fmt.pct(d.average))").font(.caption2).foregroundStyle(.secondary) }
                     }
                     Button { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: item.plist)]) } label: {
@@ -718,6 +718,9 @@ struct BackgroundItemsCard: View {
                     }
                     .buttonStyle(.borderless)
                     .tip("Reveal \(item.plist) in Finder")
+                    Button { model.confirmRemove(item) } label: { Image(systemName: "trash") }
+                        .buttonStyle(.borderless)
+                        .tip("Stop it and move it to the Trash")
                 }
             }
             if items.count > 8 {

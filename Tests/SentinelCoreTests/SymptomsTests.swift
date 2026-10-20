@@ -111,6 +111,26 @@ final class SymptomsTests: XCTestCase {
         XCTAssertEqual(SymptomParse.bluetooth(Data(off.utf8))?.on, false)
     }
 
+    func testParsesThunderboltDevices() {
+        let json = #"{"SPThunderboltDataType":[{"_name":"bus0","device_name_key":"MacBook Air","receptacle_1_tag":{}},{"_name":"bus1","device_name_key":"MacBook Air","_items":[{"device_name_key":"TS4","vendor_name_key":"CalDigit","_items":[{"device_name_key":"Studio Display","vendor_name_key":"Apple Inc."}]}]}]}"#
+        XCTAssertEqual(SymptomParse.thunderbolt(Data(json.utf8)), ["CalDigit TS4", "Apple Inc. Studio Display"])
+    }
+
+    func testDisplayChecks() {
+        let json = #"{"SPDisplaysDataType":[{"spdisplays_ndrvs":[{"_name":"Color LCD","_spdisplays_pixels":"2880 x 1864","_spdisplays_resolution":"1440 x 932 @ 60.00Hz","spdisplays_connection_type":"spdisplays_internal","spdisplays_pixelresolution":"spdisplays_2880x1864Retina"},{"_name":"LG 4K","_spdisplays_pixels":"1920 x 1080","_spdisplays_resolution":"1920 x 1080 @ 30.00Hz","spdisplays_pixelresolution":"3840 x 2160"}]}]}"#
+        var v = Vitals()
+        v.displaySetup = DisplaySetup(displays: DisplayPixels.parse(Data(json.utf8)), devices: [], chip: "Apple M2")
+        let c = Diagnose.checks(.display, v)
+        XCTAssertEqual(c.map(\.status), [.warning, .warning, .info])
+        XCTAssertTrue(c[0].title.contains("30 Hz"))
+        XCTAssertTrue(c[1].title.contains("full resolution"))
+        XCTAssertTrue(c[2].title.contains("only one external"))
+        v.displaySetup = DisplaySetup(displays: [], devices: ["CalDigit TS4"], chip: "Apple M4")
+        let none = Diagnose.checks(.display, v)
+        XCTAssertEqual(none.first?.title, "No external display found")
+        XCTAssertEqual(none.first?.items, ["Plugged in: CalDigit TS4"])
+    }
+
     func testExplainsPanics() {
         XCTAssertEqual(SymptomParse.panic("panic(cpu 2 caller 0x1): userspace watchdog timeout: no successful checkins from WindowServer"),
                        "The Mac stopped responding for minutes and the watchdog restarted it.")
