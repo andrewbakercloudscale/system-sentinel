@@ -413,6 +413,7 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
         content.title = "Your Mac's week"
         content.body = weekly().text
         content.categoryIdentifier = "info"
+        content.threadIdentifier = "reports"
         UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "weekly-\(Int(now.timeIntervalSince1970))", content: content, trigger: nil))
     }
 
@@ -436,6 +437,7 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
             content.body = names.prefix(4).joined(separator: ", ") + ". The Energy tab can stop them."
         }
         content.categoryIdentifier = "info"
+        content.threadIdentifier = "awake"
         UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "blocker-\(SleepBlockers.reportKey(first))", content: content, trigger: nil))
     }
 
@@ -468,7 +470,9 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
             content.title = title
             content.body = body
             content.categoryIdentifier = "info"
-            UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "heat-\(now.timeIntervalSince1970)", content: content, trigger: nil))
+            content.threadIdentifier = "heat"
+            // A new heat warning replaces the last rather than piling up.
+            UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "heat", content: content, trigger: nil))
             return
         }
         notify(s, title: title, body: body + " Most likely: \(s.displayName), at \(Int(sentinel.cpuHistory.average(s.pid, over: 60, at: now)))% CPU.", actions: true)
@@ -1251,6 +1255,8 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
         content.body = body
         content.sound = .default
         content.categoryIdentifier = actions && Safety.canKillManually(s) ? "badActor" : "info"
+        // Stacked by app in Notification Centre, so a busy day reads as a few groups.
+        content.threadIdentifier = "app-" + Model.appKey(s.path)
         UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: id, content: content, trigger: nil))
     }
 

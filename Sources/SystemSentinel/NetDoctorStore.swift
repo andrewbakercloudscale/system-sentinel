@@ -241,12 +241,12 @@ extension NetworkStore {
             switch e {
             case .joined:
                 hotspotBase = traffic
-                notify("Joined a phone's hotspot", "\(link.wifi?.ssid.map { "\($0): " } ?? "")the Mac is using mobile data now. Backups, sync and updates will use it too. Open System Sentinel's Network tab to leave or see what is using it.")
+                notify("Joined a phone's hotspot", "\(link.wifi?.ssid.map { "\($0): " } ?? "")the Mac is using mobile data now. Backups, sync and updates will use it too. Open System Sentinel's Network tab to leave or see what is using it.", sound: true)
             case .used(let b):
                 let top = hotspotApps(paths: nil).first.map { " Most of it: \($0.name), \(ReportDocument.bytes($0.bytes))." } ?? ""
-                notify("\(ReportDocument.bytes(b)) of mobile data used", "Still on the phone's hotspot.\(top)")
+                notify("\(ReportDocument.bytes(b)) of mobile data used", "Still on the phone's hotspot.\(top)", sound: b >= 1_000_000_000)
             case .left(let used, let minutes):
-                if used >= 50_000_000 { notify("Left the phone's hotspot", "\(ReportDocument.bytes(used)) of mobile data in \(minutes) min.") }
+                if used >= 50_000_000 { notify("Left the phone's hotspot", "\(ReportDocument.bytes(used)) of mobile data in \(minutes) min.", sound: false) }
                 hotspotBase = [:]
             }
         }
@@ -277,14 +277,17 @@ extension NetworkStore {
         }
     }
 
-    func notify(_ title: String, _ body: String) {
+    /// One notification per hotspot visit: each update replaces the last instead of stacking
+    /// up, and only joining (and each whole GB) makes a sound.
+    func notify(_ title: String, _ body: String, sound: Bool) {
         guard !readOnly, UserDefaults.standard.object(forKey: "hotspotAlerts") as? Bool ?? true else { return }
         let c = UNMutableNotificationContent()
         c.title = title
         c.body = body
         c.categoryIdentifier = "info"
-        c.sound = .default
-        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "hotspot-\(Date().timeIntervalSince1970)", content: c, trigger: nil))
+        c.threadIdentifier = "hotspot"
+        if sound { c.sound = .default }
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "hotspot", content: c, trigger: nil))
     }
 
     func doctorInsights(paths: [Int32: String], at now: Date) -> [Insight] {
