@@ -142,6 +142,91 @@ public enum GPUReader {
         let n = (stats["Device Utilization %"] ?? stats["GPU Activity(%)"]) as? NSNumber
         return n.map { min(max($0.doubleValue, 0), 100) }
     }
+
+    /// The graphics chip now: how busy, the memory it holds and, with `perProcess`, which
+    /// processes used it. Apple Silicon shares memory with the CPU, so graphics memory is
+    /// part of the Mac's memory, not a separate pool.
+    public struct Status: Equatable, Sendable {
+        public var name: String?
+        public var cores: Int?
+        /// 0 to 100.
+        public var busy: Double
+        /// Memory the graphics driver holds right now, and has set aside, in bytes.
+        public var memoryInUse: UInt64?
+        public var memoryAllocated: UInt64?
+        /// Total graphics time each process has used, in nanoseconds, since it started.
+        public var gpuTime: [Int32: UInt64] = [:]
+        /// The name each process gave when it opened the graphics chip.
+        public var names: [Int32: String] = [:]
+
+        public init(name: String? = nil, cores: Int? = nil, busy: Double, memoryInUse: UInt64? = nil, memoryAllocated: UInt64? = nil) {
+            self.name = name
+            self.cores = cores
+            self.busy = busy
+            self.memoryInUse = memoryInUse
+            self.memoryAllocated = memoryAllocated
+        }
+    }
+
+    /// Reads the busiest graphics chip and, through its clients, each process's graphics time.
+    public static func read() -> Status? {
+        var iterator: io_iterator_t = 0
+        guard IOServiceGetMatchingServices(kIOMainPortDefault, IOServiceMatching("IOAccelerator"), &iterator) == KERN_SUCCESS else { return nil }
+        defer { IOObjectRelease(iterator) }
+        var best: Status?
+        while case let service = IOIteratorNext(iterator), service != 0 {
+            defer { IOObjectRelease(service) }
+            guard var s = status(properties(service)) else { continue }
+            var children: io_iterator_t = 0
+            if IORegistryEntryGetChildIterator(service, kIOServicePlane, &children) == KERN_SUCCESS {
+                while case let child = IOIteratorNext(children), child != 0 {
+                    defer { IOObjectRelease(child) }
+                    guard let c = client(properties(child)) else { continue }
+                    s.gpuTime[c.pid, default: 0] += c.time
+                    s.names[c.pid] = c.name
+                }
+                IOObjectRelease(children)
+            }
+            if best.map({ s.busy > $0.busy || s.gpuTime.count > $0.gpuTime.count }) ?? true { best = s }
+        }
+        return best
+    }
+
+    private static func properties(_ entry: io_registry_entry_t) -> [String: Any] {
+        var props: Unmanaged<CFMutableDictionary>?
+        guard IORegistryEntryCreateCFProperties(entry, &props, kCFAllocatorDefault, 0) == KERN_SUCCESS else { return [:] }
+        return props?.takeRetainedValue() as? [String: Any] ?? [:]
+    }
+
+    public static func status(_ registry: [String: Any]) -> Status? {
+        guard let busy = parse(registry), let stats = registry["PerformanceStatistics"] as? [String: Any] else { return nil }
+        let bytes = { (key: String) in (stats[key] as? NSNumber).map { $0.uint64Value } }
+        return Status(name: registry["model"] as? String, cores: (registry["gpu-core-count"] as? NSNumber)?.intValue, busy: busy,
+                      memoryInUse: bytes("In use system memory"), memoryAllocated: bytes("Alloc system memory"))
+    }
+
+    /// One process's connection to the graphics chip: "IOUserClientCreator" is "pid 395,
+    /// WindowServer", and "AppUsage" lists its graphics time per command queue.
+    public static func client(_ registry: [String: Any]) -> (pid: Int32, name: String, time: UInt64)? {
+        guard let creator = registry["IOUserClientCreator"] as? String, creator.hasPrefix("pid "),
+              let comma = creator.firstIndex(of: ","),
+              let pid = Int32(creator[creator.index(creator.startIndex, offsetBy: 4)..<comma]) else { return nil }
+        let usage = registry["AppUsage"] as? [[String: Any]] ?? []
+        let time = usage.reduce(UInt64(0)) { $0 + ((($1["accumulatedGPUTime"]) as? NSNumber)?.uint64Value ?? 0) }
+        return (pid, creator[creator.index(after: comma)...].trimmingCharacters(in: .whitespaces), time)
+    }
+
+    /// Each process's share of the graphics chip between two readings, 0 to 100. Processes
+    /// that are new, gone or idle are left out.
+    public static func shares(from before: [Int32: UInt64], to after: [Int32: UInt64], seconds: Double) -> [Int32: Double] {
+        guard seconds > 0 else { return [:] }
+        var out: [Int32: Double] = [:]
+        for (pid, t) in after {
+            guard let b = before[pid], t > b else { continue }
+            out[pid] = min(Double(t - b) / 1e9 / seconds * 100, 100)
+        }
+        return out
+    }
 }
 
 // MARK: Network and disk

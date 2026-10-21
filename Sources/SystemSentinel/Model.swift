@@ -70,6 +70,12 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
     }
     /// Graphics chip busy share, 0 to 100.
     @Published var gpu: Double?
+    /// The graphics chip in full, and its busy share every 5 seconds for the last hour.
+    @Published var gpuStatus: GPUReader.Status?
+    @Published var gpuHistory: [(at: Date, busy: Double)] = []
+    /// Apps using the graphics chip over the last 5 seconds; `cpu` is their share of the chip.
+    @Published var gpuApps: [ClusterApp] = []
+    private var gpuTimesAt: Date?
     /// Sleep over the last 24 hours, from the power log; refreshed every 15 minutes.
     @Published var sleepReport: SleepReport?
     /// Network and disk by app, from the latest 30 second reading.
@@ -284,7 +290,7 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
         readClusters(now)
         memory = MemoryStatus.read()
         readMemory(now)
-        gpu = GPUReader.utilization()
+        readGPU(now)
         checkHeat(now)
         checkAlarms(now)
         checkWeeklyReport(now)
@@ -964,6 +970,40 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
                 .filter { $0.cpu >= 0.5 }.sorted { $0.cpu > $1.cpu }.prefix(6).map { $0 }
         }
         if seconds > 0 { clusterApps = (list(e), list(p)) }
+    }
+
+    private func readGPU(_ now: Date) {
+        let before = gpuStatus?.gpuTime ?? [:]
+        let seconds = gpuTimesAt.map { now.timeIntervalSince($0) } ?? 0
+        guard let s = GPUReader.read() else { gpu = GPUReader.utilization(); return }
+        gpuStatus = s
+        gpuTimesAt = now
+        gpu = s.busy
+        gpuHistory.append((now, s.busy))
+        gpuHistory.removeAll { now.timeIntervalSince($0.at) > 3600 }
+        guard seconds > 0 else { return }
+        // Grouped by app, as on the Memory tab: Chrome's GPU helper counts as Chrome.
+        let samples = Dictionary(sentinel.latest.map { ($0.pid, $0) }, uniquingKeysWith: { a, _ in a })
+        var apps: [String: (share: Double, top: ProcessSample, topShare: Double)] = [:]
+        for (pid, v) in GPUReader.shares(from: before, to: s.gpuTime, seconds: seconds) {
+            // A process that started since the last `ps` reading is known by the name it gave the driver.
+            let sample = samples[pid] ?? ProcessSample(pid: pid, uid: 0, cpu: 0, path: s.names[pid] ?? "pid \(pid)")
+            let k = Model.appKey(sample.path)
+            var g = apps[k] ?? (0, sample, 0)
+            g.share += v
+            if v > g.topShare { g.top = sample; g.topShare = v }
+            apps[k] = g
+        }
+        let names = Dictionary(memoryApps.map { ($0.key, $0.name) }, uniquingKeysWith: { a, _ in a })
+        gpuApps = apps.map { ClusterApp(key: $0.key, name: names[$0.key] ?? Model.memoryName($0.key), sample: $0.value.top, cpu: min($0.value.share, 100)) }
+            .filter { $0.cpu >= 0.5 }.sorted { $0.cpu > $1.cpu }.prefix(6).map { $0 }
+    }
+
+    /// Average graphics busy share over the last `seconds`.
+    func gpuAverage(_ seconds: TimeInterval) -> Double? {
+        let now = Date()
+        let recent = gpuHistory.filter { now.timeIntervalSince($0.at) <= seconds }
+        return recent.isEmpty ? nil : recent.map(\.busy).reduce(0, +) / Double(recent.count)
     }
 
     func batteryETA() -> BatteryETA? {

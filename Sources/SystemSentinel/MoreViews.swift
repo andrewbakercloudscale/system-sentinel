@@ -124,6 +124,71 @@ struct MemoryCard: View {
     }
 }
 
+// MARK: Graphics
+
+/// The graphics chip: how busy, the last hour, and which apps are drawing with it.
+struct GraphicsCard: View {
+    @ObservedObject var model: Model
+    static let color = Color(hex: "#0891b2")
+
+    var body: some View {
+        if let g = model.gpuStatus {
+            let busyColor = g.busy >= 80 ? Theme.heat(100) : g.busy >= 50 ? Color(hex: "#d97706") : Self.color
+            Card(title: "Graphics (GPU)", symbol: "square.stack.3d.up.fill", tint: Self.color,
+                 trailing: g.name.map { n in AnyView(Pill(text: n + (g.cores.map { ", \($0) cores" } ?? ""), color: .secondary)) }) {
+                HStack(spacing: 8) {
+                    StatTile(symbol: "gauge.with.dots.needle.67percent", color: busyColor, value: "\(Int(g.busy))%", label: "busy now")
+                    StatTile(symbol: "clock.fill", color: Self.color,
+                             value: model.gpuAverage(3600).map { "\(Int($0.rounded()))%" } ?? "–",
+                             label: model.gpuHistory.count < 12 ? "average so far" : "average, last hour")
+                    StatTile(symbol: "memorychip", color: Tab.processes.color,
+                             value: g.memoryInUse.map { ReportDocument.bytes($0) } ?? "–", label: "graphics memory")
+                }
+                if model.gpuHistory.count > 1 {
+                    Chart(model.gpuHistory, id: \.at) { p in
+                        AreaMark(x: .value("Time", p.at), y: .value("Busy", p.busy))
+                            .foregroundStyle(Self.color.opacity(0.25).gradient)
+                        LineMark(x: .value("Time", p.at), y: .value("Busy", p.busy))
+                            .foregroundStyle(Self.color).lineStyle(StrokeStyle(lineWidth: 1.5))
+                    }
+                    .chartYScale(domain: 0...100)
+                    .chartYAxis { AxisMarks(values: [0, 50, 100]) { v in
+                        AxisGridLine()
+                        AxisValueLabel { Text("\(v.as(Int.self) ?? 0)%").font(.caption2) }
+                    } }
+                    .chartXAxis { AxisMarks(values: .automatic(desiredCount: 4)) { _ in
+                        AxisGridLine()
+                        AxisValueLabel(format: .dateTime.hour().minute(), centered: false).font(.caption2)
+                    } }
+                    .frame(height: 70)
+                }
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("USING IT NOW").font(.system(size: 9, weight: .bold)).foregroundStyle(.secondary).kerning(0.5)
+                    if model.gpuApps.isEmpty {
+                        Text("Nothing is drawing much right now.").font(.caption).foregroundStyle(.secondary)
+                    }
+                    ForEach(model.gpuApps) { a in
+                        HStack(spacing: 8) {
+                            IconView(icon: IconCache.shared.icon(for: a.sample), size: 18)
+                            Text(a.name).font(.callout).lineLimit(1).truncationMode(.middle).frame(width: 190, alignment: .leading)
+                            ShareBar(share: a.cpu / 100, color: Self.color).frame(height: 6)
+                            Text(String(format: a.cpu >= 10 ? "%.0f%%" : "%.1f%%", a.cpu)).font(.callout.weight(.semibold)).monospacedDigit()
+                                .foregroundStyle(Self.color).frame(width: 46, alignment: .trailing)
+                        }
+                        .tip("\(a.name) used the graphics chip \(String(format: "%.1f", a.cpu))% of the last few seconds")
+                    }
+                }
+                Text(caption(g)).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private func caption(_ g: GPUReader.Status) -> String {
+        if g.busy >= 80 { return "The graphics chip is nearly flat out. Games, video export, 3D and AI models do this; if nothing like that is running, the app at the top of the list is the cause." }
+        return "The graphics chip draws the screen, plays and exports video, and runs games and AI models. Its memory is part of the Mac's memory, not separate. The window server (WindowServer) is macOS drawing the screen itself."
+    }
+}
+
 // MARK: Sleep
 
 struct SleepCard: View {
