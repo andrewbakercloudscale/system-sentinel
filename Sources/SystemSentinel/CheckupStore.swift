@@ -116,9 +116,15 @@ final class CheckupStore: ObservableObject {
                 out.append(Check(id: "firewall", area: .security, title: "Firewall is on\(stealth ? " (stealth)" : "")", status: stealth ? .ok : .info,
                                  detail: stealth ? "Incoming connections are filtered and the Mac does not answer probes." : "Stealth mode would stop the Mac answering pings and port scans on public networks.",
                                  fixes: stealth ? [] : [.admin(label: "Turn on stealth mode", command: .stealthOn)]))
+            } else if let ztn = zeroTrustClient() {
+                // On a zero trust network the client filters every connection in its own cloud,
+                // so the Mac's firewall adds little and is often off by company policy.
+                out.append(Check(id: "firewall", area: .security, title: "Firewall: covered by \(ztn) (zero trust)", status: .ok,
+                                 detail: "The Mac's own firewall is off, which is fine here: \(ztn) filters traffic before it reaches the Mac. Turn it on if you disconnect \(ztn) on public Wi-Fi.",
+                                 fixes: [.settings(label: "Firewall settings", url: "x-apple.systempreferences:com.apple.Network-Settings.extension?Firewall")]))
             } else {
-                // Info, not a warning: work Macs often sit behind a company firewall or a zero
-                // trust client (Zscaler and the like) that this switch says nothing about.
+                // Info, not a warning: work Macs often sit behind a company firewall that this
+                // switch says nothing about.
                 out.append(Check(id: "firewall", area: .security, title: "The Mac's own firewall is off", status: .info,
                                  detail: "Fine behind a company firewall or zero trust network. On café and hotel Wi-Fi, turn it on.",
                                  why: "On public Wi-Fi, other devices can connect to sharing services and apps that listen on a port. The firewall asks before letting an app accept connections. Company networks usually filter this before it reaches the Mac, so it is often left off on purpose.",
@@ -268,6 +274,12 @@ final class CheckupStore: ObservableObject {
         return out
     }
 
+    /// The zero trust client running (Zscaler, Netskope, Cloudflare WARP), if any.
+    nonisolated static func zeroTrustClient() -> String? {
+        let names = sh("/bin/ps", ["-axco", "comm"], timeout: 5).split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }
+        return NetworkLink.vpn(processNames: names).flatMap { NetworkLink.zeroTrustClients.contains($0) ? $0 : nil }
+    }
+
     nonisolated static func isSigned(_ path: String) -> Bool {
         var code: SecStaticCode?
         guard SecStaticCodeCreateWithPath(URL(fileURLWithPath: path) as CFURL, [], &code) == errSecSuccess, let code else { return false }
@@ -282,24 +294,30 @@ final class CheckupStore: ObservableObject {
         guard let iface = route.interface else {
             return [Check(id: "net-offline", area: .network, title: "No network connection", status: .warning, detail: "There is no default route: Wi-Fi or Ethernet is not connected.")]
         }
-        let internet = CheckParse.ping(sh("/sbin/ping", ["-c", "5", "-i", "0.2", "-t", "4", "1.1.1.1"], timeout: 8))
+        let icmp = CheckParse.ping(sh("/sbin/ping", ["-c", "5", "-i", "0.2", "-t", "4", "1.1.1.1"], timeout: 8))
         let gateway = route.gateway.flatMap { g in g.contains(":") ? nil : CheckParse.ping(sh("/sbin/ping", ["-c", "5", "-i", "0.2", "-t", "4", g], timeout: 8)) }
+        // Zero trust networks (Zscaler and the like) drop pings: time TCP handshakes instead, as tcping does.
+        let ztn = zeroTrustClient()
+        let tcp = (icmp?.loss ?? 100) >= 100 ? TCPPing.ping("1.1.1.1", count: 5) : nil
+        let viaTCP = (tcp?.loss ?? 100) < 100
+        let internet = viaTCP ? tcp : icmp
+        let how = viaTCP ? " Pings are blocked \(ztn.map { "by \($0) (zero trust)" } ?? "on this network"), so this is a TCP handshake to port 443." : ""
         if let i = internet {
             let gw = gateway.map { g in " Router: \(Int(g.loss))% loss\(g.avg.map { ", \(Int($0)) ms" } ?? "")." } ?? ""
             if i.loss >= 100 {
                 out.append(Check(id: "net-internet", area: .network, title: "Internet is not reachable", status: .problem,
-                                 detail: "Pings to 1.1.1.1 get no answer.\(gw)",
-                                 steps: gateway.map { $0.loss < 100 ? ["The router answers, so the problem is the internet connection or the ISP: restart the router or call the provider."] : ["The router does not answer either: reconnect Wi-Fi or check the cable."] } ?? []))
+                                 detail: "Pings and connections to 1.1.1.1 get no answer.\(gw)",
+                                 steps: gateway.map { $0.loss < 100 ? [ztn.map { "The router answers, so check \($0) is connected and signed in." } ?? "The router answers, so the problem is the internet connection or the ISP: restart the router or call the provider."] : ["The router does not answer either: reconnect Wi-Fi or check the cable."] } ?? []))
             } else if i.loss >= 10 || (i.avg ?? 0) >= 150 {
                 let local = (gateway?.loss ?? 0) >= 10 || (gateway?.avg ?? 0) >= 50
                 out.append(Check(id: "net-internet", area: .network, title: "Connection is unreliable: \(Int(i.loss))% loss, \(Int(i.avg ?? 0)) ms", status: .warning,
-                                 detail: (local ? "The router link itself is poor: Wi-Fi signal or interference." : "The router link is fine, so the slowness is beyond it: ISP or VPN.") + gw,
+                                 detail: (local ? "The router link itself is poor: Wi-Fi signal or interference." : "The router link is fine, so the slowness is beyond it: ISP or VPN.") + gw + how,
                                  steps: local ? ["Move closer to the router or use 5 GHz.", "Turn Wi-Fi off and on."] : ["Check the VPN, or restart the router."],
                                  // The interface name goes into a shell line, so only plain names like en0 pass.
                                  fixes: local && iface.range(of: "^[a-z]{2,8}[0-9]{1,3}$", options: .regularExpression) != nil
                                     ? [.run(label: "Turn Wi-Fi off and on", path: "/bin/sh", args: ["-c", "/usr/sbin/networksetup -setairportpower \(iface) off; sleep 2; /usr/sbin/networksetup -setairportpower \(iface) on"])] : []))
             } else {
-                out.append(Check(id: "net-internet", area: .network, title: "Internet is healthy: \(Int(i.avg ?? 0)) ms, no loss", status: .ok, detail: "Via \(iface).\(gw)"))
+                out.append(Check(id: "net-internet", area: .network, title: "Internet is healthy: \(Int(i.avg ?? 0)) ms, no loss", status: .ok, detail: "Via \(iface).\(gw)\(how)"))
             }
         }
         // DNS: how long a lookup takes through the Mac's resolver.
@@ -316,7 +334,7 @@ final class CheckupStore: ObservableObject {
                              fixes: [.admin(label: "Flush DNS cache", command: .flushDNS)]))
         }
         // Path MTU: the largest packet that crosses without being fragmented.
-        if let i = internet, i.loss < 100, let ifMTU = CheckParse.mtu(sh("/sbin/ifconfig", [iface])) {
+        if let i = icmp, i.loss < 100, let ifMTU = CheckParse.mtu(sh("/sbin/ifconfig", [iface])) {
             let path = PathMTU.find(interfaceMTU: ifMTU) { size in
                 (CheckParse.ping(sh("/sbin/ping", ["-D", "-c", "1", "-t", "2", "-s", String(size), "1.1.1.1"], timeout: 4))?.loss ?? 100) < 100
             } ?? 0

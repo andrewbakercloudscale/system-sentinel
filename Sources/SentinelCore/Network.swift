@@ -421,6 +421,9 @@ public struct LinkHealth: Equatable, Sendable {
     /// The largest packet that crosses whole, and what the interface allows.
     public var pathMTU: Int?
     public var interfaceMTU: Int?
+    /// Pings to the internet got no answer but TCP did, so the internet figures are TCP handshakes:
+    /// a zero trust network or firewall that drops ICMP.
+    public var icmpBlocked = false
     public var at: Date
 
     /// Packets bigger than the path allows get split or dropped.
@@ -429,10 +432,11 @@ public struct LinkHealth: Equatable, Sendable {
         return p < i
     }
     public init(routerMs: Double? = nil, routerLoss: Double? = nil, internetMs: Double? = nil, internetLoss: Double? = nil,
-                dnsMs: Double? = nil, dnsOK: Bool = true, pathMTU: Int? = nil, interfaceMTU: Int? = nil, at: Date) {
+                dnsMs: Double? = nil, dnsOK: Bool = true, pathMTU: Int? = nil, interfaceMTU: Int? = nil,
+                icmpBlocked: Bool = false, at: Date) {
         self.routerMs = routerMs; self.routerLoss = routerLoss; self.internetMs = internetMs
         self.internetLoss = internetLoss; self.dnsMs = dnsMs; self.dnsOK = dnsOK
-        self.pathMTU = pathMTU; self.interfaceMTU = interfaceMTU; self.at = at
+        self.pathMTU = pathMTU; self.interfaceMTU = interfaceMTU; self.icmpBlocked = icmpBlocked; self.at = at
     }
 }
 
@@ -467,10 +471,17 @@ public struct NetworkLink: Equatable, Sendable {
         "Cloudflare WARP": "Cloudflare WARP", "warp-svc": "Cloudflare WARP", "netskope": "Netskope", "stAgentSvc": "Netskope",
     ]
 
-    /// A named client wins over macOS's generic VPN service, which runs alongside most of them.
+    /// Zero trust clients: they carry traffic to their own cloud, filter it there and drop pings.
+    public static let zeroTrustClients: Set<String> = ["Zscaler", "Netskope", "Cloudflare WARP"]
+
+    /// On a zero trust network: pings get no answer and the client, not the Mac, is the firewall.
+    public var zeroTrust: Bool { vpn.map(Self.zeroTrustClients.contains) ?? false }
+
+    /// A zero trust client wins, then a named client over macOS's generic VPN service, which runs
+    /// alongside most of them.
     public static func vpn(processNames: [String]) -> String? {
         let found = processNames.compactMap { vpnClients[$0] }
-        return found.first { $0 != "VPN" } ?? found.first
+        return found.first(where: zeroTrustClients.contains) ?? found.first { $0 != "VPN" } ?? found.first
     }
 }
 
@@ -488,6 +499,55 @@ public enum PathMTU {
             if probe(mid) { best = mid; lo = mid + 1 } else { hi = mid - 1 }
         }
         return best > 0 ? best + 28 : nil
+    }
+}
+
+// MARK: TCP ping
+
+/// Round trip from the TCP handshake, like tcping: for zero trust networks (Zscaler and the like),
+/// which carry TCP but drop pings (ICMP). Opens a connection, times SYN to SYN-ACK, then resets it.
+public enum TCPPing {
+    /// Milliseconds for one handshake with a numeric IPv4 address, or nil when refused or timed out.
+    public static func handshake(_ host: String, port: UInt16 = 443, timeout: TimeInterval = 2) -> Double? {
+        var addr = sockaddr_in()
+        addr.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+        addr.sin_family = sa_family_t(AF_INET)
+        addr.sin_port = port.bigEndian
+        guard inet_pton(AF_INET, host, &addr.sin_addr) == 1 else { return nil }
+        let fd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)
+        guard fd >= 0 else { return nil }
+        defer { close(fd) }
+        var on: Int32 = 1
+        setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &on, socklen_t(MemoryLayout<Int32>.size))
+        _ = fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK)
+        let t0 = DispatchTime.now().uptimeNanoseconds
+        let r = withUnsafePointer(to: &addr) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) }
+        }
+        if r != 0 {
+            guard errno == EINPROGRESS else { return nil }
+            var p = pollfd(fd: fd, events: Int16(POLLOUT), revents: 0)
+            guard poll(&p, 1, Int32(timeout * 1000)) == 1 else { return nil }
+            var err: Int32 = 0
+            var len = socklen_t(MemoryLayout<Int32>.size)
+            guard getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &len) == 0, err == 0 else { return nil }
+        }
+        let ms = Double(DispatchTime.now().uptimeNanoseconds - t0) / 1_000_000
+        // Close with a reset rather than a goodbye, so the far end holds nothing open.
+        var lg = linger(l_onoff: 1, l_linger: 0)
+        setsockopt(fd, SOL_SOCKET, SO_LINGER, &lg, socklen_t(MemoryLayout<linger>.size))
+        return ms
+    }
+
+    /// `count` handshakes: loss and average, the same shape as a parsed ping.
+    public static func ping(_ host: String, port: UInt16 = 443, count: Int = 5, interval: TimeInterval = 0.2,
+                            timeout: TimeInterval = 2) -> (loss: Double, avg: Double?) {
+        var times: [Double] = []
+        for n in 0..<count {
+            if n > 0 { Thread.sleep(forTimeInterval: interval) }
+            if let ms = handshake(host, port: port, timeout: timeout) { times.append(ms) }
+        }
+        return (Double(count - times.count) / Double(count) * 100, times.isEmpty ? nil : times.reduce(0, +) / Double(times.count))
     }
 }
 
@@ -547,7 +607,9 @@ public enum NetworkAnalysis {
             if h.internetLoss == 100 {
                 out.append(Insight(id: "net-down", tone: .critical, symbol: "icloud.slash",
                                    title: "Internet is not reachable",
-                                   detail: h.routerLoss.map { $0 < 100 ? "The router answers, so the problem is beyond it: the internet line, the provider or the VPN." : "The router does not answer either: reconnect Wi-Fi or check the cable." } ?? "Pings to 1.1.1.1 get no answer."))
+                                   detail: link.zeroTrust && (h.routerLoss ?? 100) < 100
+                                    ? "Neither pings nor connections to 1.1.1.1 get through, yet the router answers. Check \(link.vpn ?? "the zero trust client") is connected and signed in."
+                                    : h.routerLoss.map { $0 < 100 ? "The router answers, so the problem is beyond it: the internet line, the provider or the VPN." : "The router does not answer either: reconnect Wi-Fi or check the cable." } ?? "Pings and connections to 1.1.1.1 get no answer."))
             } else if routerBad {
                 var x = Insight(id: "net-router", tone: .warning, symbol: "wifi.router",
                                 title: "The link to the router is poor: \(Int(h.routerMs ?? 0)) ms, \(Int(h.routerLoss ?? 0))% loss",
@@ -560,6 +622,15 @@ public enum NetworkAnalysis {
                                 detail: link.vpn.map { "The router link is fine. \($0) routes everything through its servers, which often adds this." }
                                     ?? "The router link is fine, so it is the line or the provider.")
                 x.steps = link.vpn != nil ? ["Try with the VPN off, if allowed, to compare."] : ["Restart the router.", "If it persists, check with the provider."]
+                out.append(x)
+            }
+            if h.icmpBlocked && h.internetLoss != 100 {
+                var x = Insight(id: "net-ztn", tone: .info, symbol: "lock.shield",
+                                title: link.zeroTrust ? "On a zero trust network (\(link.vpn ?? ""))" : "Pings are blocked on this network",
+                                detail: "Pings (ICMP) get no answer, so the internet is measured with TCP handshakes to port 443 instead, like tcping. The connection itself is fine.")
+                x.why = link.zeroTrust
+                    ? "Zero trust clients carry only TCP and UDP to their own cloud and drop pings by design, so ping and traceroute show nothing past the Mac. The client filters traffic there, so it also stands in for the Mac's own firewall."
+                    : "Some company and guest networks drop ICMP at the firewall. A TCP handshake times the same round trip a web page sees."
                 out.append(x)
             }
             if h.fragments, let p = h.pathMTU, let i = h.interfaceMTU {

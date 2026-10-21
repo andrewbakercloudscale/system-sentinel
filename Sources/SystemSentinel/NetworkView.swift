@@ -164,7 +164,7 @@ private struct LinkCard: View {
             row("This Mac", l.address ?? "–")
             row("Router", l.gateway ?? "–")
             row("DNS", l.dns.isEmpty ? "–" : l.dns.prefix(3).joined(separator: ", "))
-            row("VPN or proxy", l.vpn ?? "none seen")
+            row("VPN or proxy", l.vpn.map { l.zeroTrust ? "\($0) (zero trust)" : $0 } ?? "none seen")
         }
     }
 
@@ -205,7 +205,8 @@ private struct QualityCard: View {
                 metric("To the router", ms: h.routerMs, loss: h.routerLoss, good: 10, bad: 50,
                        hint: "Inside your home or office: Wi-Fi or cable.")
                 metric("To the internet", ms: h.internetMs, loss: h.internetLoss, good: 40, bad: 150,
-                       hint: "All the way out, through the provider\(store.link.vpn.map { " and \($0)" } ?? "").")
+                       hint: "All the way out, through the provider\(store.link.vpn.map { " and \($0)" } ?? "")."
+                           + (h.icmpBlocked ? " Pings are blocked here, so this is a TCP handshake to port 443." : ""))
                 HStack {
                     dot(h.dnsOK ? ((h.dnsMs ?? 0) < 100 ? .good : ((h.dnsMs ?? 0) < 300 ? .fair : .poor)) : .poor)
                     Text("Name lookup").font(.callout.weight(.semibold))
@@ -220,7 +221,7 @@ private struct QualityCard: View {
                             Spacer()
                             Text(h.pathMTU.map { "\(String($0)) of \(String(i)) bytes" } ?? "not measured").font(.callout.weight(.bold)).monospacedDigit()
                         }
-                        Text(h.pathMTU == nil ? "Pings marked do-not-split got no answer at any size."
+                        Text(h.pathMTU == nil ? (h.icmpBlocked ? "Not measurable: it needs pings, which this network blocks." : "Pings marked do-not-split got no answer at any size.")
                              : h.fragments ? "Bigger packets get split or dropped on the way: big transfers can stall."
                              : "Full-size packets cross whole: no fragmentation.")
                             .font(.caption).foregroundStyle(.secondary).padding(.leading, 16)

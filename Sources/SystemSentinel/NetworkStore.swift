@@ -179,16 +179,20 @@ final class NetworkStore: ObservableObject {
             let t0 = Date()
             let resolved = !sh("/usr/bin/dscacheutil", ["-q", "host", "-a", "name", "www.apple.com"], timeout: 6).isEmpty
             let dnsMs = Date().timeIntervalSince(t0) * 1000
-            let (r, i) = await (router, internet)
+            let (r, icmp) = await (router, internet)
+            // Zero trust networks drop pings: time TCP handshakes instead, as tcping does.
+            let tcp = (icmp?.loss ?? 100) >= 100 ? TCPPing.ping("1.1.1.1", count: 5) : nil
+            let i = (tcp?.loss ?? 100) < 100 ? tcp : icmp
             var mtu = known
-            if sweep, let i, i.loss < 100, let iface, let ifMTU = CheckParse.mtu(sh("/sbin/ifconfig", [iface], timeout: 3)) {
+            if sweep, let icmp, icmp.loss < 100, let iface, let ifMTU = CheckParse.mtu(sh("/sbin/ifconfig", [iface], timeout: 3)) {
                 let path = PathMTU.find(interfaceMTU: ifMTU) { size in
                     (CheckParse.ping(sh("/sbin/ping", ["-D", "-c", "1", "-t", "2", "-s", String(size), "1.1.1.1"], timeout: 4))?.loss ?? 100) < 100
                 }
                 mtu = (path, ifMTU)
             }
             let h = LinkHealth(routerMs: r?.avg, routerLoss: r?.loss, internetMs: i?.avg, internetLoss: i?.loss,
-                               dnsMs: resolved ? dnsMs : nil, dnsOK: resolved, pathMTU: mtu.0, interfaceMTU: mtu.1, at: Date())
+                               dnsMs: resolved ? dnsMs : nil, dnsOK: resolved, pathMTU: mtu.0, interfaceMTU: mtu.1,
+                               icmpBlocked: (tcp?.loss ?? 100) < 100, at: Date())
             await MainActor.run {
                 if sweep { self.mtuAt = Date() }
                 self.recordLookup(ok: h.dnsOK, ms: h.dnsMs)
