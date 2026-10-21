@@ -10,13 +10,28 @@ struct CheckupView: View {
     @State private var open: Set<String> = []
     /// Snapshots show one symptom open, so the screenshot shows what a panel looks like.
     @State private var symptom: Symptom? = Model.snapshotDir == nil ? nil : .slow
+    /// What the page shows, held still while it is read: taken when the page opens, on Check
+    /// again, and when the person acts (ignore, a symptom, a fix), never from the live samples.
+    @State private var shown: Shown?
+
+    struct Shown {
+        var attention: Attention
+        var vitals: Vitals
+        var checks: [Check]
+        var at: Date
+    }
+
+    private func capture() {
+        shown = Shown(attention: model.attention(), vitals: model.vitals(), checks: store.checks, at: Date())
+    }
 
     var body: some View {
+        let s = shown ?? Shown(attention: model.attention(), vitals: model.vitals(), checks: store.checks, at: Date())
         VStack(spacing: 10) {
-            hero
-            SymptomsCard(model: model, store: store, open: $symptom) { AnyView(row($0)) }
+            hero(s)
+            SymptomsCard(model: model, store: store, attention: s.attention, vitals: s.vitals, open: $symptom) { AnyView(row($0)) }
             ForEach(Check.Area.allCases, id: \.self) { area in
-                let list = store.checks.filter { $0.area == area }
+                let list = s.checks.filter { $0.area == area }
                 if !list.isEmpty {
                     Card(title: area.rawValue, symbol: area.symbol, tint: Tab.checkup.color,
                          trailing: AnyView(summary(list))) {
@@ -26,26 +41,37 @@ struct CheckupView: View {
             }
             toolbox
         }
+        .onAppear(perform: capture)
+        .onChange(of: store.ranAt) { _, _ in capture() }
+        .onChange(of: store.checks.map(\.id)) { _, _ in capture() }
+        .onChange(of: store.ignored) { _, _ in capture() }
+        .onChange(of: store.probes.at) { _, _ in capture() }
+        .onChange(of: symptom) { _, _ in capture() }
+        // Opening the menu or bringing the window back counts as opening the page, unless it
+        // was only a moment ago.
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
+            if Date().timeIntervalSince(shown?.at ?? .distantPast) > 60 { capture() }
+        }
     }
 
-    private var hero: some View {
-        let a = model.attention()
+    private func hero(_ s: Shown) -> some View {
+        let a = s.attention
         let problems = a.problems
         let warnings = a.count - a.problems
-        let ok = store.checks.filter { $0.status == .ok }.count
+        let ok = s.checks.filter { $0.status == .ok }.count
         let colors: [Color] = problems > 0 ? [Color(hex: "#b91c1c"), Color(hex: "#9f1239")]
             : warnings > 0 ? [Color(hex: "#b45309"), Color(hex: "#c2410c")] : [Color(hex: "#047857"), Color(hex: "#0f766e")]
         return HStack(spacing: 16) {
             Image(systemName: problems + warnings == 0 ? "checkmark.seal.fill" : "stethoscope")
                 .font(.system(size: 40, weight: .semibold)).foregroundStyle(.white).frame(width: 64)
             VStack(alignment: .leading, spacing: 4) {
-                Text(store.checks.isEmpty ? "Running the checkup…" : problems + warnings == 0 ? "All \(ok) checks passed" : "\(problems + warnings) thing\(problems + warnings == 1 ? "" : "s") to look at")
+                Text(s.checks.isEmpty ? "Running the checkup…" : problems + warnings == 0 ? "All \(ok) checks passed" : "\(problems + warnings) thing\(problems + warnings == 1 ? "" : "s") to look at")
                     .font(.title3.weight(.bold)).foregroundStyle(.white)
                 Text("Performance, startup items, crashes, network, backups and security. \(store.ranAt.map { "Checked \(RelativeDateTimeFormatter().localizedString(for: $0, relativeTo: Date())); again every 6 hours." } ?? "")")
                     .font(.callout).foregroundStyle(.white.opacity(0.9))
             }
             Spacer()
-            Button { store.run() } label: {
+            Button { capture(); store.run() } label: {
                 Group {
                     if store.running { HStack(spacing: 6) { ProgressView().controlSize(.small); Text("Checking…") } }
                     else { Label("Check again", systemImage: "arrow.clockwise") }
@@ -55,7 +81,7 @@ struct CheckupView: View {
                 .background(Capsule().fill(.white))
             }
             .buttonStyle(.plain)
-            .tip("Run every check again now")
+            .tip("Run every check again now. The page holds still while you read it and updates when you open it or press this")
             .disabled(store.running)
         }
         .padding(16)

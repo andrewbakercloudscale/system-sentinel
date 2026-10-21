@@ -369,7 +369,7 @@ final class ReportTests: XCTestCase {
         var i = input()
         i.total60m = 250
         i.typicalTotal = 50
-        XCTAssertEqual(Insights.generate(i).first { $0.id == "vsusual" }?.title, "This hour is 5.0x your usual")
+        XCTAssertEqual(Insights.generate(i).first { $0.id == "vsusual" }?.title, "The Mac is 5 times busier than usual this hour")
         i.total60m = 60
         XCTAssertNil(Insights.generate(i).first { $0.id == "vsusual" })
     }

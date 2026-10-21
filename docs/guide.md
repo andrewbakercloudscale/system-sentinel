@@ -164,9 +164,9 @@ Events tab keeps the recent results.
 | **N things are keeping your Mac awake** | Something has held a sleep assertion for over an hour | Who is holding it (for `caffeinate`, the tool it works for) and a Kill button for each. |
 | **X wakes the CPU N times a second** | An app causes 150 or more idle wakeups a second | Constant wakeups cost battery even at low CPU. |
 | **macOS says: Check Battery** / **Battery holds N%** | macOS reports a battery condition, or capacity is under 80% | What it means and what to do. |
-| **This hour is Nx your usual** | The last hour is at least twice the 7 day hourly average | Something unusual is running. |
+| **The Mac is N times busier than usual this hour** | The last hour is at least twice the 7 day hourly average | Something unusual is running. |
 | **Memory is tight: N GB in swap** | macOS reports memory pressure | The apps holding the most memory, and a Quit button for the largest. |
-| **X is at Nx its usual** | An app has averaged 30% or more for 15 minutes, at least 4 times its own hourly average over the last week | Measured against the app's own history, so a normally light app working hard stands out below the alert threshold. |
+| **X is working N times harder than usual** (or **is busy, and it is normally idle**) | An app has averaged 30% or more for 15 minutes, at least 4 times its own hourly average over the last week | Measured against the app's own history, so a normally light app working hard stands out below the alert threshold. |
 | **Lost N% an hour while asleep** / **Woke N times while asleep** | Sleeping on battery lost 1.5% an hour or more, or 40 or more dark wakes in 24 hours | What wakes it and how to stop it. |
 | **Plugged in at 100% N% of the time** | Over the last week, 10 or more hours on the charger, mostly full | Sitting full wears the battery; set a charge limit. |
 | **X survived a kill** | A kill failed in the last 24 hours | The process ignored the polite stop signal; only a force kill would stop it. |
