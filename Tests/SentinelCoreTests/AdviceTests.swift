@@ -261,7 +261,7 @@ final class UsageAdviceTests: XCTestCase {
         var i = input([ps(11, 60, "/Applications/Slack.app/Contents/MacOS/Slack")])
         i.unusual = found
         let x = Insights.generate(i).first { $0.id.hasPrefix("unusual-") }
-        XCTAssertEqual(x?.title, "Slack is at 6.0x its usual")
+        XCTAssertEqual(x?.title, "Slack is working 6 times harder than usual")
         XCTAssertEqual(x?.fixes, [.quit(pids: [11], name: "Slack")], "pid 1 would be launchd: never offered")
     }
 

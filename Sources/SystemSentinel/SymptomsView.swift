@@ -185,6 +185,9 @@ extension Model {
 struct SymptomsCard: View {
     @ObservedObject var model: Model
     @ObservedObject var store: CheckupStore
+    /// Taken by the Checkup page when it opens, so the list does not move while it is read.
+    let attention: Attention
+    let vitals: Vitals
     @Binding var open: Symptom?
     let row: (Check) -> AnyView
     @State private var openInsights: Set<String> = []
@@ -192,8 +195,7 @@ struct SymptomsCard: View {
     private let tint = Tab.checkup.color
 
     var body: some View {
-        let v = model.vitals()
-        let attention = model.attention()
+        let v = vitals
         let found = attention.symptoms
         let ignoredCount = store.ignoredKeys.count
         let flagged = Dictionary(found.map { ($0.symptom, $0.check.status) }, uniquingKeysWith: max)

@@ -201,8 +201,8 @@ extension Insights {
         // Compared with the usual.
         if let usual = i.typicalTotal, usual > 0, i.recordedMinutes >= 30, i.total60m >= 50, i.total60m >= 2 * usual {
             out.append(Insight(id: "vsusual", tone: .info, symbol: "chart.bar.doc.horizontal",
-                               title: String(format: "This hour is %.1fx your usual", i.total60m / usual),
-                               detail: "Averaging \(fmtCores(i.total60m)) against a typical \(fmtCores(usual)) over the last week."))
+                               title: "The Mac is \(Fmt0.times(i.total60m / usual)) busier than usual this hour",
+                               detail: "It has averaged \(fmtCores(i.total60m)) this hour. This week it normally averaged \(fmtCores(usual))."))
         }
         out += more(i, at: now, rel: rel, byPID: byPID)
         return out
@@ -268,8 +268,8 @@ extension Insights {
         }
         for u in i.unusual.prefix(2) {
             var x = Insight(id: "unusual-\(u.key)", tone: .warning, symbol: "exclamationmark.arrow.triangle.2.circlepath",
-                            title: u.usual < 1 ? "\(u.name) is at \(Int(u.now))%; it is usually idle" : String(format: "%@ is at %.1fx its usual", u.name, u.ratio),
-                            detail: "\(Fmt0.pct(u.now)) over the last 15 minutes against a typical \(Fmt0.pct(u.usual)) an hour over the last week.")
+                            title: u.usual < 1 ? "\(u.name) is busy, and it is normally idle" : "\(u.name) is working \(Fmt0.times(u.ratio)) harder than usual",
+                            detail: "It used \(Fmt0.pct(u.now)) of a core over the last 15 minutes. This week it normally used \(u.usual < 1 ? "almost nothing" : Fmt0.pct(u.usual)).")
             x.why = "Compared with this app's own history rather than a fixed limit, so a normally light app working hard stands out even below the alert threshold. Often a stuck page, a sync loop or an update."
             x.related = rel(u.pids, nil)
             x.steps = ["Check what it is doing: a big sync, an export, a stuck window.", "Quit and reopen it if it should be idle."]
@@ -282,6 +282,8 @@ extension Insights {
 
 enum Fmt0 {
     static func pct(_ v: Double) -> String { v >= 10 ? "\(Int(v))%" : String(format: "%.1f%%", v) }
+    /// "6 times", "2.5 times": whole numbers once the gap is big enough not to need a decimal.
+    static func times(_ r: Double) -> String { r >= 3 ? "\(Int(r.rounded())) times" : String(format: "%.1f times", r) }
 }
 
 /// The day so far in a few sentences, for the Battery tab and the daily notification.

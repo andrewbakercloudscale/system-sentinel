@@ -510,6 +510,8 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
             startImpact(label, pids: pids)
             for s in targets { kill(s) }
             lastAction = "\(label): \(targets.count) stopped"
+            // A service stopped from Checkup's network finding: check again once it has gone.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 7) { self.checkup.refreshExposure() }
         case .lowPowerMode:
             Task.detached {
                 // osascript, so the admin prompt runs off the main thread.

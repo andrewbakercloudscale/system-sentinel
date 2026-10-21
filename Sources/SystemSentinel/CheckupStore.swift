@@ -54,6 +54,22 @@ final class CheckupStore: ObservableObject {
         UserDefaults.standard.removeObject(forKey: "ignoredFindings")
     }
 
+    /// Re-reads only what listens on the network, a few seconds after a Stop, so the finding
+    /// goes once the service has.
+    func refreshExposure() {
+        guard !running else { return }
+        Task.detached(priority: .utility) {
+            let fresh = CheckupStore.exposure()
+            await MainActor.run {
+                let ids: Set<String> = ["listen-risky", "listen-apps", "cleartext"]
+                let at = self.checks.firstIndex { ids.contains($0.id) } ?? self.checks.count
+                var kept = self.checks.filter { !ids.contains($0.id) }
+                kept.insert(contentsOf: fresh, at: min(at, kept.count))
+                self.checks = kept
+            }
+        }
+    }
+
     func run() {
         guard !running else { return }
         running = true
@@ -179,11 +195,17 @@ final class CheckupStore: ObservableObject {
         let exposed = CheckParse.listeners(ns).filter(\.exposed)
         let risky = exposed.filter { CheckParse.riskyPorts[$0.port] != nil }
         if !risky.isEmpty {
-            out.append(Check(id: "listen-risky", area: .security, title: "\(risky.count) sensitive service\(risky.count == 1 ? "" : "s") open to the network", status: .warning,
-                             detail: risky.map { "\(CheckParse.riskyPorts[$0.port]!) on port \($0.port)" }.joined(separator: ", ") + ".",
-                             why: "Others on the same network can try to connect. Turn off sharing services you do not use, and keep the firewall on.",
-                             fixes: [.settings(label: "Sharing settings", url: "x-apple.systempreferences:com.apple.Sharing-Settings.extension")],
-                             items: risky.map { "\($0.process) (pid \($0.pid)) listening on port \($0.port)" }))
+            var c = Check(id: "listen-risky", area: .security, title: "\(risky.count) sensitive service\(risky.count == 1 ? "" : "s") open to the network", status: .warning,
+                          detail: risky.map { "\(CheckParse.riskyPorts[$0.port]!) on port \($0.port)" }.joined(separator: ", ") + ".",
+                          why: "Others on the same network can try to connect. Turn off sharing services you do not use, and keep the firewall on. Stop ends it for now; if it comes back by itself, something starts it at login (for Homebrew, brew services list shows it and brew services stop turns it off).",
+                          fixes: [.settings(label: "Sharing settings", url: "x-apple.systempreferences:com.apple.Sharing-Settings.extension")],
+                          items: risky.map { "\($0.process) (pid \($0.pid)) listening on port \($0.port)" })
+            // One Stop per program, covering every copy of it that listens.
+            let byProcess = Dictionary(grouping: risky, by: \.process)
+            c.actions = byProcess.keys.sorted().map { name in
+                .kill(pids: Array(Set(byProcess[name]!.map(\.pid))).sorted(), label: "Stop \(name)")
+            }
+            out.append(c)
         }
         let others = exposed.filter { CheckParse.riskyPorts[$0.port] == nil && !["rapportd", "ControlCenter", "sharingd", "launchd", "mDNSResponder", "identityservicesd"].contains($0.process) }
         let byProcess = Dictionary(grouping: others, by: \.process)
