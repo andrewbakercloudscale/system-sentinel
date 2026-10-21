@@ -63,6 +63,7 @@ extension Model {
         let new = Updates.highlights(rel.notes, max: 2)
         content.body = (new.isEmpty ? "" : new.joined(separator: " ") + " ") + "Click to install."
         content.categoryIdentifier = "info"
+        content.threadIdentifier = "updates"
         content.sound = .default
         UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "update-\(rel.version)", content: content, trigger: nil))
     }

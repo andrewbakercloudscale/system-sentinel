@@ -37,7 +37,9 @@ extension Model {
             content.body = body
             content.categoryIdentifier = "info"
             content.sound = .default
-            UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "alarm-\(alarm.rawValue)-\(Int(now.timeIntervalSince1970))", content: content, trigger: nil))
+            // Grouped together, and a repeat of the same alarm replaces the last one.
+            content.threadIdentifier = "alarms"
+            UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "alarm-\(alarm.rawValue)", content: content, trigger: nil))
         }
     }
 }
