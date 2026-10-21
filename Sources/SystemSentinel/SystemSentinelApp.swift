@@ -175,7 +175,7 @@ struct MenuView: View {
             .buttonStyle(.plain)
             .tip("About System Sentinel: version, updates and who made it")
             Spacer()
-            HealthChip(health: model.health)
+            HealthChip(health: model.health) { model.goTab = $0.title }
             let load = model.machineLoad
             HStack(spacing: 6) {
                 Circle().fill(Theme.machineHeat(load)).frame(width: 8, height: 8)

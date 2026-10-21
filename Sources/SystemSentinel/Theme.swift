@@ -124,16 +124,23 @@ struct Pill: View {
     let text: String
     var symbol: String?
     var color: Color
+    /// Just the symbol, with the text as its tooltip, for rows with no room.
+    var compact = false
 
     var body: some View {
+        if compact { pill.tip(text) } else { pill }
+    }
+
+    private var pill: some View {
         HStack(spacing: 3) {
             if let symbol { Image(systemName: symbol) }
-            Text(text)
+            if !compact || symbol == nil { Text(text) }
         }
         .font(.caption2.weight(.semibold))
         .foregroundStyle(color)
-        .padding(.horizontal, 6).padding(.vertical, 2)
+        .padding(.horizontal, compact ? 4 : 6).padding(.vertical, 2)
         .background(Capsule().fill(color.opacity(0.14)))
+        .fixedSize()
     }
 }
 

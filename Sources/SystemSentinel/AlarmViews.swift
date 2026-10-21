@@ -111,19 +111,41 @@ extension Model {
 /// The header's status: green "All clear", or the risks behind amber and red.
 struct HealthChip: View {
     let health: HealthRAG
+    /// Opens the tab that explains the first reason: memory pressure opens Memory.
+    var open: ((Tab) -> Void)?
+
+    /// Where each reason is explained, by its symbol.
+    static func tab(for symbol: String) -> Tab {
+        if symbol.hasPrefix("memorychip") { return .memory }
+        if symbol.hasPrefix("internaldrive") { return .storage }
+        if symbol.hasPrefix("battery") { return .battery }
+        if symbol.hasPrefix("stethoscope") { return .checkup }
+        if symbol.hasPrefix("thermometer") { return .overview }
+        return .processes
+    }
 
     var body: some View {
+        if let first = health.reasons.first, let open {
+            Button { open(Self.tab(for: first.symbol)) } label: { chip }.buttonStyle(.plain)
+        } else {
+            chip
+        }
+    }
+
+    private var chip: some View {
         let c: Color = health.rag == .red ? Theme.heat(100) : (health.rag == .amber ? Color(hex: "#d97706") : Tab.battery.color)
         let text = health.reasons.isEmpty ? "All clear" : health.reasons.prefix(2).map(\.text).joined(separator: " · ")
             + (health.reasons.count > 2 ? " +\(health.reasons.count - 2)" : "")
-        HStack(spacing: 6) {
+        return HStack(spacing: 6) {
             Image(systemName: health.reasons.first?.symbol ?? "checkmark.seal.fill").font(.caption.weight(.bold))
             Text(text).font(.callout.weight(.semibold)).lineLimit(1)
         }
         .foregroundStyle(c)
         .padding(.horizontal, 10).padding(.vertical, 5)
         .background(Capsule().fill(c.opacity(0.13)))
+        .contentShape(Capsule())
         .tip(health.reasons.isEmpty ? "CPU, memory, disk, heat and battery are all fine"
-                                     : health.reasons.map { "\($0.rag == .red ? "Red" : "Amber"): \($0.text)" }.joined(separator: "\n"))
+                                     : health.reasons.map { "\($0.rag == .red ? "Red" : "Amber"): \($0.text)" }.joined(separator: "\n")
+                                       + "\nClick to open \(Self.tab(for: health.reasons[0].symbol).title).")
     }
 }

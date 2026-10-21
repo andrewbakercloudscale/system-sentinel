@@ -56,6 +56,10 @@ draw in watts, or the battery charge (with time left when unplugged).
 The pill in the top right shows the whole Mac's load right now. Its dot turns from green
 to amber to red as the load rises.
 
+Beside it, the status chip reads **All clear** or names what is wrong (memory pressure, CPU,
+disk low, heat, battery). Click it to open the tab about the first problem: memory pressure
+opens Memory, disk opens Storage, battery opens Energy.
+
 ---
 
 ## Checkup
@@ -93,7 +97,8 @@ The answer to "is my Mac busy, and why?" in one screen:
 
 - **Gauge and headline.** The whole Mac's load, how many cores are busy and a thermal chip:
   Cool, Warm, Hot, throttling, or Overheating. When the Mac is hot, macOS slows the CPU down, so the same
-  work takes more of it.
+  work takes more of it. A **GPU** chip beside it shows how busy the graphics chip is;
+  the Graphics card further down has the detail.
 - **1 min / 15 min / 1 hour.** Load averaged over each period. A high 1 minute figure with
   a low 1 hour figure is a spike; all three high means it has been busy for a while.
 - **Right now.** A donut of the five apps using the most CPU at this moment, plus
@@ -202,26 +207,31 @@ be capturing.
 
 The 30 busiest processes, refreshed every 5 seconds.
 
-- **Filter** by name. **Sort** by CPU now, the 15 minute, 1 hour or 6 hour average,
-  memory, or GPU (share of the graphics chip). A process using the graphics chip shows a
-  **GPU** pill with its share. Sorting by an average ranks every process, including ones idle right now, and the
-  average column switches to that window.
+- **Filter** by name. **Sort** with the **Sort** menu, or click a column title: **Process**
+  (name, A to Z), **CPU** (now), the average (click again to switch between 15 minutes,
+  1 hour and 6 hours), **memory** or **GPU**. Sorting by an average ranks every process,
+  including ones idle right now.
 - **pid and uptime:** "up 13d 0h" means the process has been running for 13 days. A busy
   process with a long uptime is a classic stuck process.
-- **Badges:** `root` (runs as the system, needs your password to kill), `hot 1m 20s` (over
-  your threshold for that long), `flagged`, and its rule if it has one (`auto-kill`,
-  `ignored`).
+- **Badges** are small icons beside the name; point at one to read it: a lock (runs as
+  root, needs your password to kill), a flame (over your threshold, and for how long), a
+  warning (flagged), a tortoise (background priority), and its rule if it has one.
 - **15 min trend:** a sparkline of its CPU.
-- **now / 15 min / memory:** the CPU now with a heat bar, the 15 minute average and memory used.
-- **ⓘ** opens a popover with its averages, a 1 hour chart and its full path. A filled **?**
-  instead means the [process guide](processes.md) knows it, and the popover also says what
-  it is and gives a verdict: *Normal: it settles on its own*, *Safe to stop*, *Do not kill*
-  or *Something you started*.
-- **✨ Explain** opens ChatGPT about this process.
-- **Kill** (red) quits it. **Kill** with a lock (orange) is a root process and asks for your
-  password. **sudo kill** (outlined) is a core macOS process; see [Killing processes](#killing-processes).
-  While a kill runs the button reads **Killing…**, and a banner over the page then says
-  whether it worked.
+- **CPU / 15 min / memory / GPU:** the CPU now with a heat bar, the 15 minute average,
+  memory used, and its share of the graphics chip over the last 5 seconds ("–" for none).
+- **⋯ Actions** holds everything you can do to it. It shows a wand instead when there is a
+  specific fix for that process.
+  - **What is this?** opens a window with its averages, a 1 hour chart and its full path.
+    If the [process guide](processes.md) knows it, it also says what it is and gives a
+    verdict: *Normal: it settles on its own*, *Safe to stop*, *Do not kill* or *Something
+    you started*.
+  - **Explain with ChatGPT.**
+  - **Optimise…** lowers its priority, restarts it, or applies a fix for that process.
+    For WindowServer, **Optimise the screen…** opens settings that make it draw less.
+  - **Kill**, **Force kill (kill -9)…**, or **sudo kill…** for a core macOS process; see
+    [Killing processes](#killing-processes). While a kill runs a spinner replaces the
+    menu, and a banner over the page then says whether it worked.
+  - **More** has the right-click items below.
 - **restarted** means the process was killed a moment ago and launched again under this pid.
 
 **Right-click** a row for more:
@@ -397,11 +407,13 @@ allow them in **System Settings > Notifications > System Sentinel**.
 
 ## Killing processes
 
-| Button | For | What happens |
+These are in each row's **⋯ Actions** menu.
+
+| Action | For | What happens |
 |---|---|---|
-| **Kill** (red) | Your own processes | A polite stop signal (SIGTERM), and a force kill (SIGKILL) 5 seconds later if it is still running. |
-| **Kill** with a lock (orange) | Root processes, e.g. PerfPowerServices | macOS asks for your admin password, then sends SIGTERM. Daemons like this are restarted by launchd, usually without the problem. |
-| **sudo** (outlined) | Core macOS processes: WindowServer, kernel_task, launchd, loginwindow, Finder, Dock, coreaudiod and others | A warning of what will happen, then four choices: **Open sudo shell** (Terminal with `sudo kill -TERM <pid>` typed in), **Kill with password**, **Copy command**, or **Cancel**. pid 0, pid 1 and System Sentinel itself are always refused. |
+| **Kill** | Your own processes | A polite stop signal (SIGTERM), and a force kill (SIGKILL) 5 seconds later if it is still running. |
+| **Kill (asks for your password)** | Root processes, e.g. PerfPowerServices | macOS asks for your admin password, then sends SIGTERM. Daemons like this are restarted by launchd, usually without the problem. |
+| **sudo kill…** | Core macOS processes: WindowServer, kernel_task, launchd, loginwindow, Finder, Dock, coreaudiod and others | A warning of what will happen, then four choices: **Open sudo shell** (Terminal with `sudo kill -TERM <pid>` typed in), **Kill with password**, **Copy command**, or **Cancel**. pid 0, pid 1 and System Sentinel itself are always refused. |
 
 Things to know:
 
@@ -410,7 +422,7 @@ Things to know:
   verdict for each common process.
 - **Force kill.** Some processes ignore the polite signal, and the kill then shows as
   **Kill failed**. Checkup's "survived a kill" finding lists the process with a
-  **Force kill** button, and right-clicking any process offers **Force kill (kill -9)…**.
+  **Force kill** button, and every process's Actions menu offers **Force kill (kill -9)…**.
   It confirms first, because the process can't save or clean up. Root and macOS processes
   ask for your password, or you can open a Terminal with `sudo kill -9 <pid>` typed in.
 - **Relaunched at once?** Some programs come straight back under a new pid, launched by
