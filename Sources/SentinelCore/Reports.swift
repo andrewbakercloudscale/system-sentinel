@@ -276,6 +276,7 @@ extension Insights {
             x.fixes = quitFix(u.pids, u.name, byPID)
             out.append(x)
         }
+        out += gpu(i, rel: rel, byPID: byPID)
         return out
     }
 }

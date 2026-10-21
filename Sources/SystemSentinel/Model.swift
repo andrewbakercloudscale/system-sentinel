@@ -76,6 +76,11 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
     /// Apps using the graphics chip over the last 5 seconds; `cpu` is their share of the chip.
     @Published var gpuApps: [ClusterApp] = []
     private var gpuTimesAt: Date?
+    /// Each process's share of the graphics chip over the last 5 seconds, for the Processes tab.
+    @Published var gpuShares: [Int32: Double] = [:]
+    /// Each app's share every 5 seconds for the last 5 minutes, with its pids, for the insights.
+    private var gpuAppLog: [(at: Date, shares: [String: Double])] = []
+    private var gpuAppPIDs: [String: [Int32]] = [:]
     /// Sleep over the last 24 hours, from the power log; refreshed every 15 minutes.
     @Published var sleepReport: SleepReport?
     /// Network and disk by app, from the latest 30 second reading.
@@ -800,6 +805,8 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
         input.charge = ChargeHabits.from(powerHistory.since(now.addingTimeInterval(-7 * 86_400)))
         input.healthProjection = HealthLog.projection(healthLog.entries)
         input.unusual = unusualApps(now)
+        input.gpuApps = gpuInsightApps()
+        input.gpuMinutes = gpuAppLog.first.map { now.timeIntervalSince($0.at) / 60 } ?? 0
         return input
     }
 
@@ -985,18 +992,42 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
         // Grouped by app, as on the Memory tab: Chrome's GPU helper counts as Chrome.
         let samples = Dictionary(sentinel.latest.map { ($0.pid, $0) }, uniquingKeysWith: { a, _ in a })
         var apps: [String: (share: Double, top: ProcessSample, topShare: Double)] = [:]
-        for (pid, v) in GPUReader.shares(from: before, to: s.gpuTime, seconds: seconds) {
+        let shares = GPUReader.shares(from: before, to: s.gpuTime, seconds: seconds)
+        gpuShares = shares
+        var pids: [String: [Int32]] = [:]
+        for (pid, v) in shares {
             // A process that started since the last `ps` reading is known by the name it gave the driver.
             let sample = samples[pid] ?? ProcessSample(pid: pid, uid: 0, cpu: 0, path: s.names[pid] ?? "pid \(pid)")
             let k = Model.appKey(sample.path)
+            pids[k, default: []].append(pid)
             var g = apps[k] ?? (0, sample, 0)
             g.share += v
             if v > g.topShare { g.top = sample; g.topShare = v }
             apps[k] = g
         }
+        gpuAppLog.append((now, apps.mapValues { min($0.share, 100) }))
+        gpuAppLog.removeAll { now.timeIntervalSince($0.at) > 300 }
+        gpuAppPIDs.merge(pids) { _, new in new }
         let names = Dictionary(memoryApps.map { ($0.key, $0.name) }, uniquingKeysWith: { a, _ in a })
         gpuApps = apps.map { ClusterApp(key: $0.key, name: names[$0.key] ?? Model.memoryName($0.key), sample: $0.value.top, cpu: min($0.value.share, 100)) }
             .filter { $0.cpu >= 0.5 }.sorted { $0.cpu > $1.cpu }.prefix(6).map { $0 }
+    }
+
+    /// Apps using the graphics chip, averaged over the last 5 minutes, for the insights.
+    private func gpuInsightApps() -> [GPUApp] {
+        guard !gpuAppLog.isEmpty else { return [] }
+        var sum: [String: Double] = [:]
+        for e in gpuAppLog { for (k, v) in e.shares { sum[k, default: 0] += v } }
+        let front = NSWorkspace.shared.frontmostApplication.flatMap { app in
+            sentinel.latest.first { $0.pid == app.processIdentifier }.map { Model.appKey($0.path) }
+        }
+        let live = Set(sentinel.latest.map(\.pid))
+        let names = Dictionary(memoryApps.map { ($0.key, $0.name) }, uniquingKeysWith: { a, _ in a })
+        return sum.map { k, v in
+            GPUApp(key: k, name: names[k] ?? Model.memoryName(k), share: v / Double(gpuAppLog.count),
+                   pids: (gpuAppPIDs[k] ?? []).filter(live.contains), front: k == front)
+        }
+        .filter { $0.share >= 5 }.sorted { $0.share > $1.share }
     }
 
     /// Average graphics busy share over the last `seconds`.

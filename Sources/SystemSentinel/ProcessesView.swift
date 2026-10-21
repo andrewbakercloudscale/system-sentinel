@@ -17,7 +17,7 @@ struct ProcessesView: View {
     @AppStorage("colMem") private var colMem = 54.0
 
     enum Sort: String, CaseIterable {
-        case now = "Now", m15 = "15 min", h1 = "1 hour", h6 = "6 hours", memory = "Memory"
+        case now = "Now", m15 = "15 min", h1 = "1 hour", h6 = "6 hours", memory = "Memory", gpu = "GPU"
 
         /// The averaging window this sort ranks by, which the average column then shows.
         var window: TimeInterval? {
@@ -46,7 +46,7 @@ struct ProcessesView: View {
                     ProcessRow(model: model, sample: s, zebra: i.isMultiple(of: 2), window: window, cols: cols)
                 }
             }
-            Text("100% is one full core; a busy process can use several. Averages count idle time, so they show what has been chewing the CPU, not how hot it runs when it does.")
+            Text("100% is one full core; a busy process can use several. Averages count idle time, so they show what has been chewing the CPU, not how hot it runs when it does. GPU is the share of the graphics chip, where 100% is all of it.")
                 .font(.caption2).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
         } header: {
             toolbar(sort: sort, window: window)
@@ -119,6 +119,7 @@ struct ProcessesView: View {
         case .h1: return list.map { ($0, model.average($0, 3600)) }.sorted { $0.1 > $1.1 }.map(\.0)
         case .h6: return list.map { ($0, model.average($0, 6 * 3600)) }.sorted { $0.1 > $1.1 }.map(\.0)
         case .memory: return list.sorted { $0.rssKB > $1.rssKB }
+        case .gpu: return list.sorted { (model.gpuShares[$0.pid] ?? 0, $0.cpu) > (model.gpuShares[$1.pid] ?? 0, $1.cpu) }
         }
     }
 }
@@ -215,6 +216,10 @@ private struct ProcessRow: View {
                     if flagged { Pill(text: "flagged", symbol: "exclamationmark.triangle.fill", color: Theme.heat(100)) }
                     if let hot = model.hotFor(s) { Pill(text: "hot \(hot)", symbol: "flame.fill", color: Theme.heat(50)) }
                     if s.isRoot { Pill(text: "root", symbol: "lock.fill", color: Color(hex: "#b45309")) }
+                    if let g = model.gpuShares[s.pid], g >= 1 {
+                        Pill(text: "GPU \(Fmt.pct(g))", symbol: "square.stack.3d.up.fill", color: GraphicsCard.color)
+                            .tip("Its share of the graphics chip over the last 5 seconds")
+                    }
                     policyPill(model.policy(for: s))
                     if model.isSlowed(s) {
                         Pill(text: "background", symbol: "tortoise.fill", color: Theme.rules)
