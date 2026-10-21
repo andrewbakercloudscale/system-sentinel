@@ -33,7 +33,7 @@ struct OptimiseButton: View {
     }
 }
 
-private struct OptimisePopover: View {
+struct OptimisePopover: View {
     @ObservedObject var model: Model
     let sample: ProcessSample
     let close: () -> Void

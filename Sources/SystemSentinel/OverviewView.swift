@@ -83,6 +83,10 @@ private struct Hero: View {
                     .font(.callout).foregroundStyle(.white.opacity(0.85))
                 HStack(spacing: 6) {
                     ThermalChip(state: model.thermal)
+                    if let gpu = model.gpuStatus {
+                        HeroChip(text: "GPU \(Int(gpu.busy.rounded()))%", symbol: "square.stack.3d.up.fill")
+                            .tip("Graphics chip busy right now\(model.gpuAverage(3600).map { ", \(Int($0.rounded()))% over the last hour" } ?? ""). The Graphics card below has the detail.")
+                    }
                     if ProcessInfo.processInfo.isLowPowerModeEnabled {
                         HeroChip(text: "Low Power", symbol: "leaf.fill")
                     }

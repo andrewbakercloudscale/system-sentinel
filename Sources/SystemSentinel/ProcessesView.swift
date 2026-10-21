@@ -15,9 +15,20 @@ struct ProcessesView: View {
     @AppStorage("colNow") private var colNow = 62.0
     @AppStorage("colAvg") private var colAvg = 44.0
     @AppStorage("colMem") private var colMem = 54.0
+    @AppStorage("colGPU") private var colGPU = 46.0
+    /// Bumped when the standard widths change, so saved ones start again once.
+    @AppStorage("colLayout") private var colLayout = 0
 
     enum Sort: String, CaseIterable {
-        case now = "Now", m15 = "15 min", h1 = "1 hour", h6 = "6 hours", memory = "Memory", gpu = "GPU"
+        case now = "Now", m15 = "15 min", h1 = "1 hour", h6 = "6 hours", memory = "Memory", gpu = "GPU", name = "Name"
+
+        var label: String {
+            switch self {
+            case .now: return "CPU now"
+            case .m15, .h1, .h6: return "CPU, \(rawValue) average"
+            default: return rawValue
+            }
+        }
 
         /// The averaging window this sort ranks by, which the average column then shows.
         var window: TimeInterval? {
@@ -41,12 +52,12 @@ struct ProcessesView: View {
         // column headers stay in view however far the list is scrolled.
         Section {
             VStack(spacing: 2) {
-                let cols = ProcessColumns(trend: colTrend, now: colNow, avg: colAvg, mem: colMem)
+                let cols = ProcessColumns(trend: colTrend, now: colNow, avg: colAvg, mem: colMem, gpu: colGPU)
                 ForEach(Array(rows.enumerated()), id: \.element.pid) { i, s in
                     ProcessRow(model: model, sample: s, zebra: i.isMultiple(of: 2), window: window, cols: cols)
                 }
             }
-            Text("100% is one full core; a busy process can use several. Averages count idle time, so they show what has been chewing the CPU, not how hot it runs when it does. GPU is the share of the graphics chip, where 100% is all of it.")
+            Text("100% is one full core; a busy process can use several. Averages count idle time, so they show what has been chewing the CPU, not how hot it runs when it does. GPU is each process's share of the graphics chip over the last 5 seconds, where 100% is all of it. Click a column title to sort by it.")
                 .font(.caption2).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
         } header: {
             toolbar(sort: sort, window: window)
@@ -65,34 +76,67 @@ struct ProcessesView: View {
                 .frame(width: 170)
                 pauseButton
                 Spacer()
-                Text("Sort").font(.caption).foregroundStyle(.secondary)
-                ChipPicker(options: Sort.allCases.map(\.rawValue), selection: $sortRaw, color: Tab.processes.color)
+                sortMenu(sort)
             }
             HStack(spacing: 8) {
-                Text("Process").frame(maxWidth: .infinity, alignment: .leading).padding(.leading, 34)
+                Button { sortRaw = Sort.name.rawValue } label: { sortTitle("Process", on: sort == .name) }
+                    .buttonStyle(.plain)
+                    .frame(maxWidth: .infinity, alignment: .leading).padding(.leading, 34)
+                    .tip("Sort by name")
                 // A column grows into the Process column, never past it: an overfull row made the
                 // whole list fight over its width, which is what flickered.
                 let room = ProcessColumns.room
-                ColumnHeader(title: "15 min trend", width: $colTrend, standard: 76, minWidth: 40, maxWidth: room - colNow - colAvg - colMem, alignment: .center)
-                ColumnHeader(title: "now", width: $colNow, standard: 62, minWidth: 50, maxWidth: room - colTrend - colAvg - colMem)
-                ColumnHeader(title: window == 900 ? "15 min" : window == 3600 ? "1 hour" : "6 hours", width: $colAvg, standard: 44, minWidth: 34, maxWidth: room - colTrend - colNow - colMem)
-                ColumnHeader(title: "memory", width: $colMem, standard: 54, minWidth: 44, maxWidth: room - colTrend - colNow - colAvg)
+                let used = colTrend + colNow + colAvg + colMem + colGPU
+                ColumnHeader(title: "15 min trend", width: $colTrend, standard: 84, minWidth: 50, maxWidth: room - used + colTrend, alignment: .center)
+                ColumnHeader(title: "CPU", width: $colNow, standard: 64, minWidth: 54, maxWidth: room - used + colNow,
+                             sorted: sort == .now, onSort: { sortRaw = Sort.now.rawValue })
+                ColumnHeader(title: window == 900 ? "15 min" : window == 3600 ? "1 hour" : "6 hours", width: $colAvg, standard: 60, minWidth: 44, maxWidth: room - used + colAvg,
+                             sorted: sort.window != nil, onSort: { sortRaw = (sort.window == nil ? Sort.m15 : sort == .m15 ? .h1 : sort == .h1 ? .h6 : .m15).rawValue })
+                ColumnHeader(title: "memory", width: $colMem, standard: 66, minWidth: 54, maxWidth: room - used + colMem,
+                             sorted: sort == .memory, onSort: { sortRaw = Sort.memory.rawValue })
+                ColumnHeader(title: "GPU", width: $colGPU, standard: 52, minWidth: 42, maxWidth: room - used + colGPU,
+                             sorted: sort == .gpu, onSort: { sortRaw = Sort.gpu.rawValue })
                 Text("").frame(width: ProcessColumns.actions)
             }
             .font(.caption2.weight(.medium)).foregroundStyle(.secondary)
-            .tip("Drag a column's left edge to resize it; double-click the edge to reset")
+            .tip("Click a title to sort by it. Drag a column's left edge to resize it; double-click the edge to reset.")
         }
         .padding(.vertical, 6)
         .onAppear {
-            // Widths saved before the columns had limits can overfill the row or wrap a value
-            // onto two lines; start again.
-            if colTrend + colNow + colAvg + colMem > ProcessColumns.room
-                || colTrend < 40 || colNow < 50 || colAvg < 34 || colMem < 44 {
-                (colTrend, colNow, colAvg, colMem) = (76, 62, 44, 54)
+            // Widths saved before the columns had limits, or before the GPU column, can
+            // overfill the row or wrap a value onto two lines; start again.
+            // Widths from before the actions moved into one menu are too narrow; start again too.
+            if colLayout < 2 || colTrend + colNow + colAvg + colMem + colGPU > ProcessColumns.room
+                || colTrend < 50 || colNow < 54 || colAvg < 44 || colMem < 54 || colGPU < 42 {
+                (colTrend, colNow, colAvg, colMem, colGPU) = (84, 64, 60, 66, 52)
+                colLayout = 2
             }
         }
         // Opaque, so rows scrolling underneath the pinned bar do not show through it.
         .background(Color(nsColor: .windowBackgroundColor))
+    }
+
+    private func sortMenu(_ sort: Sort) -> some View {
+        Menu {
+            ForEach(Sort.allCases, id: \.self) { s in
+                Button { sortRaw = s.rawValue } label: {
+                    if s == sort { Label(s.label, systemImage: "checkmark") } else { Text(s.label) }
+                }
+            }
+        } label: {
+            Label("Sort: \(sort.label)", systemImage: "arrow.up.arrow.down").font(.caption.weight(.semibold))
+        }
+        .menuStyle(.borderlessButton).fixedSize()
+        .tip("Sort by CPU, memory, GPU or name. Clicking a column title does the same.")
+    }
+
+    private func sortTitle(_ title: String, on: Bool) -> some View {
+        HStack(spacing: 2) {
+            Text(title)
+            if on { Image(systemName: "chevron.down").font(.system(size: 8, weight: .bold)) }
+        }
+        .foregroundStyle(on ? Tab.processes.color : .secondary)
+        .contentShape(Rectangle())
     }
 
     private var pauseButton: some View {
@@ -120,17 +164,19 @@ struct ProcessesView: View {
         case .h6: return list.map { ($0, model.average($0, 6 * 3600)) }.sorted { $0.1 > $1.1 }.map(\.0)
         case .memory: return list.sorted { $0.rssKB > $1.rssKB }
         case .gpu: return list.sorted { (model.gpuShares[$0.pid] ?? 0, $0.cpu) > (model.gpuShares[$1.pid] ?? 0, $1.cpu) }
+        case .name: return list.sorted { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
         }
     }
 }
 
 /// Widths of the fixed columns, shared by the header and every row.
 struct ProcessColumns: Equatable {
-    var trend = 76.0, now = 62.0, avg = 44.0, mem = 54.0
-    static let actions: CGFloat = 196
-    /// What the four resizable columns may share: the row, less its padding, spacing, the
+    var trend = 84.0, now = 64.0, avg = 60.0, mem = 66.0, gpu = 52.0
+    /// The one Actions menu at the end of each row.
+    static let actions: CGFloat = 40
+    /// What the five resizable columns may share: the row, less its padding, spacing, the
     /// actions and the narrowest the Process column can usefully be.
-    static let room = Double(MenuView.width) - 28 - 2 - 12 - Double(actions) - 5 * 8 - 100
+    static let room = Double(MenuView.width) - 28 - 2 - 12 - Double(actions) - 6 * 8 - 100
 }
 
 /// A column title with a handle on its left edge: drag to resize, double-click to reset.
@@ -142,12 +188,21 @@ private struct ColumnHeader: View {
     let minWidth: Double
     let maxWidth: Double
     var alignment: Alignment = .trailing
+    /// Columns that sort: the title is clickable and marked while it is the sort.
+    var sorted = false
+    var onSort: (() -> Void)?
     @State private var start: Double?
     @State private var hover = false
 
     var body: some View {
-        Text(title).lineLimit(1)
+        HStack(spacing: 2) {
+            Text(title).lineLimit(1)
+            if sorted { Image(systemName: "chevron.down").font(.system(size: 8, weight: .bold)) }
+        }
+            .foregroundStyle(sorted ? Tab.processes.color : .secondary)
             .frame(width: width, alignment: alignment)
+            .contentShape(Rectangle())
+            .onTapGesture { onSort?() }
             .overlay(alignment: .leading) {
                 Rectangle().fill(hover || start != nil ? Color.secondary.opacity(0.5) : Color.secondary.opacity(0.15))
                     .frame(width: 2, height: 12)
@@ -203,6 +258,7 @@ private struct ProcessRow: View {
     var window: TimeInterval = 900
     var cols = ProcessColumns()
     @State private var hover = false
+    @State private var optimise = false
 
     var body: some View {
         let s = sample
@@ -212,21 +268,17 @@ private struct ProcessRow: View {
             IconView(icon: IconCache.shared.icon(for: s), size: 26)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 5) {
-                    Text(s.displayName).font(.callout.weight(.medium)).lineLimit(1).truncationMode(.middle)
-                    if flagged { Pill(text: "flagged", symbol: "exclamationmark.triangle.fill", color: Theme.heat(100)) }
-                    if let hot = model.hotFor(s) { Pill(text: "hot \(hot)", symbol: "flame.fill", color: Theme.heat(50)) }
-                    if s.isRoot { Pill(text: "root", symbol: "lock.fill", color: Color(hex: "#b45309")) }
-                    if let g = model.gpuShares[s.pid], g >= 1 {
-                        Pill(text: "GPU \(Fmt.pct(g))", symbol: "square.stack.3d.up.fill", color: GraphicsCard.color)
-                            .tip("Its share of the graphics chip over the last 5 seconds")
-                    }
+                    Text(s.displayName).font(.callout.weight(.medium)).lineLimit(1).truncationMode(.middle).layoutPriority(1)
+                    if flagged { Pill(text: "Flagged: using too much CPU", symbol: "exclamationmark.triangle.fill", color: Theme.heat(100), compact: true) }
+                    if let hot = model.hotFor(s) { Pill(text: "Hot for \(hot)", symbol: "flame.fill", color: Theme.heat(50), compact: true) }
+                    if s.isRoot { Pill(text: "Runs as root", symbol: "lock.fill", color: Color(hex: "#b45309"), compact: true) }
                     policyPill(model.policy(for: s))
                     if model.isSlowed(s) {
-                        Pill(text: "background", symbol: "tortoise.fill", color: Theme.rules)
+                        Pill(text: "background", symbol: "tortoise.fill", color: Theme.rules, compact: true)
                             .tip("Running at background priority: efficiency cores, disk access last. The tortoise button puts it back.")
                     }
                     if model.restarted[s.path] == s.pid {
-                        Pill(text: "restarted", symbol: "arrow.clockwise", color: Theme.rules)
+                        Pill(text: "restarted", symbol: "arrow.clockwise", color: Theme.rules, compact: true)
                             .tip("Killed a moment ago and launched again under this new pid")
                     }
                 }
@@ -244,36 +296,11 @@ private struct ProcessRow: View {
             .frame(width: cols.now, alignment: .trailing)
             Text(Fmt.pct(avg15)).font(.caption).monospacedDigit().foregroundStyle(Theme.heat(avg15)).frame(width: cols.avg, alignment: .trailing)
             Text(Fmt.memory(s.rssKB)).font(.caption).monospacedDigit().foregroundStyle(.secondary).frame(width: cols.mem, alignment: .trailing)
+            let gpu = model.gpuShares[s.pid] ?? 0
+            Text(gpu >= 0.05 ? Fmt.pct(gpu) : "–").font(.caption.weight(gpu >= 5 ? .semibold : .regular)).monospacedDigit()
+                .foregroundStyle(gpu >= 0.05 ? GraphicsCard.color : .secondary).frame(width: cols.gpu, alignment: .trailing)
 
-            HStack(spacing: 4) {
-                Button { InfoPanel.toggle(model: model, sample: s) } label: {
-                    Image(systemName: ProcessGuide.note(for: s.name) == nil ? "info.circle" : "questionmark.circle.fill")
-                        .foregroundStyle(Tab.processes.color)
-                }
-                .buttonStyle(.plain)
-                .tip("What is this?")
-                Button { model.explain(s) } label: {
-                    Image(systemName: "sparkles").foregroundStyle(Theme.trends)
-                }
-                .buttonStyle(.plain)
-                .tip("Explain: ask ChatGPT why this is busy and how to bring it down")
-                if OptimiseButton.available(model, s) { OptimiseButton(model: model, sample: s) }
-                if s.pid == getpid() {
-                    // Sized like the Kill button beside the other rows.
-                    Label("This app", systemImage: "cpu")
-                        .font(.caption.weight(.bold)).foregroundStyle(Tab.overview.color)
-                        .padding(.horizontal, 9).padding(.vertical, 5)
-                        .background(Capsule().fill(Tab.overview.color.opacity(0.14)))
-                        .fixedSize()
-                        .frame(width: 96, alignment: .trailing)
-                } else if s.name == "WindowServer" {
-                    OptimiseScreenButton(model: model)
-                } else if Safety.canKillManually(s) {
-                    KillButton(model: model, sample: s)
-                } else {
-                    SudoButton(model: model, sample: s)
-                }
-            }
+            actions(s)
             .frame(width: ProcessColumns.actions, alignment: .trailing)
         }
         .padding(.horizontal, 6).padding(.vertical, 5)
@@ -287,6 +314,49 @@ private struct ProcessRow: View {
         .contextMenu { menu(s) }
     }
 
+    /// Everything that can be done to the process, in one menu, so the rows stay calm.
+    @ViewBuilder
+    private func actions(_ s: ProcessSample) -> some View {
+        if model.killing.contains(s.pid) {
+            ProgressView().controlSize(.small).tip("Killing…")
+        } else {
+            let fix = ProcessFixes.hasSpecific(s.name)
+            Menu {
+                Button { InfoPanel.toggle(model: model, sample: s) } label: { Label("What is this?", systemImage: "info.circle") }
+                Button { model.explain(s) } label: { Label("Explain with ChatGPT", systemImage: "sparkles") }
+                if s.name == "WindowServer" {
+                    Button { OptimiseWindow.show(model) } label: { Label("Optimise the screen…", systemImage: "wand.and.stars") }
+                } else if OptimiseButton.available(model, s) {
+                    Button { optimise = true } label: {
+                        Label(fix ? "Optimise (there is a fix)…" : "Optimise…", systemImage: model.isSlowed(s) ? "tortoise.fill" : "wand.and.stars")
+                    }
+                }
+                Divider()
+                if s.pid == getpid() {
+                    Text("This app")
+                } else if s.name == "WindowServer" || !Safety.canKillManually(s) {
+                    Button { model.confirmSudoKill(s) } label: { Label("sudo kill…", systemImage: "terminal.fill") }
+                } else {
+                    Button { model.confirmKill(s) } label: { Label(s.isRoot ? "Kill (asks for your password)" : "Kill", systemImage: "xmark.octagon.fill") }
+                    Button { ForceKillButton.confirm(model, s) } label: { Label("Force kill (kill -9)…", systemImage: "bolt.fill") }
+                }
+                Divider()
+                Menu("More") { menu(s) }
+            } label: {
+                Image(systemName: fix ? "wand.and.stars" : "ellipsis.circle")
+                    .font(.title3)
+                    .foregroundStyle(Tab.processes.color)
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .tip(fix ? "Actions: there is a fix for this one" : "Actions: explain, optimise, kill")
+            .popover(isPresented: $optimise, arrowEdge: .leading) {
+                OptimisePopover(model: model, sample: s) { optimise = false }
+            }
+        }
+    }
+
     private func subtitle(_ s: ProcessSample) -> String {
         var parts = ["pid \(s.pid)"]
         if let up = model.uptime(s) { parts.append(up) }
@@ -297,8 +367,8 @@ private struct ProcessRow: View {
     private func policyPill(_ p: Policy) -> some View {
         switch p {
         case .alert: EmptyView()
-        case .ignore, .ignoreDuring: Pill(text: p.label, symbol: "moon.fill", color: Theme.rules)
-        default: Pill(text: p.label, symbol: p == .autoKill ? "bolt.fill" : "battery.50percent", color: Theme.heat(p == .autoKill ? 100 : 80))
+        case .ignore, .ignoreDuring: Pill(text: p.label, symbol: "moon.fill", color: Theme.rules, compact: true)
+        default: Pill(text: p.label, symbol: p == .autoKill ? "bolt.fill" : "battery.50percent", color: Theme.heat(p == .autoKill ? 100 : 80), compact: true)
         }
     }
 
