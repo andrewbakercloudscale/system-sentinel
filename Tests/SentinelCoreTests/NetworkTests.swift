@@ -207,4 +207,46 @@ final class NetworkTests: XCTestCase {
         let fine = LinkHealth(pathMTU: 1500, interfaceMTU: 1500, at: now)
         XCTAssertFalse(fine.fragments)
     }
+
+    func testZeroTrust() {
+        XCTAssertEqual(NetworkLink.vpn(processNames: ["tailscaled", "ZscalerTunnel"]), "Zscaler", "the zero trust client wins")
+        XCTAssertTrue(NetworkLink(interface: "en0", vpn: "Zscaler").zeroTrust)
+        XCTAssertFalse(NetworkLink(interface: "en0", vpn: "Tailscale").zeroTrust)
+        XCTAssertFalse(NetworkLink(interface: "en0").zeroTrust)
+
+        let now = Date()
+        let ztn = NetworkLink(interface: "en0", gateway: "192.168.0.1", vpn: "Zscaler")
+        let tcp = LinkHealth(routerMs: 4, routerLoss: 0, internetMs: 30, internetLoss: 0, dnsMs: 20, icmpBlocked: true, at: now)
+        let i = NetworkAnalysis.insights(link: ztn, health: tcp, problems: [], apps: [], at: now)
+        XCTAssertEqual(i.map(\.id), ["net-ztn"], "pings blocked but TCP fine is not an outage")
+        XCTAssertEqual(i[0].tone, .info)
+        XCTAssertTrue(i[0].title.contains("Zscaler"))
+
+        let down = LinkHealth(routerMs: 4, routerLoss: 0, internetLoss: 100, at: now)
+        let d = NetworkAnalysis.insights(link: ztn, health: down, problems: [], apps: [], at: now)
+        XCTAssertEqual(d.first?.id, "net-down")
+        XCTAssertTrue(d.first?.detail.contains("Zscaler is connected") ?? false)
+    }
+
+    func testTCPPing() throws {
+        // A listening socket on loopback answers the handshake without accept().
+        let fd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)
+        defer { close(fd) }
+        var addr = sockaddr_in()
+        addr.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+        addr.sin_family = sa_family_t(AF_INET)
+        addr.sin_addr.s_addr = inet_addr("127.0.0.1")
+        var len = socklen_t(MemoryLayout<sockaddr_in>.size)
+        let bound = withUnsafeMutablePointer(to: &addr) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { Darwin.bind(fd, $0, len) == 0 && Darwin.listen(fd, 8) == 0 && getsockname(fd, $0, &len) == 0 }
+        }
+        try XCTSkipUnless(bound, "no loopback socket")
+        let port = UInt16(bigEndian: addr.sin_port)
+        let r = TCPPing.ping("127.0.0.1", port: port, count: 3, interval: 0)
+        XCTAssertEqual(r.loss, 0)
+        XCTAssertLessThan(r.avg ?? 999, 100)
+        close(fd)
+        XCTAssertNil(TCPPing.handshake("127.0.0.1", port: port, timeout: 1), "refused once nothing listens")
+        XCTAssertNil(TCPPing.handshake("not-an-ip"))
+    }
 }
