@@ -293,6 +293,45 @@ final class UsageAdviceTests: XCTestCase {
         XCTAssertEqual(x?.fixes, [.quit(pids: [11], name: "Slack")], "pid 1 would be launchd: never offered")
     }
 
+    func testGPUInsights() {
+        let game = "/Applications/Game.app/Contents/MacOS/Game"
+        var i = input([ps(21, 30, game), ps(22, 5, "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer"),
+                       ps(23, 5, "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")])
+        i.gpuMinutes = 2
+        i.gpuApps = [GPUApp(key: game, name: "Game", share: 90, pids: [21], front: false)]
+        XCTAssertTrue(Insights.generate(i).filter { $0.id.hasPrefix("gpu-") }.isEmpty, "needs 5 minutes of readings")
+
+        i.gpuMinutes = 5
+        var x = Insights.generate(i).first { $0.id.hasPrefix("gpu-") }
+        XCTAssertEqual(x?.title, "Game is using the graphics chip in the background")
+        XCTAssertEqual(x?.tone, .warning)
+        XCTAssertEqual(x?.fixes, [.quit(pids: [21], name: "Game")])
+
+        // In front, a game at 40% is expected; at 90% it is worth knowing, with Low Power Mode on battery.
+        i.gpuApps = [GPUApp(key: game, name: "Game", share: 40, pids: [21], front: true)]
+        XCTAssertNil(Insights.generate(i).first { $0.id.hasPrefix("gpu-") })
+        i.gpuApps = [GPUApp(key: game, name: "Game", share: 90, pids: [21], front: true)]
+        i.battery = BatteryStatus(present: true, onBattery: true)
+        x = Insights.generate(i).first { $0.id.hasPrefix("gpu-") }
+        XCTAssertEqual(x?.title, "Game is using 90% of the graphics chip")
+        XCTAssertEqual(x?.tone, .info)
+        XCTAssertEqual(x?.fixes, [.quit(pids: [21], name: "Game"), .lowPowerMode])
+
+        // The screen itself: optimise it rather than quit WindowServer.
+        i.gpuApps = [GPUApp(key: "WindowServer", name: "WindowServer", share: 70, pids: [22], front: false)]
+        x = Insights.generate(i).first { $0.id.hasPrefix("gpu-") }
+        XCTAssertEqual(x?.id, "gpu-screen")
+        XCTAssertEqual(x?.fixes, [.optimiseScreen, .openSettings(.displays)])
+
+        // A browser in the background: find the tab.
+        i.gpuApps = [GPUApp(key: "/Applications/Google Chrome.app", name: "Google Chrome", share: 30, pids: [23], front: false)]
+        x = Insights.generate(i).first { $0.id.hasPrefix("gpu-") }
+        XCTAssertEqual(x?.symbol, "play.rectangle.fill")
+        XCTAssert(x?.steps.first?.contains("Task Manager") ?? false)
+        XCTAssertEqual(GPUApp(key: "/Applications/Research.app", name: "Research", share: 0, pids: [], front: false).kind, .other, "'search' is not Arc")
+        XCTAssertEqual(GPUApp(key: "/opt/homebrew/bin/ollama", name: "ollama", share: 0, pids: [], front: false).kind, .ai)
+    }
+
     func testMemoryInsightNamesTheHeaviest() {
         var i = input([ps(11, 1, "/Applications/Chrome.app/Contents/MacOS/Chrome", rss: 4_000_000), ps(12, 1, "/usr/bin/small", rss: 1000)])
         i.memory = MemoryStatus(pressure: .warning, total: 16 << 30, used: 15 << 30, compressed: 3 << 30, swapUsed: 5 << 30, swapTotal: 6 << 30)

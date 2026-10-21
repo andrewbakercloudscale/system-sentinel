@@ -270,6 +270,10 @@ public struct InsightInput: Sendable {
     public var healthProjection: Date?
     /// Apps far above their own usual.
     public var unusual: [UnusualApp] = []
+    /// Apps using the graphics chip, averaged over the last 5 minutes, heaviest first.
+    public var gpuApps: [GPUApp] = []
+    /// Minutes of graphics readings behind those averages.
+    public var gpuMinutes: Double = 0
 
     public init(cores: Double, samples: [ProcessSample], total1m: Double, total15m: Double, total60m: Double,
                 avg15m: [Int32: Double], recordedMinutes: Double, daily: [DailyUsage.Summary], dailySampled: TimeInterval,

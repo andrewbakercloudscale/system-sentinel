@@ -171,6 +171,7 @@ Events tab keeps the recent results.
 | **The Mac is N times busier than usual this hour** | The last hour is at least twice the 7 day hourly average | Something unusual is running. |
 | **Memory is tight: N GB in swap** | macOS reports memory pressure | The apps holding the most memory, and a Quit button for the largest. |
 | **X is working N times harder than usual** (or **is busy, and it is normally idle**) | An app has averaged 30% or more for 15 minutes, at least 4 times its own hourly average over the last week | Measured against the app's own history, so a normally light app working hard stands out below the alert threshold. |
+| **X is using the graphics chip in the background** (or **is using N% of the graphics chip**) | An app has averaged 25% of the graphics chip or more for 5 minutes while another app is in front, or 60% while it is in front | Says what to do for the kind of app: find the tab in a browser, stop a local AI model, lower a game's settings. Quit, and Low Power Mode on battery. When the screen itself is the cost (WindowServer), it offers Optimise screen and Displays settings instead. |
 | **Lost N% an hour while asleep** / **Woke N times while asleep** | Sleeping on battery lost 1.5% an hour or more, or 40 or more dark wakes in 24 hours | What wakes it and how to stop it. |
 | **Plugged in at 100% N% of the time** | Over the last week, 10 or more hours on the charger, mostly full | Sitting full wears the battery; set a charge limit. |
 | **X survived a kill** | A kill failed in the last 24 hours | The process ignored the polite stop signal; only a force kill would stop it. |
@@ -201,8 +202,9 @@ be capturing.
 
 The 30 busiest processes, refreshed every 5 seconds.
 
-- **Filter** by name. **Sort** by CPU now, the 15 minute, 1 hour or 6 hour average, or
-  memory. Sorting by an average ranks every process, including ones idle right now, and the
+- **Filter** by name. **Sort** by CPU now, the 15 minute, 1 hour or 6 hour average,
+  memory, or GPU (share of the graphics chip). A process using the graphics chip shows a
+  **GPU** pill with its share. Sorting by an average ranks every process, including ones idle right now, and the
   average column switches to that window.
 - **pid and uptime:** "up 13d 0h" means the process has been running for 13 days. A busy
   process with a long uptime is a classic stuck process.
