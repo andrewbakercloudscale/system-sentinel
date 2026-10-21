@@ -110,6 +110,10 @@ The answer to "is my Mac busy, and why?" in one screen:
   most of the power goes.
 - **Memory.** Memory pressure as macOS judges it (Normal, Under pressure, Critical), memory
   used, compressed and swapped to disk. Pressure matters, not how full memory looks.
+- **Graphics (GPU).** How busy the graphics chip is now and on average over the last hour,
+  a chart of that hour, the graphics memory in use, and the apps using the chip right now
+  with each one's share. Games, video export, 3D and AI models use it most. On Apple silicon
+  graphics memory is part of the Mac's memory, not separate.
 - **Things to look at.** When Checkup has found something, a line at the top of the
   Overview says how many and names the first. Click it to go to Checkup.
 

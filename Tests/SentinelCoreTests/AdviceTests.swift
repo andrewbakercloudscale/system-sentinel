@@ -30,6 +30,34 @@ final class SystemReaderTests: XCTestCase {
         if let live = GPUReader.utilization() { XCTAssert((0...100).contains(live)) }
     }
 
+    func testGPUStatusAndClients() {
+        let s = GPUReader.status(["model": "Apple M4", "gpu-core-count": 10,
+                                  "PerformanceStatistics": ["Device Utilization %": 12, "In use system memory": 31_555_584, "Alloc system memory": 3_220_963_328]])
+        XCTAssertEqual(s?.name, "Apple M4")
+        XCTAssertEqual(s?.cores, 10)
+        XCTAssertEqual(s?.busy, 12)
+        XCTAssertEqual(s?.memoryInUse, 31_555_584)
+        XCTAssertEqual(s?.memoryAllocated, 3_220_963_328)
+
+        let c = GPUReader.client(["IOUserClientCreator": "pid 395, WindowServer",
+                                  "AppUsage": [["API": "Metal", "accumulatedGPUTime": 1_000], ["API": "Metal", "accumulatedGPUTime": 500]]])
+        XCTAssertEqual(c?.pid, 395)
+        XCTAssertEqual(c?.name, "WindowServer")
+        XCTAssertEqual(c?.time, 1_500)
+        XCTAssertEqual(GPUReader.client(["IOUserClientCreator": "pid 7, idle", "AppUsage": []])?.time, 0)
+        XCTAssertNil(GPUReader.client(["IOUserClientCreator": "kernel"]))
+
+        // 0.5 s of graphics time over 5 s is 10%; new and idle processes are left out.
+        let shares = GPUReader.shares(from: [1: 0, 2: 100, 3: 9], to: [1: 500_000_000, 2: 100, 4: 1_000], seconds: 5)
+        XCTAssertEqual(shares, [1: 10])
+        XCTAssertEqual(GPUReader.shares(from: [1: 0], to: [1: 1], seconds: 0), [:])
+
+        if let live = GPUReader.read() {
+            XCTAssert((0...100).contains(live.busy))
+            XCTAssertFalse(live.gpuTime.isEmpty, "WindowServer always draws with the graphics chip")
+        }
+    }
+
     func testNettopNamesWithDotsAndCommas() {
         let text = """
         ,bytes_in,bytes_out,
