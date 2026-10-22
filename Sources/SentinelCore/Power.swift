@@ -60,6 +60,20 @@ public struct BatteryStatus: Equatable, Sendable {
         return Double(m) / Double(d) * 100
     }
 
+    /// How long the charge would last if unplugged now, at the current draw.
+    public var minutesIfUnplugged: Int? {
+        guard let e = energyLeft, let w = watts, w > 0.5 else { return nil }
+        return Int(e / w * 60)
+    }
+
+    /// Minutes until full while charging: macOS's estimate, else the room left over what is going in.
+    public var minutesUntilFull: Int? {
+        guard charging, !fullyCharged, percent < 100 else { return nil }
+        if let m = minutesToFull, m > 0 { return m }
+        guard let cap = maxCapacity, let v = voltage, let w = batteryWatts, w > 0.5 else { return nil }
+        return Int(Double(cap) * Double(100 - percent) / 100 * v / 1000 / w * 60)
+    }
+
     /// Plugged in, yet the battery is still going down: the charger is too small for the load.
     public var losingOnPower: Bool {
         !onBattery && (batteryWatts ?? 0) <= -0.5

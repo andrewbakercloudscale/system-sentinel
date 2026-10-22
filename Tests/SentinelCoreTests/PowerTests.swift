@@ -496,4 +496,21 @@ final class BatteryETATests: XCTestCase {
         XCTAssertEqual(v.update(minutesLeft: 4, draining: true), 5)
         XCTAssertNil(v.update(minutesLeft: 2, draining: true))
     }
+
+    func testMinutesIfUnplugged() {
+        // 5000 mAh at 50% and 12 V is 30 Wh; at 10 W that lasts 3 hours.
+        let b = BatteryStatus(onBattery: false, percent: 50, watts: 10, maxCapacity: 5000, voltage: 12)
+        XCTAssertEqual(b.minutesIfUnplugged, 180)
+        XCTAssertNil(BatteryStatus(percent: 50, watts: 0.2, maxCapacity: 5000, voltage: 12).minutesIfUnplugged)
+    }
+
+    func testMinutesUntilFull() {
+        // Half of 5000 mAh at 12 V is 30 Wh to go; at 15 W in, 2 hours.
+        let b = BatteryStatus(charging: true, percent: 50, maxCapacity: 5000, batteryWatts: 15, voltage: 12)
+        XCTAssertEqual(b.minutesUntilFull, 120)
+        var mac = b
+        mac.minutesToFull = 95
+        XCTAssertEqual(mac.minutesUntilFull, 95)
+        XCTAssertNil(BatteryStatus(charging: false, percent: 50).minutesUntilFull)
+    }
 }

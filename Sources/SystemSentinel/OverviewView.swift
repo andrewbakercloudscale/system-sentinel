@@ -131,8 +131,10 @@ private struct Hero: View {
             if let b = model.battery, b.present {
                 HStack(spacing: 6) {
                     Text(b.losingOnPower ? "Losing charge on power" : b.onBattery ? "On battery" : "Power").font(.caption.weight(.semibold)).foregroundStyle(.white)
+                        .lineLimit(2)
                     PowerFlow(battery: b)
-                    BatteryTimeChip(battery: b, minutesLeft: model.minutesToEmpty())
+                    // Numbers never cut short: the label wraps instead.
+                    BatteryTimeChip(battery: b, minutesLeft: model.minutesToEmpty()).fixedSize()
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -221,15 +223,15 @@ struct PowerFlow: View {
         let b = battery
         HStack(spacing: 6) {
             if let i = b.powerIn {
-                chip(String(format: "Charger in %.1f W", i), "powerplug.fill", Color(hex: "#16a34a"))
+                chip(String(format: "Charging: %.1f W", i), "powerplug.fill", Color(hex: "#16a34a"))
                     .tip(b.adapterWatts.map { "A \($0) W charger. What reaches the Mac after losses in the charger and cable." } ?? "What reaches the Mac from the charger")
             }
             if let w = b.watts {
-                chip(String(format: "Mac using %.1f W", w), "laptopcomputer", Color(hex: "#dc2626")).tip("Everything the Mac draws: chip, screen, Wi-Fi, SSD and the rest")
+                chip(String(format: "Using: %.1f W", w), "laptopcomputer", Color(hex: "#dc2626")).tip("Everything the Mac draws: chip, screen, Wi-Fi, SSD and the rest")
             }
             if let bw = b.batteryWatts, abs(bw) >= 0.1 {
                 let gaining = bw > 0
-                chip(String(format: "Battery %@%.1f W", gaining ? "+" : "−", abs(bw)),
+                chip(String(format: "Battery: %@%.1f W", gaining ? "+" : "−", abs(bw)),
                      gaining ? "battery.100.bolt" : "battery.25",
                      gaining ? Color(hex: "#16a34a") : Color(hex: "#dc2626"))
                     .tip(gaining ? "Going into the battery: it is charging"
@@ -244,26 +246,29 @@ struct PowerFlow: View {
             .font(.caption2.weight(.semibold)).foregroundStyle(.white).lineLimit(1).monospacedDigit()
             .padding(.horizontal, 7).padding(.vertical, 3)
             .background(Capsule().fill(fill ?? .white.opacity(0.18)))
+            .fixedSize()
     }
 }
 
-/// When the battery runs out, or fills up: "Empty in 1h 40m, 14:32", "Full in 35m", "Charged".
+/// When the power runs out (on battery, or on a charger that cannot keep up), when charging
+/// finishes, or, plugged in and holding, how long the charge would last if unplugged now.
 private struct BatteryTimeChip: View {
     let battery: BatteryStatus
     let minutesLeft: Int?
     var body: some View {
         let b = battery
-        if (b.onBattery || b.losingOnPower), let m = minutesLeft {
-            HeroChip(text: "Empty in \(Insights.duration(Double(m) * 60)), \(BatteryETABanner.clock(m))", symbol: "hourglass",
-                     fill: m <= 20 ? Color(hex: "#dc2626") : nil)
-                .tip("When the battery runs out at this pace. You get a notification at 20 minutes left and again at 5.")
-        } else if b.charging, let m = b.minutesToFull, m > 0 {
-            HeroChip(text: "Full in \(Insights.duration(Double(m) * 60))", symbol: "hourglass").tip("macOS's estimate of when charging finishes")
-        } else if b.fullyCharged || b.percent >= 100 {
-            HeroChip(text: "Charged", symbol: "checkmark.circle.fill")
-        } else if !b.onBattery, !b.charging {
-            HeroChip(text: "Not charging, \(b.percent)%", symbol: "pause.circle.fill")
-                .tip("Plugged in but holding the charge. macOS does this to protect the battery (Optimised Charging or a charge limit).")
+        if b.onBattery || b.losingOnPower {
+            if let m = minutesLeft {
+                HeroChip(text: "No power: \(Insights.duration(Double(m) * 60)), \(BatteryETABanner.clock(m))", symbol: "hourglass",
+                         fill: Color(hex: m <= 20 ? "#dc2626" : "#d97706"))
+                    .tip("When the battery runs out at this pace. You get a notification at 20 minutes left and again at 5.")
+            }
+        } else if let m = b.minutesUntilFull {
+            HeroChip(text: "Full: \(Insights.duration(Double(m) * 60)), \(BatteryETABanner.clock(m))", symbol: "battery.100.bolt", fill: Color(hex: "#2563eb"))
+                .tip("When the battery will be full at this charging pace")
+        } else if let m = b.minutesIfUnplugged {
+            HeroChip(text: "No power: \(Insights.duration(Double(m) * 60)) unplugged", symbol: "hourglass", fill: Color(hex: "#2563eb"))
+                .tip("How long the \(b.percent)% charge would last if you unplugged now, at what the Mac is using")
         }
     }
 }
