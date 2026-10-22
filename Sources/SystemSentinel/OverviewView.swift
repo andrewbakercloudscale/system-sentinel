@@ -114,8 +114,12 @@ private struct Hero: View {
                             .font(.callout).foregroundStyle(.white.opacity(0.85)).lineLimit(1)
                         HStack(spacing: 6) {
                             if let w = model.partWatts?.gpu { HeroChip(text: String(format: "%.1f W", w), symbol: "bolt.fill").tip("Power the graphics chip is drawing now") }
-                            if let top = model.gpuApps.first, top.cpu >= 5 {
-                                HeroChip(text: "\(top.name) \(Int(top.cpu.rounded()))%", symbol: "arrow.up.circle.fill").tip("Using the most graphics right now")
+                            // The top two, in the same colours as the CPU panel's apps.
+                            let top = Array(model.gpuApps.filter { $0.cpu >= 5 }.prefix(2))
+                            let colors = ColorBook.shared.colors(for: top.map(\.key))
+                            ForEach(top) { a in
+                                HeroChip(text: "\(a.name) \(Int(a.cpu.rounded()))%", symbol: "arrow.up.circle.fill", fill: colors[a.key]?.opacity(0.85))
+                                    .tip("Share of the graphics chip's work right now")
                             }
                         }
                     }
@@ -219,11 +223,11 @@ struct PowerFlow: View {
         let b = battery
         HStack(spacing: 6) {
             if let i = b.powerIn {
-                chip(String(format: "Charger in %.1f W", i), "powerplug.fill", nil)
+                chip(String(format: "Charger in %.1f W", i), "powerplug.fill", Color(hex: "#16a34a"))
                     .tip(b.adapterWatts.map { "A \($0) W charger. What reaches the Mac after losses in the charger and cable." } ?? "What reaches the Mac from the charger")
             }
             if let w = b.watts {
-                chip(String(format: "Mac using %.1f W", w), "laptopcomputer", nil).tip("Everything the Mac draws: chip, screen, Wi-Fi, SSD and the rest")
+                chip(String(format: "Mac using %.1f W", w), "laptopcomputer", Color(hex: "#dc2626")).tip("Everything the Mac draws: chip, screen, Wi-Fi, SSD and the rest")
             }
             if let bw = b.batteryWatts, abs(bw) >= 0.1 {
                 let gaining = bw > 0
