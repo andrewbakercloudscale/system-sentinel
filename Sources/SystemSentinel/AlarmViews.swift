@@ -96,6 +96,7 @@ extension Model {
         var s = HealthRAG.Signals()
         s.load = machineAverage(60)
         s.flagged = flagged.count
+        s.gpu = gpuAverage(60)
         s.pressure = memory?.pressure.rawValue ?? 0
         s.swapBytes = memory?.swapUsed ?? 0
         s.disk = storage.disk?.level.rawValue ?? 0
@@ -120,7 +121,7 @@ struct HealthChip: View {
         if symbol.hasPrefix("internaldrive") { return .storage }
         if symbol.hasPrefix("battery") { return .battery }
         if symbol.hasPrefix("stethoscope") { return .checkup }
-        if symbol.hasPrefix("thermometer") { return .overview }
+        if symbol.hasPrefix("thermometer") || symbol.hasPrefix("square.stack") { return .overview }
         return .processes
     }
 
@@ -144,7 +145,7 @@ struct HealthChip: View {
         .padding(.horizontal, 10).padding(.vertical, 5)
         .background(Capsule().fill(c.opacity(0.13)))
         .contentShape(Capsule())
-        .tip(health.reasons.isEmpty ? "CPU, memory, disk, heat and battery are all fine"
+        .tip(health.reasons.isEmpty ? "CPU, GPU, memory, disk, heat and battery are all fine"
                                      : health.reasons.map { "\($0.rag == .red ? "Red" : "Amber"): \($0.text)" }.joined(separator: "\n")
                                        + "\nClick to open \(Self.tab(for: health.reasons[0].symbol).title).")
     }

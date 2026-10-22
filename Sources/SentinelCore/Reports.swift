@@ -401,6 +401,8 @@ public struct HealthRAG: Equatable, Sendable {
         public var flagged = 0
         /// `MemoryStatus.Pressure.rawValue`: 0 normal, 1 warning, 2 critical.
         public var pressure = 0
+        /// Graphics chip busy, 0 to 100, averaged over the last minute. Nil where unreadable.
+        public var gpu: Double?
         public var swapBytes: UInt64 = 0
         /// `DiskSpace.Level.rawValue`.
         public var disk = 0
@@ -422,6 +424,8 @@ public struct HealthRAG: Equatable, Sendable {
         if s.flagged > 0 { r.append(.init(rag: .red, symbol: "exclamationmark.triangle.fill", text: "\(s.flagged) runaway process\(s.flagged == 1 ? "" : "es")")) }
         if s.load >= 70 { r.append(.init(rag: .red, symbol: "cpu", text: "CPU \(Int(s.load))%")) }
         else if s.load >= 40 { r.append(.init(rag: .amber, symbol: "cpu", text: "CPU \(Int(s.load))%")) }
+        if let g = s.gpu, g >= 90 { r.append(.init(rag: .red, symbol: "square.stack.3d.up.fill", text: "GPU \(Int(g))%")) }
+        else if let g = s.gpu, g >= 60 { r.append(.init(rag: .amber, symbol: "square.stack.3d.up.fill", text: "GPU \(Int(g))%")) }
         if s.pressure >= 2 { r.append(.init(rag: .red, symbol: "memorychip", text: "memory pressure critical")) }
         else if s.pressure == 1 { r.append(.init(rag: .amber, symbol: "memorychip", text: "memory pressure")) }
         if s.swapBytes >= 8 << 30, s.pressure < 2 {

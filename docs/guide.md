@@ -57,7 +57,9 @@ The pill in the top right shows the whole Mac's load right now. Its dot turns fr
 to amber to red as the load rises.
 
 Beside it, the status chip reads **All clear** or names what is wrong (memory pressure, CPU,
-disk low, heat, battery). Click it to open the tab about the first problem: memory pressure
+GPU, disk low, heat, battery). The menu bar icon takes the same colour, green, amber or red,
+and the symbol of the worst problem. The GPU counts once the graphics chip averages 60%
+over a minute (amber) or 90% (red), which a local AI model can do while the CPU sits idle. Click it to open the tab about the first problem: memory pressure
 opens Memory, disk opens Storage, battery opens Energy.
 
 ---
@@ -95,12 +97,14 @@ Overview has two pages, picked at the top: **Now** (below) and **[Trends](#trend
 
 The answer to "is my Mac busy, and why?" in one screen:
 
-- **Gauge and headline.** The whole Mac's load, how many cores are busy and a thermal chip:
-  Cool, Warm, Hot, throttling, or Overheating. When the Mac is hot, macOS slows the CPU down, so the same
-  work takes more of it. A **GPU** chip beside it shows how busy the graphics chip is;
-  the Graphics card further down has the detail.
-- **1 min / 15 min / 1 hour.** Load averaged over each period. A high 1 minute figure with
-  a low 1 hour figure is a spike; all three high means it has been busy for a while.
+- **CPU panel.** A dial with the whole Mac's load, how many cores are busy, a thermal chip
+  (Cool, Warm, Hot, throttling, or Overheating) and the watts the CPU is drawing. When the
+  Mac is hot, macOS slows the CPU down, so the same work takes more of it.
+- **GPU panel.** The same for the graphics chip: a dial, its name and core count, its watts
+  and the app using it most. Local AI models, video and games load the GPU rather than the
+  CPU, so a quiet CPU dial can sit beside a full GPU one.
+- **1 min / 15 min / 1 hour** on each panel. Use averaged over each period. A high 1 minute
+  figure with a low 1 hour figure is a spike; all three high means it has been busy for a while.
 - **Right now.** A donut of the five apps using the most CPU at this moment, plus
   everything else. The number in the middle is cores in use.
 - **Last hour, by app.** A stacked chart of the top apps over the last hour, as a share of
@@ -119,6 +123,11 @@ The answer to "is my Mac busy, and why?" in one screen:
   a chart of that hour, the graphics memory in use, and the apps using the chip right now
   with each one's share. Games, video export, 3D and AI models use it most. On Apple silicon
   graphics memory is part of the Mac's memory, not separate.
+  **power now** is the watts the graphics chip draws (point at it for the hour's average and
+  its share of the whole Mac's draw). **Save power** lists what would cut it right now, with
+  buttons: optimise the screen, close a browser tab that is drawing, unload a local AI model
+  (or use a smaller, 4-bit one), quit an app using the chip in the background, or turn on
+  Low Power Mode on battery, which lowers the graphics clock.
 - **Things to look at.** When Checkup has found something, a line at the top of the
   Overview says how many and names the first. Click it to go to Checkup.
 
@@ -281,6 +290,9 @@ What the Mac draws and what is costing battery:
 - **Power draw.** Watts over the last hour, 6 or 24 hours, or 7 days, coloured by battery
   or mains power, with the average, peak, time on battery and how many percent an hour the
   battery dropped. A MacBook idles at 2 to 5 W.
+- **Power by part.** Watts for the processor, the graphics chip, the Neural Engine and
+  memory, measured by the chip itself every 5 seconds without a password, plus the rest of
+  the Mac (display, Wi-Fi, SSD, charging). Apple silicon only.
 - **Energy by app.** Activity Monitor's Energy Impact (CPU plus the cost of waking the
   chip, graphics and disk) and idle wakeups a second, refreshed every 30 seconds.
   Each app's estimated watts is its share of Energy Impact applied to the draw above about

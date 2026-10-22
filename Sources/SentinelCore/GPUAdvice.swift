@@ -88,3 +88,53 @@ extension Insights {
         return out
     }
 }
+
+/// One way to make the graphics chip draw less power, for the Graphics card.
+public struct GPUSaving: Equatable, Sendable {
+    public let title: String
+    public let detail: String
+    public let fixes: [FixAction]
+}
+
+public enum GPUSavings {
+    /// What would save graphics power right now, most useful first. `apps` are the last
+    /// 5 minutes' averages; empty when nothing is worth doing.
+    public static func list(apps: [GPUApp], busy: Double, onBattery: Bool, lowPower: Bool,
+                            byPID: [Int32: ProcessSample]) -> [GPUSaving] {
+        var out: [GPUSaving] = []
+        // The screen always costs a little; only a real share of the chip is worth acting on.
+        for a in apps.filter({ $0.share >= ($0.kind == .screen ? 15 : 10) }).prefix(3) {
+            let quit = Insights.quitFix(a.pids, a.name, byPID)
+            switch a.kind {
+            case .screen:
+                out.append(GPUSaving(title: "Make the screen cheaper to draw",
+                                     detail: "Drawing the screen uses \(Fmt0.pct(a.share)) of the graphics chip. Transparency, motion effects and refresh rates over 60 Hz all add to it.",
+                                     fixes: [.optimiseScreen, .openSettings(.displays)]))
+            case .browser:
+                out.append(GPUSaving(title: "Close the tab that is drawing in \(a.name)",
+                                     detail: "\(a.name) uses \(Fmt0.pct(a.share)) of the graphics chip: usually a tab playing video, a game or a 3D page. Chrome's Window > Task Manager shows each tab's GPU use.",
+                                     fixes: a.front ? [] : quit))
+            case .ai:
+                out.append(GPUSaving(title: "Unload \(a.name)'s model when you are done",
+                                     detail: "A model generating keeps the graphics chip near flat out. Stop it when you are finished (`ollama stop <model>`, or Eject in LM Studio). A smaller model, or a 4-bit quantised one, does the same work for less power.",
+                                     fixes: quit))
+            case .other:
+                if a.front {
+                    out.append(GPUSaving(title: "Cap \(a.name)'s frame rate",
+                                         detail: "\(a.name) uses \(Fmt0.pct(a.share)) of the graphics chip. In a game, cap the frame rate at 60 and lower the graphics quality.",
+                                         fixes: []))
+                } else {
+                    out.append(GPUSaving(title: "Quit \(a.name) if it should be idle",
+                                         detail: "It uses \(Fmt0.pct(a.share)) of the graphics chip while you work in another app: an export, a render or a game left running.",
+                                         fixes: quit))
+                }
+            }
+        }
+        if onBattery, !lowPower, busy >= 30 {
+            out.append(GPUSaving(title: "Turn on Low Power Mode",
+                                 detail: "It lowers the graphics chip's clock speed: a little slower, for much less power and heat.",
+                                 fixes: [.lowPowerMode]))
+        }
+        return out
+    }
+}
