@@ -263,6 +263,8 @@ private struct ProcessRow: View {
     var body: some View {
         let s = sample
         let flagged = model.flagged.contains(s.pid)
+        let hot = model.hotFor(s)
+        let onFire = flagged || hot != nil
         let avg15 = model.average(s, window)
         HStack(spacing: 8) {
             IconView(icon: IconCache.shared.icon(for: s), size: 26)
@@ -270,7 +272,7 @@ private struct ProcessRow: View {
                 HStack(spacing: 5) {
                     Text(s.displayName).font(.callout.weight(.medium)).lineLimit(1).truncationMode(.middle).layoutPriority(1)
                     if flagged { Pill(text: "Flagged: using too much CPU", symbol: "exclamationmark.triangle.fill", color: Theme.heat(100), compact: true) }
-                    if let hot = model.hotFor(s) { Pill(text: "Hot for \(hot)", symbol: "flame.fill", color: Theme.heat(50), compact: true) }
+                    if let hot { Pill(text: "Hot for \(hot)", symbol: "flame.fill", color: Theme.heat(50), compact: true) }
                     if s.isRoot { Pill(text: "Runs as root", symbol: "lock.fill", color: Color(hex: "#b45309"), compact: true) }
                     policyPill(model.policy(for: s))
                     if model.isSlowed(s) {
@@ -306,9 +308,13 @@ private struct ProcessRow: View {
         .padding(.horizontal, 6).padding(.vertical, 5)
         .background(
             RoundedRectangle(cornerRadius: 8)
-                .fill(flagged ? Theme.heat(100).opacity(0.10)
+                .fill(onFire ? Theme.heat(100).opacity(hover ? 0.20 : 0.14)
                       : hover ? Tab.processes.color.opacity(0.08)
                       : zebra ? Color.primary.opacity(0.025) : .clear)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .strokeBorder(Theme.heat(100).opacity(onFire ? 0.45 : 0), lineWidth: 1)
         )
         .onHover { hover = $0 }
         .contextMenu { menu(s) }
