@@ -99,10 +99,18 @@ The answer to "is my Mac busy, and why?" in one screen:
 
 - **CPU panel.** A dial with the whole Mac's load, how many cores are busy, a thermal chip
   (Cool, Warm, Hot, throttling, or Overheating) and the watts the CPU is drawing. When the
-  Mac is hot, macOS slows the CPU down, so the same work takes more of it.
+  Mac is hot, macOS slows the CPU down, so the same work takes more of it. From 30% load it
+  also names the two apps doing most of it, in their chart colours, with cores used and
+  their share ("claude 1.4 cores, 38%").
 - **GPU panel.** The same for the graphics chip: a dial, its name and core count, its watts
-  and the app using it most. Local AI models, video and games load the GPU rather than the
-  CPU, so a quiet CPU dial can sit beside a full GPU one.
+  and the two apps using it most (5% or more each). Local AI models, video and games load the
+  GPU rather than the CPU, so a quiet CPU dial can sit beside a full GPU one.
+- **Power line.** Always shown on a Mac with a battery: **Charger in** (green), **Mac using**
+  (red), and **Battery** (green while charging, red while draining). Then how long it lasts:
+  **Empty in 1h 40m, 14:32** on battery (red at 20 minutes or less), **Full in 35m** while
+  charging, **Charged**, or **Not charging** when macOS is holding the level to protect the
+  battery. When the charger is too small for the load, the line reads **Losing charge on
+  power** and the battery still counts down.
 - **1 min / 15 min / 1 hour** on each panel. Use averaged over each period. A high 1 minute
   figure with a low 1 hour figure is a spike; all three high means it has been busy for a while.
 - **Right now.** A donut of the five apps using the most CPU at this moment, plus
@@ -224,7 +232,8 @@ The 30 busiest processes, refreshed every 5 seconds.
   process with a long uptime is a classic stuck process.
 - **Badges** are small icons beside the name; point at one to read it: a lock (runs as
   root, needs your password to kill), a flame (over your threshold, and for how long), a
-  warning (flagged), a tortoise (background priority), and its rule if it has one.
+  warning (flagged), a tortoise (background priority), and its rule if it has one. A
+  flagged process, or one over your threshold (flame), gets the whole row in red.
 - **15 min trend:** a sparkline of its CPU.
 - **CPU / 15 min / memory / GPU:** the CPU now with a heat bar, the 15 minute average,
   memory used, and its share of the graphics chip over the last 5 seconds ("–" for none).
@@ -286,13 +295,15 @@ What the Mac draws and what is costing battery:
 
 - **Battery.** Charge, time left (macOS's estimate, or the charge left divided by the
   current draw), charging state, charger watts, temperature and the whole Mac's power
-  draw in watts. On a Mac without a battery this is replaced by a note.
+  draw in watts, with the same Charger in / Mac using / Battery chips as the Overview. A
+  charger too small for the load shows as **Losing charge on power**, with the time to empty.
+  On a Mac without a battery this is replaced by a note.
 - **Power draw.** Watts over the last hour, 6 or 24 hours, or 7 days, coloured by battery
   or mains power, with the average, peak, time on battery and how many percent an hour the
   battery dropped. A MacBook idles at 2 to 5 W.
 - **Power by part.** Watts for the processor, the graphics chip, the Neural Engine and
-  memory, measured by the chip itself every 5 seconds without a password, plus the rest of
-  the Mac (display, Wi-Fi, SSD, charging). Apple silicon only.
+  memory, measured by the chip itself every 5 seconds without a password, the display engine,
+  and the rest of the Mac (screen backlight, Wi-Fi, SSD, charging). Apple silicon only.
 - **Energy by app.** Activity Monitor's Energy Impact (CPU plus the cost of waking the
   chip, graphics and disk) and idle wakeups a second, refreshed every 30 seconds.
   Each app's estimated watts is its share of Energy Impact applied to the draw above about
@@ -391,6 +402,9 @@ Settings has two pages, picked at the top: **Settings** (below) and **[Rules](#r
   time (1 to 30 minutes, default 3). A MacBook idles at 3 to 8 W; 20 to 30 W is heavy
   work. The alert names the likely culprit with Kill and Ignore buttons, at most once
   every 30 minutes (getting hotter still breaks through).
+- **Low battery alerts** (always on): a notification at 20 minutes of battery left and
+  again at 5, with the time it runs out. They also fire when plugged into a charger that
+  cannot keep up. Once each per drain; plugging in and charging starts over.
 - **Sleep blockers:** notify when something keeps the Mac awake longer than N hours
   (default 2). Once per hold; several at once arrive as one notification.
 
