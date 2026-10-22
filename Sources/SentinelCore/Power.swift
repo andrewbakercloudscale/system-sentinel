@@ -512,3 +512,22 @@ public struct BatterySummary: Equatable, Sendable {
                               drainPerHour: span >= 600 ? Double(used) / Double(span) * 3600 : nil)
     }
 }
+
+/// Warns once at 20 minutes of battery left and once more at 5. Starts over once the battery
+/// is no longer going down, so the next run on battery warns again.
+public struct LowBatteryWarning: Sendable {
+    public static let levels = [20, 5]
+    public private(set) var warned: Set<Int> = []
+
+    public init() {}
+
+    /// The level to warn at now, if any. A missing estimate changes nothing: macOS drops its
+    /// figure for a while after the load changes.
+    public mutating func update(minutesLeft: Int?, draining: Bool) -> Int? {
+        guard draining else { warned = []; return nil }
+        guard let m = minutesLeft, let level = Self.levels.filter({ m <= $0 && !warned.contains($0) }).min() else { return nil }
+        // Dropping straight to 4 minutes gives the 5 minute warning only, not both.
+        warned.formUnion(Self.levels.filter { $0 >= level })
+        return level
+    }
+}

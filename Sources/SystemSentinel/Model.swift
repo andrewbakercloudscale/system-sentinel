@@ -153,6 +153,7 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
     @AppStorage("heatWatts") var heatWatts: Double = 25
     @AppStorage("heatMinutes") var heatMinutes: Double = 3
     private var heatWatch = HeatWatch()
+    private var lowBattery = LowBatteryWarning()
     @AppStorage("blockerHours") var blockerHours: Double = 2
     @AppStorage("lastWeeklyReport") private var lastWeeklyReport: Double = 0
     /// Updates: a newer release on GitHub, checked 30 s after launch and every 6 hours.
@@ -298,6 +299,7 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
             powerHistory.record(b, at: now)
             healthLog.record(b, at: now)
         }
+        checkLowBattery(now)
         coreLoad = coreSampler.sample() ?? coreLoad
         readClusters(now)
         memory = MemoryStatus.read()
@@ -1078,6 +1080,27 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
 
     func batteryETA() -> BatteryETA? {
         battery.flatMap { BatteryETA.of($0, lastHour: powerHistory.since(Date().addingTimeInterval(-3600))) }
+    }
+
+    /// Minutes until the battery is empty: on battery, or plugged into a charger that cannot keep up.
+    func minutesToEmpty() -> Int? {
+        guard let b = battery else { return nil }
+        return b.onBattery ? batteryETA()?.minutes : b.minutesLeftOnPower
+    }
+
+    /// A notification at 20 minutes of battery left, and again at 5.
+    private func checkLowBattery(_ now: Date) {
+        guard let b = battery, b.present, Model.snapshotDir == nil else { return }
+        let left = minutesToEmpty()
+        guard let level = lowBattery.update(minutesLeft: left, draining: b.onBattery || b.losingOnPower), let m = left else { return }
+        let content = UNMutableNotificationContent()
+        content.title = level <= 5 ? "Battery almost empty: \(max(m, 1)) min left" : "Battery low: about \(m) min left"
+        let fix = b.onBattery ? "Plug in the charger" : "This charger cannot keep up. Use a bigger one or quit something heavy"
+        content.body = "\(b.percent)%, empty around \(BatteryETABanner.clock(m)). " + (level <= 5 ? "Save your work now. \(fix)." : "\(fix).")
+        content.sound = .default
+        content.categoryIdentifier = "info"
+        content.threadIdentifier = "battery"
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "low-battery-\(level)", content: content, trigger: nil))
     }
 
     /// When the oldest of these processes started.
