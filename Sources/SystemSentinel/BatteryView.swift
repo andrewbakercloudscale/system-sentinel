@@ -61,6 +61,7 @@ private struct BatteryHero: View {
                     if let a = b.adapterWatts, !b.onBattery { chip("\(a) W charger", "powerplug.fill") }
                     if let t = b.temperature { chip(String(format: "%.0f°C", t), "thermometer.medium") }
                 }
+                PowerFlow(battery: b)
             }
             Spacer()
             VStack(spacing: 2) {
@@ -79,6 +80,9 @@ private struct BatteryHero: View {
         if b.onBattery {
             return eta.map { "Empty in \(Insights.duration(Double($0.minutes) * 60))" } ?? "On battery"
         }
+        if b.losingOnPower {
+            return b.minutesLeftOnPower.map { "Losing charge: empty in \(Insights.duration(Double($0) * 60))" } ?? "Losing charge on power"
+        }
         if b.charging { return b.minutesToFull.map { "Full in \(Insights.duration(Double($0) * 60))" } ?? "Charging" }
         return b.fullyCharged || b.percent >= 100 ? "Charged, on power" : "On power, not charging"
     }
@@ -87,6 +91,7 @@ private struct BatteryHero: View {
         let b = battery
         if b.onBattery, let e = eta { return "Around \(BatteryETABanner.clock(e.minutes)), \(BatteryETABanner.basis(e))" }
         if b.onBattery { return "Running on battery" }
+        if b.losingOnPower { return "Plugged in, but the charger is too small for what the Mac is doing" }
         if !b.charging && b.percent < 100 { return "macOS is holding the charge to protect the battery" }
         return "Plugged in"
     }
@@ -297,16 +302,40 @@ private struct RightNowPower: View {
 private struct PartsPowerCard: View {
     @ObservedObject var model: Model
 
+    typealias Row = (name: String, symbol: String, color: Color, watts: Double, tip: String)
+
+    private static func rows(_ w: PartPower.Watts, all: Double) -> [Row] {
+        var rows: [Row] = [
+            ("Processor (CPU)", "cpu", Tab.overview.color, w.cpu ?? 0, "Every app's work on the CPU cores"),
+            ("Graphics (GPU)", "square.stack.3d.up.fill", GraphicsCard.color, w.gpu ?? 0, "Drawing the screen, video, games and AI models"),
+            ("Neural Engine", "brain", Theme.trends, w.ane ?? 0, "Core ML models: dictation, photo analysis, Apple Intelligence"),
+            ("Memory", "memorychip", Tab.memory.color, w.dram ?? 0, "The memory chips themselves"),
+        ]
+        if let d = w.display {
+            rows.append(("Display engine", "display", Color(hex: "#0891b2"), d, "The part of the chip that sends pictures to the built-in and external screens"))
+        }
+        if all > w.total + 0.2 {
+            rows.append(("Rest of the Mac", "ellipsis.circle", Color.secondary, all - w.total, "The screen's backlight, Wi-Fi, SSD, speakers, charging and everything else"))
+        }
+        return rows
+    }
+
+    /// The screen in plain words: the display engine is measured; the backlight is not, but its
+    /// drive current is, and that is what its power follows.
+    private func screenLine(_ l: ScreenLight, display: Double?) -> String {
+        var t = String(format: "The screen: brightness %.0f nits of a possible %.0f", l.nits, l.maxNits)
+        if let c = l.currentShare { t += String(format: ", backlight at %.0f%% of full power", c) }
+        t += ". The backlight is counted in Rest of the Mac"
+        if let d = display { t += d < 0.1 ? "; the display engine above draws under 0.1 W" : String(format: "; the display engine above draws %.1f W", d) }
+        t += ". Brightness is the screen's biggest cost: turning it down a few steps saves more than anything except quitting a busy app."
+        return t
+    }
+
     var body: some View {
         if let w = model.partWatts {
             let all = model.battery?.watts ?? 0
             let total = max(all, w.total)
-            let rows: [(name: String, symbol: String, color: Color, watts: Double, tip: String)] = [
-                ("Processor (CPU)", "cpu", Tab.overview.color, w.cpu ?? 0, "Every app's work on the CPU cores"),
-                ("Graphics (GPU)", "square.stack.3d.up.fill", GraphicsCard.color, w.gpu ?? 0, "Drawing the screen, video, games and AI models"),
-                ("Neural Engine", "brain", Theme.trends, w.ane ?? 0, "Core ML models: dictation, photo analysis, Apple Intelligence"),
-                ("Memory", "memorychip", Tab.memory.color, w.dram ?? 0, "The memory chips themselves"),
-            ] + (all > w.total + 0.2 ? [("Rest of the Mac", "display", Color.secondary, all - w.total, "The display, Wi-Fi, SSD, speakers, charging and everything else")] : [])
+            let rows = Self.rows(w, all: all)
             Card(title: "Power by part", symbol: "bolt.fill", tint: Tab.battery.color,
                  trailing: AnyView(Text(String(format: "%.1f W", total)).font(.callout.weight(.semibold)).monospacedDigit())) {
                 VStack(alignment: .leading, spacing: 6) {
@@ -319,6 +348,10 @@ private struct PartsPowerCard: View {
                                 .frame(width: 64, alignment: .trailing)
                         }
                         .tip(r.tip)
+                    }
+                    if let l = model.screenLight {
+                        Text(screenLine(l, display: w.display))
+                            .font(.callout).fixedSize(horizontal: false, vertical: true)
                     }
                     Text("Measured by the chip itself every 5 seconds. A busy graphics chip can draw more than the processor: local AI models and games are the usual reason. The Graphics card on Overview lists what is using it and how to save power.")
                         .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)

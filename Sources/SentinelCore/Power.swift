@@ -28,6 +28,11 @@ public struct BatteryStatus: Equatable, Sendable {
     public var condition: String?
     public var temperature: Double?
     public var adapterWatts: Int?
+    /// Watts coming in from the charger right now. nil on battery or when the Mac does not say.
+    public var powerIn: Double?
+    /// Watts going into the battery (positive, charging) or out of it (negative, draining).
+    /// Negative while plugged in means the charger cannot keep up.
+    public var batteryWatts: Double?
     public var lowPowerMode: Bool
     /// Battery voltage in volts, to turn mAh into watt-hours.
     public var voltage: Double?
@@ -55,11 +60,25 @@ public struct BatteryStatus: Equatable, Sendable {
         return Double(m) / Double(d) * 100
     }
 
+    /// Plugged in, yet the battery is still going down: the charger is too small for the load.
+    public var losingOnPower: Bool {
+        !onBattery && (batteryWatts ?? 0) <= -0.5
+    }
+
+    /// Minutes until empty while plugged into a charger that cannot keep up.
+    public var minutesLeftOnPower: Int? {
+        guard losingOnPower, let e = energyLeft, let w = batteryWatts else { return nil }
+        return Int(e / -w * 60)
+    }
+
     public init(present: Bool = true, onBattery: Bool = false, charging: Bool = false, fullyCharged: Bool = false,
                 percent: Int = 100, watts: Double? = nil, minutesToEmpty: Int? = nil, minutesToFull: Int? = nil,
                 cycleCount: Int? = nil, designCycles: Int? = nil, maxCapacity: Int? = nil, designCapacity: Int? = nil,
-                condition: String? = nil, temperature: Double? = nil, adapterWatts: Int? = nil, lowPowerMode: Bool = false,
+                condition: String? = nil, temperature: Double? = nil, adapterWatts: Int? = nil,
+                powerIn: Double? = nil, batteryWatts: Double? = nil, lowPowerMode: Bool = false,
                 voltage: Double? = nil) {
+        self.powerIn = powerIn
+        self.batteryWatts = batteryWatts
         self.voltage = voltage
         self.present = present
         self.onBattery = onBattery
@@ -154,6 +173,16 @@ public enum PowerReader {
             watts = Double(abs(ma)) * Double(mv) / 1_000_000
         }
 
+        // Charger in, and battery in or out, both from the telemetry; else current times voltage.
+        let telemetry = r["PowerTelemetryData"] as? [String: Any]
+        let powerIn = onBattery ? nil : (telemetry.flatMap { int($0, "SystemPowerIn") }).flatMap { $0 > 0 ? Double($0) / 1000 : nil }
+        var batteryWatts: Double?
+        if let n = telemetry?["BatteryPower"] as? NSNumber, n.int64Value != 0 {
+            batteryWatts = Double(Int(truncatingIfNeeded: n.int64Value)) / 1000
+        } else if let mv = int(r, "Voltage"), let ma = signed("InstantAmperage") ?? signed("Amperage") {
+            batteryWatts = Double(ma) * Double(mv) / 1_000_000
+        }
+
         // IOPS reports -1 while estimating; the registry uses 65535 for "unknown".
         func minutes(_ v: Int?) -> Int? { v.flatMap { $0 >= 0 && $0 < 65535 ? $0 : nil } }
         let toEmpty = onBattery ? minutes(int(s, kIOPSTimeToEmptyKey) ?? int(r, "AvgTimeToEmpty")) : nil
@@ -174,7 +203,8 @@ public enum PowerReader {
             cycleCount: int(r, "CycleCount"), designCycles: int(s, "DesignCycleCount") ?? int(r, "DesignCycleCount9C"),
             maxCapacity: int(r, "AppleRawMaxCapacity") ?? int(r, "NominalChargeCapacity"),
             designCapacity: int(r, "DesignCapacity"),
-            condition: condition, temperature: temp, adapterWatts: adapter, lowPowerMode: lowPowerMode,
+            condition: condition, temperature: temp, adapterWatts: adapter,
+            powerIn: powerIn, batteryWatts: batteryWatts, lowPowerMode: lowPowerMode,
             voltage: int(r, "Voltage").map { Double($0) / 1000 })
     }
 

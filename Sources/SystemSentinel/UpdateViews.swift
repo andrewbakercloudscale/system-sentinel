@@ -150,9 +150,16 @@ extension Model {
 struct UpdateBanner: View {
     @ObservedObject var model: Model
     let rel: Updates.Release
+    /// The version whose banner was dismissed. The next version brings it back; Settings still
+    /// shows the update.
+    @AppStorage("dismissedUpdate") private var dismissed = ""
     private let tint = Color(hex: "#2563eb")
 
     var body: some View {
+        if dismissed != rel.version { banner }
+    }
+
+    private var banner: some View {
         HStack(alignment: .center, spacing: 12) {
             Image(systemName: "arrow.down.circle.fill")
                 .font(.system(size: 26, weight: .semibold)).foregroundStyle(.white)
@@ -188,6 +195,12 @@ struct UpdateBanner: View {
             }
             .buttonStyle(.plain)
             .disabled(model.updateState == .installing)
+            Button { dismissed = rel.version } label: {
+                Image(systemName: "xmark").font(.callout.weight(.bold)).foregroundStyle(.white)
+                    .frame(width: 26, height: 26).background(Circle().fill(.white.opacity(0.2)))
+            }
+            .buttonStyle(.plain)
+            .tip("Hide until the next version. Settings still has Install.")
         }
         .padding(.horizontal, 12).padding(.vertical, 10)
         .background(RoundedRectangle(cornerRadius: 10).fill(tint))

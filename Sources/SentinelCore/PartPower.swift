@@ -10,11 +10,14 @@ public final class PartPower: @unchecked Sendable {
         /// The Neural Engine, which Core ML models run on.
         public var ane: Double?
         public var dram: Double?
-        public init(cpu: Double? = nil, gpu: Double? = nil, ane: Double? = nil, dram: Double? = nil) {
-            self.cpu = cpu; self.gpu = gpu; self.ane = ane; self.dram = dram
+        /// The display engine that drives the built-in and external screens. Not the backlight,
+        /// which no counter measures.
+        public var display: Double?
+        public init(cpu: Double? = nil, gpu: Double? = nil, ane: Double? = nil, dram: Double? = nil, display: Double? = nil) {
+            self.cpu = cpu; self.gpu = gpu; self.ane = ane; self.dram = dram; self.display = display
         }
         /// The parts this can see, added up.
-        public var total: Double { [cpu, gpu, ane, dram].compactMap { $0 }.reduce(0, +) }
+        public var total: Double { [cpu, gpu, ane, dram, display].compactMap { $0 }.reduce(0, +) }
     }
 
     /// One counter's energy since the last reading.
@@ -47,6 +50,7 @@ public final class PartPower: @unchecked Sendable {
             else if c.name.hasSuffix("CPU Energy") { add(&w.cpu, c) }
             else if c.name.hasPrefix("ANE") { add(&w.ane, c) }
             else if c.name.hasPrefix("DRAM") { add(&w.dram, c) }
+            else if c.name == "DISP" || c.name.hasPrefix("DISPEXT") { add(&w.display, c) }
         }
         return w
     }
@@ -105,5 +109,30 @@ public final class PartPower: @unchecked Sendable {
             return Channel(name: n, unit: (unitLabel(d)?.takeUnretainedValue() as String?) ?? "", value: integerValue(d, 0))
         }
         return Self.watts(found, seconds: now.timeIntervalSince(at))
+    }
+}
+
+/// The built-in screen's brightness, from the display's IODisplayParameters. Read by the app;
+/// the backlight's draw is not measured anywhere, but its drive current is.
+public struct ScreenLight: Equatable, Sendable {
+    /// Brightness now, in nits.
+    public var nits: Double
+    public var maxNits: Double
+    /// Backlight drive current as a share of its maximum, 0 to 100. Its power follows this.
+    public var currentShare: Double?
+
+    public init(nits: Double, maxNits: Double, currentShare: Double?) {
+        self.nits = nits; self.maxNits = maxNits; self.currentShare = currentShare
+    }
+
+    public static func parse(_ params: [String: Any]) -> ScreenLight? {
+        func range(_ k: String) -> (value: Double, max: Double)? {
+            guard let d = params[k] as? [String: Any],
+                  let v = (d["value"] as? NSNumber)?.doubleValue, let m = (d["max"] as? NSNumber)?.doubleValue, m > 0 else { return nil }
+            return (v, m)
+        }
+        guard let n = range("BrightnessMilliNits") else { return nil }
+        let amps = range("BrightnessMicroAmps").map { min(100, $0.value / $0.max * 100) }
+        return ScreenLight(nits: n.value / 1000, maxNits: n.max / 1000, currentShare: amps)
     }
 }
