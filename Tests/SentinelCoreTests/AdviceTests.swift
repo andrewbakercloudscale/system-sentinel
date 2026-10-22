@@ -301,13 +301,26 @@ final class UsageAdviceTests: XCTestCase {
             .init(name: "DRAM", unit: "mJ", value: 1000),
             .init(name: "DIE_1_CPU Energy", unit: "mJ", value: 5000),
             .init(name: "PCPU0", unit: "mJ", value: 99999),
+            .init(name: "DISP", unit: "mJ", value: 500),
+            .init(name: "DISPEXT", unit: "mJ", value: 500),
         ], seconds: 5)
         XCTAssertEqual(w.cpu ?? 0, 2.0, accuracy: 0.001)
         XCTAssertEqual(w.gpu ?? 0, 0.6, accuracy: 0.001)
         XCTAssertEqual(w.ane, 0)
         XCTAssertEqual(w.dram ?? 0, 0.2, accuracy: 0.001)
-        XCTAssertEqual(w.total, 2.8, accuracy: 0.001)
+        XCTAssertEqual(w.display ?? 0, 0.2, accuracy: 0.001)
+        XCTAssertEqual(w.total, 3.0, accuracy: 0.001)
         XCTAssertNil(PartPower.watts([], seconds: 0).gpu)
+    }
+
+    func testScreenLight() {
+        // Recorded on an M4 MacBook Pro at about a third brightness.
+        let l = ScreenLight.parse(["BrightnessMilliNits": ["min": 8134, "value": 168350, "max": 2140848],
+                                   "BrightnessMicroAmps": ["min": 196, "value": 3737, "max": 56476]])!
+        XCTAssertEqual(l.nits, 168.35, accuracy: 0.01)
+        XCTAssertEqual(l.maxNits, 2140.848, accuracy: 0.01)
+        XCTAssertEqual(l.currentShare!, 6.6, accuracy: 0.1)
+        XCTAssertNil(ScreenLight.parse(["brightness": ["value": 1, "max": 2]]))
     }
 
     func testGPUSavings() {

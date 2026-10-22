@@ -67,6 +67,28 @@ final class BatteryTests: XCTestCase {
         XCTAssertEqual(b.adapterWatts, 96)
     }
 
+    func testWeakChargerStillDrains() {
+        // Recorded on an M4 MacBook Pro on an 8 W USB brick: 7.5 W in, 17.4 W used, battery -9.9 W.
+        var s = source
+        s["Power Source State"] = "AC Power"
+        s["Is Charging"] = 1
+        var r = registry
+        r["CurrentCapacity"] = 50
+        r["PowerTelemetryData"] = ["SystemLoad": 17436, "SystemPowerIn": 7495,
+                                   "BatteryPower": NSNumber(value: UInt64(bitPattern: -9941))]
+        let b = PowerReader.parse(registry: r, source: s, lowPowerMode: false)
+        XCTAssertEqual(b.powerIn!, 7.495, accuracy: 0.001)
+        XCTAssertEqual(b.batteryWatts!, -9.941, accuracy: 0.001)
+        XCTAssertTrue(b.losingOnPower)
+        XCTAssertNotNil(b.minutesLeftOnPower)
+
+        r["PowerTelemetryData"] = ["SystemLoad": 8000, "SystemPowerIn": 60000, "BatteryPower": 50000]
+        let c = PowerReader.parse(registry: r, source: s, lowPowerMode: false)
+        XCTAssertEqual(c.batteryWatts!, 50, accuracy: 0.001)
+        XCTAssertFalse(c.losingOnPower)
+        XCTAssertNil(PowerReader.parse(registry: r, source: source, lowPowerMode: false).powerIn, "no charger on battery")
+    }
+
     func testAppleHealthFromSystemProfiler() {
         let json = #"{"SPPowerDataType":[{"_name":"spbattery_information","sppower_battery_health_info":{"sppower_battery_cycle_count":132,"sppower_battery_health":"Good","sppower_battery_health_maximum_capacity":"97%"}}]}"#
         let h = PowerReader.parseAppleHealth(Data(json.utf8))

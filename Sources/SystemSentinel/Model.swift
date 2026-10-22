@@ -1,4 +1,5 @@
 import AppKit
+import IOKit
 import ServiceManagement
 import SentinelCore
 import SwiftUI
@@ -75,6 +76,8 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
     @Published var gpuHistory: [(at: Date, busy: Double)] = []
     /// Watts by part (CPU, graphics, Neural Engine, memory), and the graphics watts over the last hour.
     @Published var partWatts: PartPower.Watts?
+    /// The built-in screen's brightness and backlight current. nil without a built-in screen.
+    @Published var screenLight: ScreenLight?
     @Published var gpuWattsHistory: [(at: Date, watts: Double)] = []
     private let partPower = PartPower()
     /// Apps using the graphics chip over the last 5 seconds; `cpu` is their share of the chip.
@@ -302,6 +305,7 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
         readGPU(now)
         if let w = partPower?.read(now: now) {
             partWatts = w
+            screenLight = Self.readScreenLight()
             if let g = w.gpu {
                 gpuWattsHistory.append((now, g))
                 gpuWattsHistory.removeAll { now.timeIntervalSince($0.at) > 3600 }
@@ -847,6 +851,16 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
             out[s.pid] = "\(n) (pid \(pp))"
         }
         return out
+    }
+
+    /// The first IODisplayParameters in the registry that knows its brightness in nits: the
+    /// built-in panel. External screens do not report it.
+    static func readScreenLight() -> ScreenLight? {
+        let root = IORegistryGetRootEntry(kIOMainPortDefault)
+        defer { IOObjectRelease(root) }
+        guard let p = IORegistryEntrySearchCFProperty(root, kIOServicePlane, "IODisplayParameters" as CFString, nil,
+                                                      IOOptionBits(kIORegistryIterateRecursively)) as? [String: Any] else { return nil }
+        return ScreenLight.parse(p)
     }
 
     func hotFor(_ s: ProcessSample) -> String? {

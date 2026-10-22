@@ -88,11 +88,14 @@ private struct Hero: View {
                     // Once it is busy, say who is doing it.
                     if load >= 30 {
                         let total = model.totalCPU
+                        let top = NowDonut.slices(model.sentinel.latest, top: 2).filter { $0.key != "other" }
+                        // The same colours as the "Using the CPU now" donut, so each app is recognisable.
+                        let colors = ColorBook.shared.colors(for: top.map(\.key))
                         HStack(spacing: 6) {
-                            ForEach(NowDonut.slices(model.sentinel.latest, top: 2).filter { $0.key != "other" }) { s in
+                            ForEach(top) { s in
                                 HeroChip(text: String(format: "%@ %.1f cores, %d%%", s.name, s.cpu / 100,
                                                       Int((total > 0 ? s.cpu / total * 100 : 0).rounded())),
-                                         symbol: "arrow.up.circle.fill")
+                                         symbol: "arrow.up.circle.fill", fill: colors[s.key]?.opacity(0.85))
                                     .tip("Share of the CPU in use right now")
                             }
                         }
@@ -119,6 +122,13 @@ private struct Hero: View {
                     Spacer(minLength: 8)
                     stats(model.gpuAverage(60) ?? gpu.busy, model.gpuAverage(900) ?? gpu.busy, model.gpuAverage(3600) ?? gpu.busy, of: "the graphics chip")
                 }
+            }
+            if let b = model.battery, b.present, b.powerIn != nil || b.onBattery {
+                HStack(spacing: 6) {
+                    Text(b.losingOnPower ? "Losing charge on power" : b.onBattery ? "On battery" : "Power").font(.caption.weight(.semibold)).foregroundStyle(.white)
+                    PowerFlow(battery: b)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
             if model.recordedMinutes < 60 {
                 Text("\(Int(model.recordedMinutes)) min recorded so far")
@@ -192,11 +202,46 @@ private struct Hero: View {
 private struct HeroChip: View {
     let text: String
     let symbol: String
+    var fill: Color? = nil
     var body: some View {
         Label(text, systemImage: symbol)
-            .font(.caption2.weight(.semibold)).foregroundStyle(.white)
+            .font(.caption2.weight(.semibold)).foregroundStyle(.white).lineLimit(1)
             .padding(.horizontal, 7).padding(.vertical, 3)
-            .background(Capsule().fill(.white.opacity(0.18)))
+            .background(Capsule().fill(fill ?? .white.opacity(0.18)))
+    }
+}
+
+/// Charger in, the Mac's use, and what that leaves the battery: gaining (charging) or losing.
+struct PowerFlow: View {
+    let battery: BatteryStatus
+
+    var body: some View {
+        let b = battery
+        HStack(spacing: 6) {
+            if let i = b.powerIn {
+                chip(String(format: "Charger in %.1f W", i), "powerplug.fill", nil)
+                    .tip(b.adapterWatts.map { "A \($0) W charger. What reaches the Mac after losses in the charger and cable." } ?? "What reaches the Mac from the charger")
+            }
+            if let w = b.watts {
+                chip(String(format: "Mac using %.1f W", w), "laptopcomputer", nil).tip("Everything the Mac draws: chip, screen, Wi-Fi, SSD and the rest")
+            }
+            if let bw = b.batteryWatts, abs(bw) >= 0.1 {
+                let gaining = bw > 0
+                chip(String(format: "Battery %@%.1f W", gaining ? "+" : "−", abs(bw)),
+                     gaining ? "battery.100.bolt" : "battery.25",
+                     gaining ? Color(hex: "#16a34a") : Color(hex: "#dc2626"))
+                    .tip(gaining ? "Going into the battery: it is charging"
+                         : b.onBattery ? "Coming out of the battery"
+                         : "The charger cannot keep up, so the battery covers the rest and goes down. Use a bigger charger or ease the load.")
+            }
+        }
+    }
+
+    private func chip(_ text: String, _ symbol: String, _ fill: Color?) -> some View {
+        Label(text, systemImage: symbol)
+            .font(.caption2.weight(.semibold)).foregroundStyle(.white).lineLimit(1).monospacedDigit()
+            .padding(.horizontal, 7).padding(.vertical, 3)
+            .background(Capsule().fill(fill ?? .white.opacity(0.18)))
     }
 }
 
