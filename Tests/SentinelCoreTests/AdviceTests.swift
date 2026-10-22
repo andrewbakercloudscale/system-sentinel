@@ -293,6 +293,35 @@ final class UsageAdviceTests: XCTestCase {
         XCTAssertEqual(x?.fixes, [.quit(pids: [11], name: "Slack")], "pid 1 would be launchd: never offered")
     }
 
+    func testPartPowerAddsUpByPart() {
+        let w = PartPower.watts([
+            .init(name: "CPU Energy", unit: "mJ", value: 5000),
+            .init(name: "GPU Energy", unit: "nJ", value: 3_000_000_000),
+            .init(name: "ANE", unit: "mJ", value: 0),
+            .init(name: "DRAM", unit: "mJ", value: 1000),
+            .init(name: "DIE_1_CPU Energy", unit: "mJ", value: 5000),
+            .init(name: "PCPU0", unit: "mJ", value: 99999),
+        ], seconds: 5)
+        XCTAssertEqual(w.cpu ?? 0, 2.0, accuracy: 0.001)
+        XCTAssertEqual(w.gpu ?? 0, 0.6, accuracy: 0.001)
+        XCTAssertEqual(w.ane, 0)
+        XCTAssertEqual(w.dram ?? 0, 0.2, accuracy: 0.001)
+        XCTAssertEqual(w.total, 2.8, accuracy: 0.001)
+        XCTAssertNil(PartPower.watts([], seconds: 0).gpu)
+    }
+
+    func testGPUSavings() {
+        let ai = GPUApp(key: "/usr/local/bin/ollama", name: "ollama", share: 80, pids: [42], front: false)
+        let screen = GPUApp(key: "WindowServer", name: "WindowServer", share: 20, pids: [1], front: false)
+        let tiny = GPUApp(key: "x", name: "Tiny", share: 8, pids: [7], front: false)
+        let byPID = [Int32(42): ProcessSample(pid: 42, uid: 501, cpu: 1, path: "/usr/local/bin/ollama")]
+        let list = GPUSavings.list(apps: [ai, screen, tiny], busy: 85, onBattery: true, lowPower: false, byPID: byPID)
+        XCTAssertEqual(list.map(\.title), ["Unload ollama's model when you are done", "Make the screen cheaper to draw", "Turn on Low Power Mode"])
+        XCTAssertEqual(list[0].fixes, [.quit(pids: [42], name: "ollama")])
+        XCTAssertEqual(list[1].fixes, [.optimiseScreen, .openSettings(.displays)])
+        XCTAssertTrue(GPUSavings.list(apps: [tiny], busy: 10, onBattery: true, lowPower: false, byPID: [:]).isEmpty)
+    }
+
     func testGPUInsights() {
         let game = "/Applications/Game.app/Contents/MacOS/Game"
         var i = input([ps(21, 30, game), ps(22, 5, "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer"),

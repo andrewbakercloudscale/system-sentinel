@@ -19,6 +19,7 @@ struct BatteryView: View {
                         .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
             }
+            PartsPowerCard(model: model)
             EnergyCard(model: model)
             SleepBlockersCard(model: model)
             SleepCard(report: model.sleepReport)
@@ -287,6 +288,43 @@ private struct RightNowPower: View {
         guard let w = model.battery?.watts else { return nil }
         let appW = BatteryMath.appWatts(share: share, totalWatts: w)
         return appW < 0.1 ? "<0.1 W" : String(format: "~%.1f W", appW)
+    }
+}
+
+// MARK: Power by part
+
+/// Where the watts go inside the Mac: processor, graphics, Neural Engine, memory, the rest.
+private struct PartsPowerCard: View {
+    @ObservedObject var model: Model
+
+    var body: some View {
+        if let w = model.partWatts {
+            let all = model.battery?.watts ?? 0
+            let total = max(all, w.total)
+            let rows: [(name: String, symbol: String, color: Color, watts: Double, tip: String)] = [
+                ("Processor (CPU)", "cpu", Tab.overview.color, w.cpu ?? 0, "Every app's work on the CPU cores"),
+                ("Graphics (GPU)", "square.stack.3d.up.fill", GraphicsCard.color, w.gpu ?? 0, "Drawing the screen, video, games and AI models"),
+                ("Neural Engine", "brain", Theme.trends, w.ane ?? 0, "Core ML models: dictation, photo analysis, Apple Intelligence"),
+                ("Memory", "memorychip", Tab.memory.color, w.dram ?? 0, "The memory chips themselves"),
+            ] + (all > w.total + 0.2 ? [("Rest of the Mac", "display", Color.secondary, all - w.total, "The display, Wi-Fi, SSD, speakers, charging and everything else")] : [])
+            Card(title: "Power by part", symbol: "bolt.fill", tint: Tab.battery.color,
+                 trailing: AnyView(Text(String(format: "%.1f W", total)).font(.callout.weight(.semibold)).monospacedDigit())) {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(rows, id: \.name) { r in
+                        HStack(spacing: 8) {
+                            Image(systemName: r.symbol).foregroundStyle(r.color).frame(width: 20)
+                            Text(r.name).font(.callout).frame(width: 150, alignment: .leading)
+                            ShareBar(share: total > 0 ? r.watts / total : 0, color: r.color).frame(height: 6)
+                            Text(String(format: r.watts < 0.1 ? "<0.1 W" : "%.1f W", r.watts)).font(.callout.weight(.semibold)).monospacedDigit()
+                                .frame(width: 64, alignment: .trailing)
+                        }
+                        .tip(r.tip)
+                    }
+                    Text("Measured by the chip itself every 5 seconds. A busy graphics chip can draw more than the processor: local AI models and games are the usual reason. The Graphics card on Overview lists what is using it and how to save power.")
+                        .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
     }
 }
 

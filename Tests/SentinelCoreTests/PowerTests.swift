@@ -163,6 +163,18 @@ final class EnergyTests: XCTestCase {
         XCTAssertEqual(rows[1].pids, [1, 3])
     }
 
+    func testHealthRAGCountsTheGPU() {
+        var s = HealthRAG.Signals()
+        s.gpu = 40
+        XCTAssertEqual(HealthRAG.of(s).rag, .green)
+        s.gpu = 65
+        XCTAssertEqual(HealthRAG.of(s).rag, .amber)
+        XCTAssertEqual(HealthRAG.of(s).reasons.first?.text, "GPU 65%")
+        s.gpu = 95
+        XCTAssertEqual(HealthRAG.of(s).rag, .red)
+        XCTAssertEqual(HealthRAG.of(s).reasons.first?.symbol, "square.stack.3d.up.fill")
+    }
+
     func testHealthRAGTakesTheWorstRisk() {
         var s = HealthRAG.Signals()
         XCTAssertEqual(HealthRAG.of(s).rag, .green)

@@ -73,6 +73,10 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
     /// The graphics chip in full, and its busy share every 5 seconds for the last hour.
     @Published var gpuStatus: GPUReader.Status?
     @Published var gpuHistory: [(at: Date, busy: Double)] = []
+    /// Watts by part (CPU, graphics, Neural Engine, memory), and the graphics watts over the last hour.
+    @Published var partWatts: PartPower.Watts?
+    @Published var gpuWattsHistory: [(at: Date, watts: Double)] = []
+    private let partPower = PartPower()
     /// Apps using the graphics chip over the last 5 seconds; `cpu` is their share of the chip.
     @Published var gpuApps: [ClusterApp] = []
     private var gpuTimesAt: Date?
@@ -296,6 +300,13 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
         memory = MemoryStatus.read()
         readMemory(now)
         readGPU(now)
+        if let w = partPower?.read(now: now) {
+            partWatts = w
+            if let g = w.gpu {
+                gpuWattsHistory.append((now, g))
+                gpuWattsHistory.removeAll { now.timeIntervalSince($0.at) > 3600 }
+            }
+        }
         checkHeat(now)
         checkAlarms(now)
         checkWeeklyReport(now)
@@ -1014,7 +1025,14 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
     }
 
     /// Apps using the graphics chip, averaged over the last 5 minutes, for the insights.
-    private func gpuInsightApps() -> [GPUApp] {
+    /// Ways to make the graphics chip draw less, for the Graphics card.
+    func gpuSavings() -> [GPUSaving] {
+        GPUSavings.list(apps: gpuInsightApps(), busy: gpuAverage(300) ?? gpuStatus?.busy ?? 0,
+                        onBattery: battery?.onBattery ?? false, lowPower: ProcessInfo.processInfo.isLowPowerModeEnabled,
+                        byPID: Dictionary(sentinel.latest.map { ($0.pid, $0) }, uniquingKeysWith: { a, _ in a }))
+    }
+
+    func gpuInsightApps() -> [GPUApp] {
         guard !gpuAppLog.isEmpty else { return [] }
         var sum: [String: Double] = [:]
         for e in gpuAppLog { for (k, v) in e.shares { sum[k, default: 0] += v } }
@@ -1028,6 +1046,13 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
                    pids: (gpuAppPIDs[k] ?? []).filter(live.contains), front: k == front)
         }
         .filter { $0.share >= 5 }.sorted { $0.share > $1.share }
+    }
+
+    /// Average graphics watts over the last `seconds`.
+    func gpuWattsAverage(_ seconds: TimeInterval) -> Double? {
+        let now = Date()
+        let recent = gpuWattsHistory.filter { now.timeIntervalSince($0.at) <= seconds }
+        return recent.isEmpty ? nil : recent.map(\.watts).reduce(0, +) / Double(recent.count)
     }
 
     /// Average graphics busy share over the last `seconds`.

@@ -66,59 +66,104 @@ private struct Hero: View {
     var body: some View {
         let load = model.machineLoad
         let busyCores = model.totalCPU / 100
-        HStack(alignment: .center, spacing: 16) {
-            Gauge(value: min(load, 100), in: 0...100) {
-                EmptyView()
-            } currentValueLabel: {
-                Text("\(Int(load))%").font(.system(size: 20, weight: .bold, design: .rounded)).foregroundStyle(.white)
-            }
-            .gaugeStyle(.accessoryCircularCapacity)
-            .tint(Gradient(colors: [.green, .yellow, .orange, .red]))
-            .scaleEffect(1.35)
-            .frame(width: 74, height: 74)
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text(headline(load)).font(.title3.weight(.bold)).foregroundStyle(.white)
-                Text(String(format: "%.1f of %d cores busy", busyCores, Int(model.cores)))
-                    .font(.callout).foregroundStyle(.white.opacity(0.85))
-                HStack(spacing: 6) {
-                    ThermalChip(state: model.thermal)
-                    if let gpu = model.gpuStatus {
-                        HeroChip(text: "GPU \(Int(gpu.busy.rounded()))%", symbol: "square.stack.3d.up.fill")
-                            .tip("Graphics chip busy right now\(model.gpuAverage(3600).map { ", \(Int($0.rounded()))% over the last hour" } ?? ""). The Graphics card below has the detail.")
-                    }
-                    if ProcessInfo.processInfo.isLowPowerModeEnabled {
-                        HeroChip(text: "Low Power", symbol: "leaf.fill")
-                    }
-                    if !model.flagged.isEmpty {
-                        HeroChip(text: "\(model.flagged.count) flagged", symbol: "exclamationmark.triangle.fill")
+        VStack(alignment: .trailing, spacing: 8) {
+            // One panel each for the processor and the graphics chip: AI and graphics work
+            // shows on the GPU, not the CPU.
+            panel {
+                Dial(value: load, label: "CPU").tip("The whole Mac's CPU load right now")
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(headline(load)).font(.title3.weight(.bold)).foregroundStyle(.white)
+                    Text(String(format: "%.1f of %d cores busy", busyCores, Int(model.cores)))
+                        .font(.callout).foregroundStyle(.white.opacity(0.85))
+                    HStack(spacing: 6) {
+                        ThermalChip(state: model.thermal)
+                        if let w = model.partWatts?.cpu { HeroChip(text: String(format: "%.1f W", w), symbol: "bolt.fill").tip("Power the CPU is drawing now") }
+                        if ProcessInfo.processInfo.isLowPowerModeEnabled {
+                            HeroChip(text: "Low Power", symbol: "leaf.fill")
+                        }
+                        if !model.flagged.isEmpty {
+                            HeroChip(text: "\(model.flagged.count) flagged", symbol: "exclamationmark.triangle.fill")
+                        }
                     }
                 }
+                Spacer(minLength: 8)
+                stats(model.machineAverage(60), model.machineAverage(900), model.machineAverage(3600), of: "the whole Mac's CPU")
             }
-            Spacer()
-            HStack(spacing: 14) {
-                Stat(label: "1 min", value: model.machineAverage(60))
-                Stat(label: "15 min", value: model.machineAverage(900))
-                Stat(label: "1 hour", value: model.machineAverage(3600))
+            if let gpu = model.gpuStatus {
+                panel {
+                    Dial(value: gpu.busy, label: "GPU")
+                        .tip("Graphics chip busy right now. Local AI models, video and games use it. The Graphics card below has the detail.")
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(gpuHeadline(gpu.busy)).font(.title3.weight(.bold)).foregroundStyle(.white)
+                        Text(gpu.name.map { $0 + (gpu.cores.map { ", \($0) graphics cores" } ?? "") } ?? "Graphics chip")
+                            .font(.callout).foregroundStyle(.white.opacity(0.85)).lineLimit(1)
+                        HStack(spacing: 6) {
+                            if let w = model.partWatts?.gpu { HeroChip(text: String(format: "%.1f W", w), symbol: "bolt.fill").tip("Power the graphics chip is drawing now") }
+                            if let top = model.gpuApps.first, top.cpu >= 5 {
+                                HeroChip(text: "\(top.name) \(Int(top.cpu.rounded()))%", symbol: "arrow.up.circle.fill").tip("Using the most graphics right now")
+                            }
+                        }
+                    }
+                    Spacer(minLength: 8)
+                    stats(model.gpuAverage(60) ?? gpu.busy, model.gpuAverage(900) ?? gpu.busy, model.gpuAverage(3600) ?? gpu.busy, of: "the graphics chip")
+                }
             }
-        }
-        .padding(14)
-        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Theme.heroGradient))
-        .overlay(alignment: .bottomTrailing) {
             if model.recordedMinutes < 60 {
                 Text("\(Int(model.recordedMinutes)) min recorded so far")
-                    .font(.caption2).foregroundStyle(.white.opacity(0.85)).padding(6)
+                    .font(.caption2).foregroundStyle(.white.opacity(0.85))
             }
         }
+        .padding(10)
+        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Theme.heroGradient))
+    }
+
+    private func panel<C: View>(@ViewBuilder _ content: () -> C) -> some View {
+        HStack(alignment: .center, spacing: 14) { content() }
+            .padding(10)
+            .background(RoundedRectangle(cornerRadius: 11, style: .continuous).fill(.white.opacity(0.10)))
+            .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous).strokeBorder(.white.opacity(0.16), lineWidth: 1))
+    }
+
+    private func stats(_ m1: Double, _ m15: Double, _ h1: Double, of what: String) -> some View {
+        HStack(spacing: 10) {
+            Stat(label: "1 min", value: m1, of: what)
+            Stat(label: "15 min", value: m15, of: what)
+            Stat(label: "1 hour", value: h1, of: what)
+        }
+    }
+
+    private func gpuHeadline(_ busy: Double) -> String {
+        busy < 15 ? "Graphics idle" : busy < 40 ? "Graphics in use" : busy < 70 ? "Graphics working hard" : "Graphics flat out"
     }
 
     private func headline(_ load: Double) -> String {
         load < 15 ? "Running cool" : load < 40 ? "Moderately busy" : load < 70 ? "Working hard" : "Flat out"
     }
 
+    /// A 0 to 100 dial with its name underneath.
+    private struct Dial: View {
+        let value: Double
+        let label: String
+        var body: some View {
+            VStack(spacing: 6) {
+                Gauge(value: min(max(value, 0), 100), in: 0...100) {
+                    EmptyView()
+                } currentValueLabel: {
+                    Text("\(Int(value.rounded()))%").font(.system(size: 18, weight: .bold, design: .rounded)).foregroundStyle(.white)
+                }
+                .gaugeStyle(.accessoryCircularCapacity)
+                .tint(Gradient(colors: [.green, .yellow, .orange, .red]))
+                .scaleEffect(1.2)
+                .frame(width: 64, height: 64)
+                Text(label).font(.caption.weight(.bold)).foregroundStyle(.white.opacity(0.9))
+            }
+        }
+    }
+
     private struct Stat: View {
         let label: String
         let value: Double
+        var of = "the whole Mac's CPU"
         var body: some View {
             VStack(spacing: 2) {
                 Text("\(Int(value.rounded()))%").font(.system(size: 17, weight: .bold, design: .rounded)).foregroundStyle(.white)
@@ -127,7 +172,7 @@ private struct Hero: View {
             .frame(minWidth: 44)
             .padding(.vertical, 6).padding(.horizontal, 4)
             .background(RoundedRectangle(cornerRadius: 8).fill(.white.opacity(0.12)))
-            .tip("Average share of the whole Mac over the last \(label)")
+            .tip("Average use of \(of) over the last \(label)")
         }
     }
 }

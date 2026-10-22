@@ -143,6 +143,10 @@ struct GraphicsCard: View {
                              label: model.gpuHistory.count < 12 ? "average so far" : "average, last hour")
                     StatTile(symbol: "memorychip", color: Tab.processes.color,
                              value: g.memoryInUse.map { ReportDocument.bytes($0) } ?? "–", label: "graphics memory")
+                    if let w = model.partWatts?.gpu {
+                        StatTile(symbol: "bolt.fill", color: Tab.battery.color, value: String(format: "%.1f W", w), label: "power now")
+                            .tip(powerTip(w))
+                    }
                 }
                 if model.gpuHistory.count > 1 {
                     Chart(model.gpuHistory, id: \.at) { p in
@@ -179,6 +183,36 @@ struct GraphicsCard: View {
                     }
                 }
                 Text(caption(g)).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                savings
+            }
+        }
+    }
+
+    /// What it costs in power, and how much of the Mac's draw that is.
+    private func powerTip(_ w: Double) -> String {
+        var t = String(format: "The graphics chip is drawing %.1f W", w)
+        if let avg = model.gpuWattsAverage(3600) { t += String(format: ", %.1f W on average over the last hour", avg) }
+        if let all = model.battery?.watts, all > 0.5 { t += String(format: ". That is %.0f%% of the Mac's %.1f W.", min(100, w / all * 100), all) }
+        return t
+    }
+
+    private var savings: some View {
+        let list = model.gpuSavings()
+        return VStack(alignment: .leading, spacing: 6) {
+            Text("SAVE POWER").font(.system(size: 9, weight: .bold)).foregroundStyle(.secondary).kerning(0.5)
+            if list.isEmpty {
+                Text("Nothing to do: nothing has kept the graphics chip busy over the last 5 minutes.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            ForEach(list, id: \.title) { s in
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(s.title).font(.callout.weight(.semibold))
+                    Text(s.detail).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    if !s.fixes.isEmpty { FixButtons(model: model, fixes: s.fixes) }
+                }
+                .padding(8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(RoundedRectangle(cornerRadius: 8).fill(Self.color.opacity(0.07)))
             }
         }
     }
