@@ -479,4 +479,21 @@ final class BatteryETATests: XCTestCase {
         c.onBattery = false
         XCTAssertNil(BatteryETA.of(c, lastHour: []))
     }
+
+    func testLowBatteryWarnsAt20And5Minutes() {
+        var w = LowBatteryWarning()
+        XCTAssertNil(w.update(minutesLeft: 45, draining: true))
+        XCTAssertEqual(w.update(minutesLeft: 19, draining: true), 20)
+        XCTAssertNil(w.update(minutesLeft: 15, draining: true))
+        XCTAssertNil(w.update(minutesLeft: nil, draining: true))
+        XCTAssertEqual(w.update(minutesLeft: 5, draining: true), 5)
+        XCTAssertNil(w.update(minutesLeft: 3, draining: true))
+        // Plugged in and charging: starts over.
+        XCTAssertNil(w.update(minutesLeft: nil, draining: false))
+        XCTAssertEqual(w.update(minutesLeft: 18, draining: true), 20)
+        // A sudden drop past both warns once, at 5.
+        var v = LowBatteryWarning()
+        XCTAssertEqual(v.update(minutesLeft: 4, draining: true), 5)
+        XCTAssertNil(v.update(minutesLeft: 2, draining: true))
+    }
 }
