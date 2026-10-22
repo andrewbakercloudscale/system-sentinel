@@ -105,11 +105,12 @@ The answer to "is my Mac busy, and why?" in one screen:
 - **GPU panel.** The same for the graphics chip: a dial, its name and core count, its watts
   and the two apps using it most (5% or more each). Local AI models, video and games load the
   GPU rather than the CPU, so a quiet CPU dial can sit beside a full GPU one.
-- **Power line.** Always shown on a Mac with a battery: **Charger in** (green), **Mac using**
-  (red), and **Battery** (green while charging, red while draining). Then how long it lasts:
-  **Empty in 1h 40m, 14:32** on battery (red at 20 minutes or less), **Full in 35m** while
-  charging, **Charged**, or **Not charging** when macOS is holding the level to protect the
-  battery. When the charger is too small for the load, the line reads **Losing charge on
+- **Power line.** Always shown on a Mac with a battery: **Charging** (green, what the charger
+  delivers), **Using** (red, the whole Mac), and **Battery** (green and + while charging, red
+  and − while draining). Then **No power**: on battery, when it runs out ("No power: 1h 40m,
+  14:32", amber, red at 20 minutes or less). While charging it shows **Full** instead, in
+  blue ("Full: 4h 8m, 18:40"). Plugged in and not charging, it shows how long the charge would
+  last if you unplugged now. When the charger is too small for the load, the line reads **Losing charge on
   power** and the battery still counts down.
 - **1 min / 15 min / 1 hour** on each panel. Use averaged over each period. A high 1 minute
   figure with a low 1 hour figure is a spike; all three high means it has been busy for a while.
@@ -295,7 +296,7 @@ What the Mac draws and what is costing battery:
 
 - **Battery.** Charge, time left (macOS's estimate, or the charge left divided by the
   current draw), charging state, charger watts, temperature and the whole Mac's power
-  draw in watts, with the same Charger in / Mac using / Battery chips as the Overview. A
+  draw in watts, with the same Charging / Using / Battery chips as the Overview. A
   charger too small for the load shows as **Losing charge on power**, with the time to empty.
   On a Mac without a battery this is replaced by a note.
 - **Power draw.** Watts over the last hour, 6 or 24 hours, or 7 days, coloured by battery
