@@ -85,6 +85,18 @@ private struct Hero: View {
                             HeroChip(text: "\(model.flagged.count) flagged", symbol: "exclamationmark.triangle.fill")
                         }
                     }
+                    // Once it is busy, say who is doing it.
+                    if load >= 30 {
+                        let total = model.totalCPU
+                        HStack(spacing: 6) {
+                            ForEach(NowDonut.slices(model.sentinel.latest, top: 2).filter { $0.key != "other" }) { s in
+                                HeroChip(text: String(format: "%@ %.1f cores, %d%%", s.name, s.cpu / 100,
+                                                      Int((total > 0 ? s.cpu / total * 100 : 0).rounded())),
+                                         symbol: "arrow.up.circle.fill")
+                                    .tip("Share of the CPU in use right now")
+                            }
+                        }
+                    }
                 }
                 Spacer(minLength: 8)
                 stats(model.machineAverage(60), model.machineAverage(900), model.machineAverage(3600), of: "the whole Mac's CPU")
