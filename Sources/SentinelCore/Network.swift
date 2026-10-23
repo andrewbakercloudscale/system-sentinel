@@ -563,10 +563,28 @@ public enum NetworkAnalysis {
         public let totalIn: UInt64
         public let totalOut: UInt64
         public let connections: Int
-        public init(key: String, name: String, pids: [Int32], down: Double, up: Double, totalIn: UInt64, totalOut: UInt64, connections: Int) {
+        /// Sent and received over the last hour, from the connections followed.
+        public var hourIn: UInt64 = 0
+        public var hourOut: UInt64 = 0
+        public init(key: String, name: String, pids: [Int32], down: Double, up: Double, totalIn: UInt64, totalOut: UInt64, connections: Int,
+                    hourIn: UInt64 = 0, hourOut: UInt64 = 0) {
             self.key = key; self.name = name; self.pids = pids; self.down = down; self.up = up
             self.totalIn = totalIn; self.totalOut = totalOut; self.connections = connections
+            self.hourIn = hourIn; self.hourOut = hourOut
         }
+
+        /// A VPN, zero trust client or web proxy: it carries every other app's traffic, so its
+        /// volume, rate and connection count say nothing about it.
+        public var carriesOthers: Bool { NetworkAnalysis.isTunnel(name) }
+    }
+
+    /// Names (or parts of names) of apps that carry other apps' traffic.
+    static let tunnelNames: [String] = Array(Set(NetworkLink.vpnClients.keys).union(NetworkLink.vpnClients.values.filter { $0 != "VPN" })
+        .union(DNSMap.tunnelApps.map(\.0)).union(DNSMap.tunnelApps.map(\.1))
+        .union(["Zscaler", "Netskope", "Forcepoint", "Umbrella", "Palo Alto", "Twingate", "Proxyman", "Charles", "Squid", "Privoxy", "mitmproxy"]))
+
+    public static func isTunnel(_ name: String) -> Bool {
+        tunnelNames.contains { name.range(of: $0, options: .caseInsensitive) != nil }
     }
 
     static func gb(_ b: UInt64) -> String { ReportDocument.bytes(b) }
@@ -681,6 +699,9 @@ public enum NetworkAnalysis {
                                detail: "The other side hung up but the app has not let go. A bug that slowly uses up resources; restarting the app clears it."))
         }
         // Who is moving data.
+        // VPNs, zero trust clients and proxies carry everyone's traffic: leave them out, or they
+        // always top these and hide the app that actually sends.
+        let apps = apps.filter { !$0.carriesOthers }
         if let up = apps.filter({ $0.up >= 1_000_000 }).max(by: { $0.up < $1.up }) {
             var x = Insight(id: "net-uploading", tone: link.isHotspot ? .warning : .info, symbol: "arrow.up.circle.fill",
                             title: "\(up.name) is uploading \(IORow.rate(up.up))",
@@ -688,10 +709,12 @@ public enum NetworkAnalysis {
             x.fixes = [.quit(pids: up.pids, name: up.name)]
             out.append(x)
         }
-        if let big = apps.filter({ $0.totalOut >= 1 << 30 }).max(by: { $0.totalOut < $1.totalOut }) {
-            out.append(Insight(id: "net-bigsender", tone: .info, symbol: "arrow.up.doc.fill",
-                               title: "\(big.name) has sent \(gb(big.totalOut)) since it started",
-                               detail: "Received \(gb(big.totalIn)). Backup, sync and security agents send a lot; anything else sending this much is worth knowing about."))
+        if let big = apps.filter({ $0.hourOut >= 500 << 20 }).max(by: { $0.hourOut < $1.hourOut }) {
+            var x = Insight(id: "net-bigsender", tone: .info, symbol: "arrow.up.doc.fill",
+                            title: "\(big.name) sent \(gb(big.hourOut)) in the last hour",
+                            detail: "Received \(gb(big.hourIn)). Backup, sync and cloud storage apps send a lot; anything else sending this much is worth knowing about.")
+            x.fixes = [.quit(pids: big.pids, name: big.name)]
+            out.append(x)
         }
         if let many = apps.filter({ $0.connections >= 300 }).max(by: { $0.connections < $1.connections }) {
             out.append(Insight(id: "net-manyconns", tone: .info, symbol: "point.3.connected.trianglepath.dotted",

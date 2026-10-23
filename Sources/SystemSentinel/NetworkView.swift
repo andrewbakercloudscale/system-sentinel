@@ -271,9 +271,11 @@ private struct TopApps: View {
 
     var body: some View {
         let rows = store.apps.sorted { a, b in
+            // Tunnels and proxies carry every other app's traffic: listed last, whatever the sort.
+            if a.carriesOthers != b.carriesOthers { return b.carriesOthers }
             switch sort {
-            case "Received": return a.totalIn > b.totalIn
-            case "Sent": return a.totalOut > b.totalOut
+            case "Received": return a.hourIn > b.hourIn
+            case "Sent": return a.hourOut > b.hourOut
             case "Connections": return a.connections > b.connections
             default: return a.down + a.up > b.down + b.up || (a.down + a.up == b.down + b.up && a.totalIn + a.totalOut > b.totalIn + b.totalOut)
             }
@@ -285,8 +287,8 @@ private struct TopApps: View {
                 Text("APP").frame(maxWidth: .infinity, alignment: .leading)
                 Text("NOW ↓").frame(width: 70, alignment: .trailing)
                 Text("NOW ↑").frame(width: 70, alignment: .trailing)
-                Text("RECEIVED").frame(width: 76, alignment: .trailing)
-                Text("SENT").frame(width: 70, alignment: .trailing)
+                Text("1 H ↓").frame(width: 76, alignment: .trailing)
+                Text("1 H ↑").frame(width: 70, alignment: .trailing)
                 Text("CONN.").frame(width: 46, alignment: .trailing)
             }
             .font(.caption2.weight(.bold)).foregroundStyle(.secondary)
@@ -299,7 +301,7 @@ private struct TopApps: View {
             if rows.count > 12 {
                 Button(showAll ? "Show fewer" : "Show all \(rows.count)") { showAll.toggle() }.buttonStyle(.link).font(.caption)
             }
-            Text("Received and sent count from when each process started, like Activity Monitor; now is the last 10 seconds. Click an app for the hosts it talks to.")
+            Text("Now is the last 10 seconds; 1 h is received and sent over the last hour. VPNs, zero trust clients (Zscaler, Netskope) and proxies carry the other apps' traffic, so they are listed last and left out of the network insights. Click an app for the hosts it talks to.")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
     }
@@ -311,14 +313,18 @@ private struct TopApps: View {
                 if let s = sample { IconView(icon: IconCache.shared.icon(for: s), size: 18) }
                 else { Image(systemName: "gearshape").frame(width: 18).foregroundStyle(.secondary) }
                 Text(r.name).font(.callout).lineLimit(1)
+                if r.carriesOthers {
+                    Pill(text: "carries all traffic", symbol: "arrow.triangle.branch", color: .secondary, compact: true)
+                        .tip("A VPN, zero trust client or proxy: its traffic is the other apps' traffic, counted again")
+                }
                 Image(systemName: open == r.key ? "chevron.up" : "chevron.down").font(.caption2).foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             Text(IORow.rate(r.down)).frame(width: 70, alignment: .trailing)
             Text(IORow.rate(r.up)).frame(width: 70, alignment: .trailing)
                 .foregroundStyle(r.up >= 1_000_000 ? Color(hex: "#d97706") : .primary)
-            Text(bytes(r.totalIn)).frame(width: 76, alignment: .trailing)
-            Text(bytes(r.totalOut)).frame(width: 70, alignment: .trailing)
+            Text(bytes(r.hourIn)).frame(width: 76, alignment: .trailing)
+            Text(bytes(r.hourOut)).frame(width: 70, alignment: .trailing)
             Text("\(r.connections)").frame(width: 46, alignment: .trailing)
         }
         .font(.caption.weight(.medium)).monospacedDigit()
