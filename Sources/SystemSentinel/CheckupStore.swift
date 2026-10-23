@@ -598,6 +598,9 @@ nonisolated func sh(_ path: String, _ args: [String], timeout: TimeInterval = 20
     let timer = DispatchWorkItem {
         guard p.isRunning else { return }
         p.terminate()
+        // Some tools ignore that and would hold this thread, and their own core, for good.
+        let pid = p.processIdentifier
+        DispatchQueue.global().asyncAfter(deadline: .now() + 2) { if p.isRunning { kill(pid, SIGKILL) } }
         Diagnostics.report("checkup", "\(URL(fileURLWithPath: path).lastPathComponent) \(args.first ?? "") took over \(Int(timeout)) s and was stopped")
     }
     DispatchQueue.global().asyncAfter(deadline: .now() + timeout, execute: timer)
