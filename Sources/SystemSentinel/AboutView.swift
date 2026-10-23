@@ -51,6 +51,11 @@ struct AboutView: View {
                 Text("Version \(Model.appVersion) (build \(Self.build))").font(.title3.weight(.medium)).monospacedDigit()
                 Text("A menu bar doctor for your Mac: why it is slow, hot, full or flat, in plain English, with a fix a click away.")
                     .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                Button { ShareApp.show() } label: {
+                    Label("Share with a friend", systemImage: "square.and.arrow.up")
+                }
+                .buttonStyle(.borderedProminent).tint(tint).padding(.top, 4)
+                .tip("Send an install message by Messages, Mail, WhatsApp, AirDrop and more")
             }
         }
     }

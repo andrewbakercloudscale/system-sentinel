@@ -17,6 +17,7 @@
 - [Killing processes](#killing-processes)
 - [Explain with ChatGPT](#explain-with-chatgpt)
 - [Pop out window](#pop-out-window)
+- [Share with a friend](#share-with-a-friend)
 - [Files and privacy](#files-and-privacy)
 - [Troubleshooting](#troubleshooting)
 
@@ -491,6 +492,20 @@ opens.
 The menu bar panel stays pinned under the icon and closes when you click elsewhere. Click
 **Pop out** at the bottom to open the same screens in a normal window. You can drag and
 minimise it, and it stays open while you work. It remembers its position.
+
+---
+
+## Share with a friend
+
+Click **Share with a friend** in About, or **Share** at the bottom of the main window. The
+Mac's share menu opens: Messages, Mail, WhatsApp, AirDrop, Notes and so on. The message says
+what the app does and how to install it: open Terminal and paste one line,
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/andrewbakercloudscale/system-sentinel/main/install.sh | bash
+```
+
+which downloads the latest version, puts it in Applications and opens it.
 
 ---
 
