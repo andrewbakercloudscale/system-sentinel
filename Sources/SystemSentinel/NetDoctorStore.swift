@@ -39,9 +39,9 @@ extension NetworkStore {
         DispatchQueue.main.asyncAfter(deadline: .now() + 16) { [weak self] in SelfGuard.when("HTTPS check") { self?.checkInspection() } }
     }
 
-    func recordLookup(ok: Bool, ms: Double?) {
+    func recordLookup(ok: Bool, ms: Double?, servers: [String]? = nil, offline: Bool? = nil) {
         let days = HistoryRetention.days(UserDefaults.standard.integer(forKey: "historyDays"))
-        dnsHistory.record(ok: ok, ms: ms, at: Date(), keep: Double(days) * 86_400)
+        dnsHistory.record(ok: ok, ms: ms, at: Date(), keep: Double(days) * 86_400, servers: servers, offline: offline)
         if !readOnly, let data = try? JSONEncoder().encode(dnsHistory) { Diagnostics.write(data, to: Self.historyURL, what: "DNS history") }
     }
 

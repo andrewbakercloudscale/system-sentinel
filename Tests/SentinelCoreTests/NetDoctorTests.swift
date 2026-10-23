@@ -80,9 +80,27 @@ final class NetDoctorTests: XCTestCase {
         let f = h.failed(since: t - 1)
         XCTAssertEqual(f.map(\.ms), [3, 6012])
         let lines = DNSHistory.describe(f)
-        XCTAssertTrue(lines[0].hasSuffix("refused after 3 ms (no network, or the server said no)"), lines[0])
+        XCTAssertTrue(lines[0].hasSuffix("failed after 3 ms"), lines[0])
         XCTAssertTrue(lines[1].hasSuffix("no answer after 6.0 s (timed out)"), lines[1])
         XCTAssertEqual(DNSHistory.describe(f, limit: 1).last, "and 1 earlier")
+    }
+
+    func testFailedLookupNamesWhatEachServerSaid() {
+        var h = DNSHistory()
+        let t = Date(timeIntervalSince1970: 1_800_000_000)
+        let servers = [NetParse.serverLine("192.168.1.1", DigResult(status: "NXDOMAIN", ms: 12, addresses: [])),
+                       NetParse.serverLine("1.1.1.1", nil),
+                       NetParse.serverLine("8.8.8.8", DigResult(status: "NOERROR", ms: 20, addresses: ["17.253.144.10"]))]
+        h.record(ok: false, ms: 40, at: t, servers: servers, offline: false)
+        XCTAssertEqual(servers, ["192.168.1.1: NXDOMAIN in 12 ms", "1.1.1.1: no answer", "8.8.8.8: answered in 20 ms"])
+        let line = DNSHistory.describe(h.failed(since: t - 1))[0]
+        XCTAssertTrue(line.hasSuffix("failed after 40 ms. Servers: 192.168.1.1: NXDOMAIN in 12 ms; 1.1.1.1: no answer; 8.8.8.8: answered in 20 ms"), line)
+        h.record(ok: false, ms: 6000, at: t + 60, offline: true)
+        XCTAssertTrue(DNSHistory.describe(h.failed(since: t - 1))[0].contains("network was down, not DNS"))
+        // Old saved history without the new fields still loads.
+        let old = Data(#"{"points":[{"t":1,"ok":false}]}"#.utf8)
+        XCTAssertEqual(try JSONDecoder().decode(DNSHistory.self, from: old).points.first?.servers, nil)
+        XCTAssertEqual(NetParse.mainServers([Resolver(servers: ["a", "b"]), Resolver(domain: "corp", servers: ["c"], supplemental: true), Resolver(servers: ["a"])]), ["a", "b"])
     }
 
     func testDNSHistory() {

@@ -60,6 +60,22 @@ extension NetParse {
         return out
     }
 
+    /// One server's answer to a failed lookup's follow-up, for the DNS history.
+    public static func serverLine(_ address: String, _ d: DigResult?) -> String {
+        guard let d else { return "\(address): no answer" }
+        let ms = d.ms.map { " in \($0) ms" } ?? ""
+        if d.status == "NOERROR" { return d.addresses.isEmpty ? "\(address): empty answer\(ms)" : "\(address): answered\(ms)" }
+        return "\(address): \(d.status)\(ms)"
+    }
+
+    /// The servers that answer every name, in the order macOS tries them.
+    public static func mainServers(_ resolvers: [Resolver]) -> [String] {
+        var main = resolvers.filter { !$0.supplemental && !$0.mdns }.flatMap(\.servers)
+        if main.isEmpty { main = resolvers.filter { $0.supplemental && $0.domain == nil }.flatMap(\.servers) }
+        var seen = Set<String>()
+        return main.filter { seen.insert($0).inserted }
+    }
+
     /// `dig` output. Nil when no server answered at all.
     public static func dig(_ s: String) -> DigResult? {
         if s.contains("no servers could be reached") || s.contains("timed out") && !s.contains("status:") { return nil }
@@ -134,12 +150,19 @@ public struct DNSHistory: Codable, Equatable, Sendable {
         public let t: Int
         public let ok: Bool
         public let ms: Int?
+        /// For a failure: what each DNS server said when asked straight away, as
+        /// "192.168.1.1: NXDOMAIN in 12 ms" or "1.1.1.1: no answer". Nil before 0.8.31.
+        public var servers: [String]? = nil
+        /// For a failure: the internet did not answer either, so DNS was not the fault.
+        public var offline: Bool? = nil
     }
     public private(set) var points: [Point] = []
     public init() {}
 
-    public mutating func record(ok: Bool, ms: Double?, at now: Date, keep: TimeInterval = 7 * 86_400) {
-        points.append(Point(t: Int(now.timeIntervalSince1970), ok: ok, ms: ms.map { Int($0.rounded()) }))
+    public mutating func record(ok: Bool, ms: Double?, at now: Date, keep: TimeInterval = 7 * 86_400,
+                                servers: [String]? = nil, offline: Bool? = nil) {
+        points.append(Point(t: Int(now.timeIntervalSince1970), ok: ok, ms: ms.map { Int($0.rounded()) },
+                            servers: servers, offline: offline))
         let cutoff = Int(now.timeIntervalSince1970) - Int(keep)
         points.removeAll { $0.t < cutoff }
     }
@@ -160,9 +183,16 @@ public struct DNSHistory: Codable, Equatable, Sendable {
     public static func describe(_ failed: [Point], limit: Int = 12, calendar: Calendar = .current) -> [String] {
         var lines = failed.prefix(limit).map { p -> String in
             let at = Date(timeIntervalSince1970: TimeInterval(p.t)).formatted(.dateTime.weekday(.abbreviated).hour().minute())
-            guard let ms = p.ms else { return "\(at): no answer" }
-            return ms >= 5000 ? "\(at): no answer after \(String(format: "%.1f", Double(ms) / 1000)) s (timed out)"
-                              : "\(at): refused after \(ms) ms (no network, or the server said no)"
+            var line: String
+            if let ms = p.ms {
+                line = ms >= 5000 ? "\(at): no answer after \(String(format: "%.1f", Double(ms) / 1000)) s (timed out)"
+                                  : "\(at): failed after \(ms) ms"
+            } else {
+                line = "\(at): no answer (recorded before servers were checked)"
+            }
+            if p.offline == true { line += ". The internet did not answer either: the network was down, not DNS" }
+            if let s = p.servers, !s.isEmpty { line += ". Servers: " + s.joined(separator: "; ") }
+            return line
         }
         if failed.count > limit { lines.append("and \(failed.count - limit) earlier") }
         return lines
