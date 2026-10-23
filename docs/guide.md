@@ -115,8 +115,8 @@ The answer to "is my Mac busy, and why?" in one screen:
   and − while draining). Then **No power**: on battery, when it runs out ("No power: 1h 40m,
   14:32"): green with more than 4 hours left, amber under 90 minutes, red under 30). While charging it shows **Full** instead, in
   blue ("Full: 4h 8m, 18:40"). Plugged in and not charging, it shows how long the charge would
-  last if you unplugged now. When the charger is too small for the load, the line reads **Losing charge on
-  power** and the battery still counts down.
+  last if you unplugged now. When the charger is too small for the load, Battery shows red and − and the
+  **No power** time still counts down.
 - **1 min / 15 min / 1 hour** on each panel. Use averaged over each period. A high 1 minute
   figure with a low 1 hour figure is a spike; all three high means it has been busy for a while.
 - **Right now.** A donut of the five apps using the most CPU at this moment, plus
