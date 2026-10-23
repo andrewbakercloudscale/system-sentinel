@@ -30,7 +30,7 @@ macOS counts CPU per core, and System Sentinel uses two scales:
 | Where | Scale | Example on a 10-core Mac |
 |---|---|---|
 | Process lists, Trends table, notifications | **100% = one core**, like Activity Monitor | a process at 250% is using two and a half cores |
-| Gauge, charts, "% of Mac" pill | **100% = every core** | 25% means two and a half of the ten cores are busy |
+| Gauge, charts, "CPU %" pill | **100% = every core** | 25% means two and a half of the ten cores are busy |
 
 So a single process can show more than 100%, and the whole Mac is busy only when the gauge
 approaches 100%.
@@ -58,10 +58,12 @@ the notch without saying so.
 **Settings > Menu bar** can add a readout beside the icon: the Mac's CPU load, the power
 draw in watts, or the battery charge (with time left when unplugged).
 
-The pill in the top right shows the whole Mac's load right now. Its dot turns from green
-to amber to red as the load rises.
+Top right, **CPU 22%** is the whole Mac's CPU load right now (100% means every core busy),
+and **GPU 9%** is how busy the graphics chip is. Each dot turns from green to amber to red as
+the load rises.
 
-Beside it, the status chip reads **All clear** or names what is wrong (memory pressure, CPU,
+Beside them, the status chip reads **All clear** or names what is wrong (**Memory pressure
+high** or **critical**, CPU,
 GPU, disk low, heat, battery). The menu bar icon takes the same colour, green, amber or red,
 and the symbol of the worst problem. The GPU counts once the graphics chip averages 60%
 over a minute (amber) or 90% (red), which a local AI model can do while the CPU sits idle. Click it to open the tab about the first problem: memory pressure

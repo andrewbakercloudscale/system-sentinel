@@ -135,8 +135,9 @@ struct HealthChip: View {
 
     private var chip: some View {
         let c: Color = health.rag == .red ? Theme.heat(100) : (health.rag == .amber ? Color(hex: "#d97706") : Tab.battery.color)
-        let text = health.reasons.isEmpty ? "All clear" : health.reasons.prefix(2).map(\.text).joined(separator: " · ")
+        let joined = health.reasons.prefix(2).map(\.text).joined(separator: " · ")
             + (health.reasons.count > 2 ? " +\(health.reasons.count - 2)" : "")
+        let text = health.reasons.isEmpty ? "All clear" : joined.prefix(1).uppercased() + joined.dropFirst()
         return HStack(spacing: 6) {
             Image(systemName: health.reasons.first?.symbol ?? "checkmark.seal.fill").font(.caption.weight(.bold))
             Text(text).font(.callout.weight(.semibold)).lineLimit(1)

@@ -426,8 +426,8 @@ public struct HealthRAG: Equatable, Sendable {
         else if s.load >= 40 { r.append(.init(rag: .amber, symbol: "cpu", text: "CPU \(Int(s.load))%")) }
         if let g = s.gpu, g >= 90 { r.append(.init(rag: .red, symbol: "square.stack.3d.up.fill", text: "GPU \(Int(g))%")) }
         else if let g = s.gpu, g >= 60 { r.append(.init(rag: .amber, symbol: "square.stack.3d.up.fill", text: "GPU \(Int(g))%")) }
-        if s.pressure >= 2 { r.append(.init(rag: .red, symbol: "memorychip", text: "memory pressure critical")) }
-        else if s.pressure == 1 { r.append(.init(rag: .amber, symbol: "memorychip", text: "memory pressure")) }
+        if s.pressure >= 2 { r.append(.init(rag: .red, symbol: "memorychip", text: "Memory pressure critical")) }
+        else if s.pressure == 1 { r.append(.init(rag: .amber, symbol: "memorychip", text: "Memory pressure high")) }
         if s.swapBytes >= 8 << 30, s.pressure < 2 {
             r.append(.init(rag: .amber, symbol: "memorychip", text: "\(ReportDocument.bytes(s.swapBytes)) in swap"))
         }

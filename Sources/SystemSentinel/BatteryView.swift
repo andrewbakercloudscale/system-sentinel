@@ -91,8 +91,9 @@ private struct BatteryHero: View {
         let b = battery
         if b.onBattery, let e = eta { return "Around \(BatteryETABanner.clock(e.minutes)), \(BatteryETABanner.basis(e))" }
         if b.onBattery { return "Running on battery" }
-        if b.losingOnPower { return "Plugged in, but the charger is too small for what the Mac is doing" }
-        if !b.charging && b.percent < 100 { return "macOS is holding the charge to protect the battery" }
+        if b.losingOnPower { return "Losing charge on power: the charger is too small for what the Mac is doing" }
+        if b.charging { return "Charging" }
+        if b.percent < 100 { return "macOS is holding the charge to protect the battery" }
         return "Plugged in"
     }
 
