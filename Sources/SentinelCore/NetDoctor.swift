@@ -145,7 +145,27 @@ public struct DNSHistory: Codable, Equatable, Sendable {
     }
 
     public func failures(since: Date) -> Int {
-        points.filter { $0.t >= Int(since.timeIntervalSince1970) && !$0.ok }.count
+        failed(since: since).count
+    }
+
+    /// The failed lookups, newest first. `ms` is how long it waited before giving up.
+    public func failed(since: Date) -> [Point] {
+        points.filter { $0.t >= Int(since.timeIntervalSince1970) && !$0.ok }.reversed()
+    }
+
+    /// The test name each lookup asks for.
+    public static let probeName = "www.apple.com"
+
+    /// One line per failed lookup, newest first, for the "DNS failed" finding.
+    public static func describe(_ failed: [Point], limit: Int = 12, calendar: Calendar = .current) -> [String] {
+        var lines = failed.prefix(limit).map { p -> String in
+            let at = Date(timeIntervalSince1970: TimeInterval(p.t)).formatted(.dateTime.weekday(.abbreviated).hour().minute())
+            guard let ms = p.ms else { return "\(at): no answer" }
+            return ms >= 5000 ? "\(at): no answer after \(String(format: "%.1f", Double(ms) / 1000)) s (timed out)"
+                              : "\(at): refused after \(ms) ms (no network, or the server said no)"
+        }
+        if failed.count > limit { lines.append("and \(failed.count - limit) earlier") }
+        return lines
     }
 
     /// Slow means over a second: a page visibly waits.
@@ -434,9 +454,12 @@ extension NetworkAnalysis {
         let day = now.addingTimeInterval(-86_400)
         let fails = history.failures(since: day)
         if fails >= 3 {
-            out.append(Insight(id: "net-dns-flaky", tone: fails >= 10 ? .warning : .info, symbol: "waveform.path.badge.minus",
-                               title: "DNS failed \(fails) times in the last day",
-                               detail: "Lookups that fail now and then are why a page sometimes will not load and then does on reload. The DNS chart below shows when."))
+            var x = Insight(id: "net-dns-flaky", tone: fails >= 10 ? .warning : .info, symbol: "waveform.path.badge.minus",
+                            title: "DNS failed \(fails) times in the last day",
+                            detail: "Lookups that fail now and then are why a page sometimes will not load and then does on reload. The DNS chart below shows when.")
+            x.why = "System Sentinel looks up \(DNSHistory.probeName) every few minutes through the Mac's own resolver, as a browser would. These failed:\n"
+                + DNSHistory.describe(history.failed(since: day)).map { "• " + $0 }.joined(separator: "\n")
+            out.append(x)
         }
         if let s = speed, now.timeIntervalSince(s.at) < 86_400 {
             if s.responsiveness == .low {

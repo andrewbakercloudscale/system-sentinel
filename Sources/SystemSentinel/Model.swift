@@ -57,6 +57,9 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
     /// Findings from the memory timeline, for the Memory tab.
     @Published var memoryInsights: [Insight] = []
     let memoryHistory: MemoryHistory
+    /// "Quit it when it holds more than N GB in the background", per app on the Memory tab.
+    let memoryRules = MemoryRuleStore(fileURL: Model.supportDir.appendingPathComponent("memory-rules.json"))
+    private let memoryRuleWatch = MemoryRuleWatch()
 
     struct MemoryApp: Identifiable {
         let key: String
@@ -414,6 +417,40 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
             found[i] = explainQuit(found[i])
         }
         memoryInsights = found
+        applyMemoryRules(now)
+    }
+
+    /// The app a memory rule acts on: a virtual machine is quit through the app that runs it.
+    func ruleTarget(_ a: MemoryApp) -> MemoryApp { Model.isVM(a.key) ? (vmHost() ?? a) : a }
+
+    /// What a rule counts for an app: its own memory, plus its virtual machine's for a VM host.
+    func ruleBytes(_ target: MemoryApp) -> UInt64 {
+        let vm = vmHost()?.key == target.key ? (memoryApps.first { Model.isVM($0.key) }?.bytes ?? 0) : 0
+        return target.bytes + vm
+    }
+
+    func setMemoryRule(_ limit: UInt64?, for a: MemoryApp) {
+        let t = ruleTarget(a)
+        memoryRules.set(limit.map { MemoryRule(name: t.name, limit: $0) }, for: t.key)
+        objectWillChange.send()
+    }
+
+    /// Quits, politely, any app over its memory rule for 5 minutes while not in front.
+    private func applyMemoryRules(_ now: Date) {
+        guard !memoryRules.rules.isEmpty, Model.snapshotDir == nil else { return }
+        let front = NSWorkspace.shared.frontmostApplication?.processIdentifier
+        let readings = memoryApps.filter { !Model.isVM($0.key) }.map {
+            MemoryRuleWatch.Reading(key: $0.key, bytes: ruleBytes($0), frontmost: front.map($0.pids.contains) ?? false)
+        }
+        for key in memoryRuleWatch.update(readings, rules: memoryRules.rules, at: now) {
+            guard let a = memoryApps.first(where: { $0.key == key }), let rule = memoryRules.rules[key],
+                  a.sample.pid != getpid(), Safety.canKillManually(a.sample) else { continue }
+            let held = ReportDocument.bytes(ruleBytes(a))
+            quit(pids: a.pids, name: a.name)
+            sentinel.history.record(.autoKilled, a.sample, detail: "memory rule: held \(held), \(rule.label)", at: now)
+            notify(a.sample, title: "Quit \(a.name): it held \(held)",
+                   body: "Your rule quits it when it holds over \(rule.limit >> 30) GB in the background. Change it on the Memory tab.", actions: false)
+        }
     }
 
     /// Energy Impact by app over the last `hours`.
@@ -1133,7 +1170,12 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
 
     /// The running app that owns a virtual machine, so the VM row can name it and quit it.
     func vmHost() -> MemoryApp? {
-        memoryApps.first { a in !Model.isVM(a.key) && Model.vmHosts.contains { a.name.localizedCaseInsensitiveContains($0) } }
+        // Whole names only: "UTM" is inside "TextInputMenuAgent".
+        memoryApps.first { a in
+            !Model.isVM(a.key) && Model.vmHosts.contains { h in
+                a.name.caseInsensitiveCompare(h) == .orderedSame || a.name.lowercased().hasPrefix(h.lowercased() + " ")
+            }
+        }
     }
 
     /// What an app on the Memory tab is and what quitting it does, before anyone quits it.
