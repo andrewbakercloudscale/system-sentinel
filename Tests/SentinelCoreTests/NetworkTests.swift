@@ -157,7 +157,7 @@ final class NetworkTests: XCTestCase {
         let wifi = NetworkLink(interface: "en0", gateway: "192.168.0.1", wifi: WiFiInfo(rssi: -82, noise: -90, txRate: 24, channel: 6, band: 2.4))
         let problem = ConnectionProblem(kind: .shortTLS, process: "Slack", pids: [42], host: "slack.com", port: 443, count: 40, last: now)
         let apps = [NetworkAnalysis.AppRow(key: "falcon", name: "CrowdStrike", pids: [7], down: 0, up: 2_000_000,
-                                           totalIn: 1 << 20, totalOut: 5 << 30, connections: 4)]
+                                           totalIn: 1 << 20, totalOut: 5 << 30, connections: 4, hourIn: 1 << 20, hourOut: 1 << 30)]
         let health = LinkHealth(routerMs: 80, routerLoss: 10, internetMs: 120, internetLoss: 10, dnsMs: 40, at: now)
         let ids = NetworkAnalysis.insights(link: wifi, health: health, problems: [problem], apps: apps, at: now).map(\.id)
         XCTAssertTrue(ids.contains("net-wifi-weak"))
@@ -168,6 +168,18 @@ final class NetworkTests: XCTestCase {
         XCTAssertTrue(ids.contains("net-tls-Slack"))
         XCTAssertTrue(ids.contains("net-uploading"))
         XCTAssertTrue(ids.contains("net-bigsender"))
+
+        // Zscaler, Netskope and other tunnels carry everyone's traffic: never the sender, uploader or connection hog.
+        for name in ["Zscaler", "ZscalerTunnel", "Netskope Client", "stAgentSvc", "Cloudflare WARP", "GlobalProtect"] {
+            let t = [NetworkAnalysis.AppRow(key: name, name: name, pids: [8], down: 0, up: 9_000_000,
+                                            totalIn: 5 << 30, totalOut: 5 << 30, connections: 900, hourIn: 2 << 30, hourOut: 2 << 30)]
+            let tid = NetworkAnalysis.insights(link: wifi, health: nil, problems: [], apps: t, at: now).map(\.id)
+            XCTAssertFalse(tid.contains { ["net-uploading", "net-bigsender", "net-manyconns"].contains($0) }, name)
+        }
+        XCTAssertFalse(NetworkAnalysis.isTunnel("Google Chrome"))
+        // Sent long ago, not in the last hour: not reported.
+        let old = [NetworkAnalysis.AppRow(key: "x", name: "Backup", pids: [3], down: 0, up: 0, totalIn: 0, totalOut: 9 << 30, connections: 1)]
+        XCTAssertFalse(NetworkAnalysis.insights(link: wifi, health: nil, problems: [], apps: old, at: now).map(\.id).contains("net-bigsender"))
 
         // Failures against several hosts by one app make one insight that names them.
         let many = ["1.1.1.1", "8.8.8.8", "9.9.9.9"].map {

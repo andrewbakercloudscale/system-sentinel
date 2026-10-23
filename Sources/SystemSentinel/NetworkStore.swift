@@ -243,10 +243,19 @@ final class NetworkStore: ObservableObject {
             a.n += conns[pid] ?? 0
             acc[key] = a
         }
-        apps = acc.map { NetworkAnalysis.AppRow(key: $0.key, name: $0.value.name, pids: $0.value.pids.sorted(), down: $0.value.down,
-                                               up: $0.value.up, totalIn: $0.value.tin, totalOut: $0.value.tout, connections: $0.value.n) }
-            .filter { $0.totalIn + $0.totalOut > 0 || $0.connections > 0 }
         let now = Date()
+        var hour: [Int32: (rx: UInt64, tx: UInt64)] = [:]
+        for f in tracker.flows(since: now.addingTimeInterval(-3600)) {
+            hour[f.pid, default: (0, 0)].rx += f.rx
+            hour[f.pid, default: (0, 0)].tx += f.tx
+        }
+        apps = acc.map { a in
+            NetworkAnalysis.AppRow(key: a.key, name: a.value.name, pids: a.value.pids.sorted(), down: a.value.down,
+                                   up: a.value.up, totalIn: a.value.tin, totalOut: a.value.tout, connections: a.value.n,
+                                   hourIn: a.value.pids.reduce(0) { $0 + (hour[$1]?.rx ?? 0) },
+                                   hourOut: a.value.pids.reduce(0) { $0 + (hour[$1]?.tx ?? 0) })
+        }
+        .filter { $0.totalIn + $0.totalOut > 0 || $0.connections > 0 }
         let events = tracker.events.map { e in
             ConnectionTracker.Event(kind: e.kind, at: e.at, pid: e.pid, process: appName(pid: e.pid, fallback: e.process, paths: paths),
                                     host: label(e.host), port: e.port, seconds: e.seconds, rx: e.rx, tx: e.tx)
