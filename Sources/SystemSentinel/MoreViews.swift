@@ -167,7 +167,7 @@ struct GraphicsCard: View {
                     .frame(height: 70)
                 }
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("USING IT NOW").font(.system(size: 9, weight: .bold)).foregroundStyle(.secondary).kerning(0.5)
+                    Text("USING IT NOW").sectionLabel()
                     if model.gpuApps.isEmpty {
                         Text("Nothing is drawing much right now.").font(.caption).foregroundStyle(.secondary)
                     }
@@ -199,7 +199,7 @@ struct GraphicsCard: View {
     private var savings: some View {
         let list = model.gpuSavings()
         return VStack(alignment: .leading, spacing: 6) {
-            Text("SAVE POWER").font(.system(size: 9, weight: .bold)).foregroundStyle(.secondary).kerning(0.5)
+            Text("SAVE POWER").sectionLabel()
             if list.isEmpty {
                 Text("Nothing to do: nothing has kept the graphics chip busy over the last 5 minutes.")
                     .font(.caption).foregroundStyle(.secondary)
@@ -243,7 +243,7 @@ struct SleepCard: View {
                     let top = r.wakeCauses.prefix(5)
                     let most = Double(top.first?.count ?? 1)
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("WOKEN BY").font(.system(size: 9, weight: .bold)).foregroundStyle(.secondary).kerning(0.5)
+                        Text("WOKEN BY").sectionLabel()
                         ForEach(Array(top), id: \.cause) { c in
                             HStack(spacing: 8) {
                                 Text(c.cause.prefix(1).uppercased() + c.cause.dropFirst()).font(.caption).frame(width: 150, alignment: .leading)

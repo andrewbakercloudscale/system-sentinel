@@ -23,7 +23,7 @@ enum Theme {
 
     static let cardFill = Color(light: "#ffffff", dark: "#25252a").opacity(0.75)
     /// Strong enough that each card reads as its own panel against the window.
-    static let cardStroke = Color(light: "#c3cad6", dark: "#4a4f5c")
+    static let cardStroke = Color(light: "#8f99aa", dark: "#5f6575")
 
     /// Status colour for a CPU figure: calm, elevated, high, critical.
     static func heat(_ cpu: Double) -> Color {
@@ -97,25 +97,35 @@ struct Card<Content: View>: View {
     @ViewBuilder var content: Content
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 0) {
             if let title {
-                HStack(spacing: 6) {
+                // A tinted title band with a rule under it, so each card's heading stands out.
+                HStack(spacing: 7) {
                     if let symbol {
-                        Image(systemName: symbol).font(.caption.weight(.bold)).foregroundStyle(tint)
+                        Image(systemName: symbol).font(.callout.weight(.bold)).foregroundStyle(tint)
                     }
-                    Text(title).font(.subheadline.weight(.semibold))
+                    Text(title).font(.headline)
                     if let besideTitle { besideTitle.padding(.leading, 4) }
                     Spacer()
                     trailing
                 }
+                .padding(.horizontal, 12).padding(.vertical, 8)
+                .background(UnevenRoundedRectangle(topLeadingRadius: 12, topTrailingRadius: 12, style: .continuous).fill(tint.opacity(0.13)))
+                .overlay(alignment: .bottom) { Rectangle().fill(tint.opacity(0.35)).frame(height: 1) }
             }
-            content
+            content.padding(12)
         }
-        .padding(12)
         .frame(maxWidth: .infinity, maxHeight: fill ? .infinity : nil, alignment: .topLeading)
         .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Theme.cardFill))
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Theme.cardStroke, lineWidth: 1.25))
-        .shadow(color: .black.opacity(0.06), radius: 3, y: 1)
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Theme.cardStroke, lineWidth: 1.5))
+        .shadow(color: .black.opacity(0.14), radius: 4, y: 2)
+    }
+}
+
+extension View {
+    /// A heading inside a card ("FOUND ON ITS OWN", "SAVE POWER"): bold and full contrast.
+    func sectionLabel() -> some View {
+        font(.system(size: 11, weight: .heavy)).foregroundStyle(.primary).kerning(0.6)
     }
 }
 

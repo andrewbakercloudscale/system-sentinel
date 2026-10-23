@@ -80,7 +80,7 @@ struct DiagnosticsCard: View {
         Card(title: "Diagnostics", symbol: "stethoscope", tint: Tab.settings.color,
              trailing: AnyView(Text(errors.isEmpty && stale.isEmpty ? "all working" : "\(errors.count) error\(errors.count == 1 ? "" : "s") this week")
                 .font(.caption.weight(.semibold)).foregroundStyle(errors.isEmpty && stale.isEmpty ? Tab.battery.color : Theme.heat(50)))) {
-            Text("BACKGROUND JOBS").font(.caption2.weight(.bold)).foregroundStyle(.secondary)
+            Text("BACKGROUND JOBS").sectionLabel()
             FlowLayout(spacing: 6) {
                 ForEach(TaskHealth.Job.allCases, id: \.self) { job in
                     let bad = stale.contains(job)

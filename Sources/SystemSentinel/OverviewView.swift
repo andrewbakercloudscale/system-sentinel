@@ -816,7 +816,7 @@ struct InsightCard: View {
         }
         var body: some View {
             VStack(alignment: .leading, spacing: 5) {
-                Text(title.uppercased()).font(.system(size: 9, weight: .bold)).foregroundStyle(.secondary).kerning(0.5)
+                Text(title.uppercased()).sectionLabel()
                 content
             }
             .padding(.leading, 36)

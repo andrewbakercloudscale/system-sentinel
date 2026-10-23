@@ -110,7 +110,7 @@ private func msColor(_ v: Double?) -> Color {
 
 private struct Section_: View {
     let title: String
-    var body: some View { Text(title.uppercased()).font(.caption2.weight(.bold)).foregroundStyle(.secondary) }
+    var body: some View { Text(title.uppercased()).sectionLabel() }
 }
 
 private struct Mono: View {

@@ -67,7 +67,7 @@ struct AlarmsSettingsCard: View {
             Text("Each alarm sends a notification once, then waits until things are back under the limit (and at least an hour) before it can go off again. Per-app CPU alarms are set at the top of this page; heat and sleep alarms below.")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             if !model.alarmLog.isEmpty {
-                Text("RECENT").font(.system(size: 9, weight: .bold)).foregroundStyle(.secondary).kerning(0.5)
+                Text("RECENT").sectionLabel()
                 ForEach(Array(model.alarmLog.prefix(5).enumerated()), id: \.offset) { _, a in
                     HStack {
                         Text(a.text).font(.caption)
