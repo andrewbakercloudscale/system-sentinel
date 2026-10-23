@@ -11,7 +11,7 @@ struct BatteryView: View {
     var body: some View {
         VStack(spacing: 10) {
             if let b = model.battery, b.present {
-                BatteryHero(battery: b, eta: model.batteryETA())
+                BatteryHero(battery: b, eta: model.batteryETA(), minutesLeft: model.minutesToEmpty())
                 PowerChart(model: model)
             } else {
                 Card(title: "No battery", symbol: "powerplug.fill", tint: Tab.battery.color) {
@@ -39,6 +39,7 @@ struct BatteryView: View {
 private struct BatteryHero: View {
     let battery: BatteryStatus
     let eta: BatteryETA?
+    let minutesLeft: Int?
 
     var body: some View {
         let b = battery
@@ -61,7 +62,10 @@ private struct BatteryHero: View {
                     if let a = b.adapterWatts, !b.onBattery { chip("\(a) W charger", "powerplug.fill") }
                     if let t = b.temperature { chip(String(format: "%.0f°C", t), "thermometer.medium") }
                 }
-                PowerFlow(battery: b)
+                HStack(spacing: 6) {
+                    PowerFlow(battery: b)
+                    BatteryTimeChip(battery: b, minutesLeft: minutesLeft).fixedSize()
+                }
             }
             Spacer()
             VStack(spacing: 2) {
