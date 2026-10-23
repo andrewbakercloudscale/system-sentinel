@@ -54,6 +54,14 @@ public struct BatteryStatus: Equatable, Sendable {
         return Int(e / w * 60)
     }
 
+    /// On battery with half an hour or less left (or 10% when there is no estimate):
+    /// the menu bar icon becomes a flashing plug.
+    public var needsPlugIn: Bool {
+        guard onBattery else { return false }
+        if let m = minutesLeft, m > 0 { return m <= 30 }
+        return percent <= 10
+    }
+
     /// Capacity now against new, in percent.
     public var health: Double? {
         guard let m = maxCapacity, let d = designCapacity, d > 0 else { return nil }

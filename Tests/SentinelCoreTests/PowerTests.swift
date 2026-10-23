@@ -67,6 +67,14 @@ final class BatteryTests: XCTestCase {
         XCTAssertEqual(b.adapterWatts, 96)
     }
 
+    func testNeedsPlugIn() {
+        XCTAssertTrue(BatteryStatus(onBattery: true, percent: 15, minutesToEmpty: 25).needsPlugIn)
+        XCTAssertFalse(BatteryStatus(onBattery: true, percent: 15, minutesToEmpty: 45).needsPlugIn)
+        XCTAssertFalse(BatteryStatus(onBattery: false, percent: 5, minutesToEmpty: 10).needsPlugIn)
+        XCTAssertTrue(BatteryStatus(onBattery: true, percent: 9).needsPlugIn)
+        XCTAssertFalse(BatteryStatus(onBattery: true, percent: 40).needsPlugIn)
+    }
+
     func testWeakChargerStillDrains() {
         // Recorded on an M4 MacBook Pro on an 8 W USB brick: 7.5 W in, 17.4 W used, battery -9.9 W.
         var s = source

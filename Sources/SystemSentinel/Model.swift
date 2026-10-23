@@ -299,6 +299,7 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
     private func readPower() {
         let now = Date()
         battery = PowerReader.read()
+        PlugInBlink.shared.active = battery?.needsPlugIn ?? false
         if let b = battery {
             powerHistory.record(b, at: now)
             healthLog.record(b, at: now)

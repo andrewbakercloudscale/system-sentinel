@@ -125,9 +125,39 @@ struct HealthChip: View {
         return .processes
     }
 
+    @State private var picking = false
+
     var body: some View {
         if let first = health.reasons.first, let open {
-            Button { open(Self.tab(for: first.symbol)) } label: { chip }.buttonStyle(.plain)
+            // One reason opens its tab; several offer a list, so the second is reachable too.
+            Button {
+                if health.reasons.count == 1 { open(Self.tab(for: first.symbol)) } else { picking = true }
+            } label: { chip }
+            .buttonStyle(.plain)
+            .popover(isPresented: $picking, arrowEdge: .bottom) {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(health.reasons, id: \.text) { r in
+                        Button {
+                            picking = false
+                            open(Self.tab(for: r.symbol))
+                        } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: r.symbol).frame(width: 18)
+                                    .foregroundStyle(r.rag == .red ? Theme.heat(100) : Color(hex: "#d97706"))
+                                Text(r.text.prefix(1).uppercased() + r.text.dropFirst()).font(.callout.weight(.semibold))
+                                Spacer(minLength: 12)
+                                Text("Open \(Self.tab(for: r.symbol).title)").font(.caption).foregroundStyle(.secondary)
+                                Image(systemName: "chevron.right").font(.caption.weight(.bold)).foregroundStyle(.secondary)
+                            }
+                            .padding(.horizontal, 10).padding(.vertical, 7)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(6)
+                .frame(minWidth: 300)
+            }
         } else {
             chip
         }
@@ -148,6 +178,7 @@ struct HealthChip: View {
         .contentShape(Capsule())
         .tip(health.reasons.isEmpty ? "CPU, GPU, memory, disk, heat and battery are all fine"
                                      : health.reasons.map { "\($0.rag == .red ? "Red" : "Amber"): \($0.text)" }.joined(separator: "\n")
-                                       + "\nClick to open \(Self.tab(for: health.reasons[0].symbol).title).")
+                                       + (health.reasons.count == 1 ? "\nClick to open \(Self.tab(for: health.reasons[0].symbol).title)."
+                                                                    : "\nClick to choose which to look at."))
     }
 }

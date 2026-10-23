@@ -10,6 +10,7 @@ struct SystemSentinelApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     @StateObject private var model = Model()
     @ObservedObject private var bar = MenuBarState.shared
+    @ObservedObject private var blink = PlugInBlink.shared
 
     init() {
         // macOS's own tooltips (left in menus and popovers) wait about a second and a half.
@@ -35,6 +36,8 @@ struct SystemSentinelApp: App {
     }
 
     private var menuIcon: NSImage {
+        // About to run out: a red plug, flashing, above every other warning.
+        if blink.active { return Self.plugIcon(lit: blink.lit) }
         let alert = model.level == .alert
         let h = model.health
         // The glyph names the worst risk: chip, memory, disk, heat or battery.
@@ -49,6 +52,27 @@ struct SystemSentinelApp: App {
         case .amber: NSColor(srgbRed: 0.93, green: 0.58, blue: 0.05, alpha: 1)
         case .red: NSColor(srgbRed: 0.86, green: 0.15, blue: 0.15, alpha: 1)
         }
+    }
+
+    /// A red badge with a white plug, or a red outline with a red plug on the off beat, so it
+    /// flashes without the icon's width changing.
+    static func plugIcon(lit: Bool) -> NSImage {
+        let red = color(.red)
+        let glyph = NSImage(systemSymbolName: "powerplug.fill", accessibilityDescription: "Plug in")?
+            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 13, weight: .bold)
+                .applying(NSImage.SymbolConfiguration(paletteColors: [lit ? .white : red])))
+        let img = NSImage(size: NSSize(width: 24, height: 18), flipped: false) { rect in
+            let badge = NSBezierPath(roundedRect: rect.insetBy(dx: 0.75, dy: 0.75), xRadius: 5, yRadius: 5)
+            if lit { red.setFill(); badge.fill() } else { red.setStroke(); badge.lineWidth = 1.5; badge.stroke() }
+            if let g = glyph {
+                g.draw(in: NSRect(x: (rect.width - g.size.width) / 2, y: (rect.height - g.size.height) / 2,
+                                  width: g.size.width, height: g.size.height))
+            }
+            return true
+        }
+        img.isTemplate = false
+        img.accessibilityDescription = "Battery about to run out: plug in"
+        return img
     }
 
     /// A solid coloured badge with a white chip glyph (a warning triangle when something is
@@ -175,7 +199,13 @@ struct MenuView: View {
             .buttonStyle(.plain)
             .tip("About System Sentinel: version, updates and who made it")
             Spacer()
-            HealthChip(health: model.health) { model.goTab = $0.title }
+            HealthChip(health: model.health) { t in
+                model.goTab = t.title
+                // Runaways are listed at the top of Processes: scroll there even if already open.
+                if t == .processes, !model.flagged.isEmpty {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { model.focus = "runaway" }
+                }
+            }
             LoadPill(name: "CPU", load: model.machineLoad, tip: "CPU: share of all \(Int(model.cores)) cores in use right now")
             if let gpu = model.gpu {
                 LoadPill(name: "GPU", load: gpu, tip: "GPU: how busy the graphics chip is right now")
@@ -618,6 +648,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         if let m = Model.current { PopOut.show(m) }
         return true
+    }
+}
+
+/// Flashes the menu bar icon while the battery is about to run out. The timer runs only
+/// then, so the icon is not redrawn twice a second the rest of the time.
+@MainActor
+final class PlugInBlink: ObservableObject {
+    static let shared = PlugInBlink()
+    @Published private(set) var lit = true
+    private var timer: Timer?
+
+    var active = false {
+        didSet {
+            guard active != oldValue else { return }
+            timer?.invalidate(); timer = nil
+            lit = true
+            guard active else { return }
+            timer = Timer.scheduledTimer(withTimeInterval: 0.6, repeats: true) { _ in
+                Task { @MainActor in PlugInBlink.shared.lit.toggle() }
+            }
+        }
     }
 }
 
