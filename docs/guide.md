@@ -392,6 +392,13 @@ path, so a rule for one tab applies to every tab.
 | **Auto-kill when battery under 30%** | Auto-kill only on battery below 30%; alert otherwise. |
 | **Ignore during work hours (9:00–17:00) / overnight (22:00–07:00)** | Nothing during those hours; alert outside them. For a build server that is expected to be busy at work, or a backup at night. |
 
+**Memory rules** are set from the **Rule** menu on each app under Memory by app: quit it by
+itself when it holds over 2, 4, 8 or 16 GB. It must stay over the limit for 5 minutes and not
+be the app in front; it is asked to quit politely (as with Cmd-Q, so a VM host such as Rancher
+Desktop shuts its virtual machine down cleanly), at most once every 30 minutes, and you get a
+notification. For a VM, the limit counts the app and its virtual machine together. They are
+listed under Rules with a Remove button.
+
 ---
 
 ## Settings
@@ -529,6 +536,7 @@ Everything stays in `~/Library/Application Support/CPUSentinel/`:
 | File | Contents |
 |---|---|
 | `policies.json` | Your rules |
+| `memory-rules.json` | Your memory rules |
 | `history.jsonl` | Events (flagged, killed, and so on) |
 | `usage-24h.json` | Hourly CPU time per program for the last 7 days |
 | `usage-6h.json` | CPU time per program per minute for the last 6 hours |
