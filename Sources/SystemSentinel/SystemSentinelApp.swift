@@ -589,7 +589,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        if Model.snapshotDir == nil { IconWatch.start() }
+        if Model.snapshotDir == nil { IconWatch.start(); HotKey.start() }
         guard !atLogin, Model.snapshotDir == nil else { return }
         // The model is created with the menu bar scene; give it a moment.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { if let m = Model.current { PopOut.show(m) } }
@@ -732,7 +732,7 @@ enum IconWatch {
         UserDefaults.standard.set(now.timeIntervalSince1970, forKey: "iconHiddenNotified")
         let content = UNMutableNotificationContent()
         content.title = "System Sentinel's menu bar icon is hidden"
-        content.body = "The menu bar is full, so macOS hid it behind the notch. Hide menu bar icons you do not need (System Settings, Menu Bar), or show the icon without the number (System Sentinel Settings). Open System Sentinel from Spotlight meanwhile."
+        content.body = "The menu bar is full, so macOS hid it behind the notch. Hide menu bar icons you do not need (System Settings, Menu Bar), or show the icon without the number (System Sentinel Settings). Press \(HotKey.label) to open System Sentinel meanwhile."
         content.categoryIdentifier = "info"
         UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "icon-hidden", content: content, trigger: nil))
     }

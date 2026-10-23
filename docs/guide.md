@@ -51,6 +51,10 @@ source Activity Monitor uses. System Sentinel itself uses well under 1% of one c
 | ![normal](images/menubar-normal.png) | Running. Click to open the panel. |
 | ![alert](images/menubar-alert.png) | A process has stayed over your threshold and was flagged. Check Events or the notification. |
 
+**⌃⌥⌘S** (Control-Option-Command-S) opens System Sentinel's window from any app. Use it
+when the icon is out of sight: on a MacBook with a full menu bar, macOS hides icons behind
+the notch without saying so.
+
 **Settings > Menu bar** can add a readout beside the icon: the Mac's CPU load, the power
 draw in watts, or the battery charge (with time left when unplugged).
 
@@ -491,7 +495,8 @@ opens.
 
 The menu bar panel stays pinned under the icon and closes when you click elsewhere. Click
 **Pop out** at the bottom to open the same screens in a normal window. You can drag and
-minimise it, and it stays open while you work. It remembers its position.
+minimise it, and it stays open while you work. It remembers its position. **⌃⌥⌘S** opens it from any
+app.
 
 ---
 
@@ -531,7 +536,7 @@ To reset everything, quit System Sentinel and delete that folder.
 ## Troubleshooting
 
 **The menu bar icon is missing.** The menu bar may be full: quit a few menu bar apps or
-hold Cmd and drag icons around. Check it's running with `pgrep -l CPUSentinel`.
+hold Cmd and drag icons around. Press **⌃⌥⌘S** to open the window meanwhile. Check it's running with `pgrep -l SystemSentinel`.
 
 **Trends (on Overview) is empty or says "0 min recorded".** It fills in while System Sentinel runs. The
 last-hour chart needs a few minutes and the daily insights need 30 minutes.
