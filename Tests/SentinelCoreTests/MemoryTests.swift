@@ -204,3 +204,67 @@ final class RetentionTests: XCTestCase {
         XCTAssertEqual(d.points.count, 2)
     }
 }
+
+final class MemoryRuleTests: XCTestCase {
+    private let rules = ["rancher": MemoryRule(name: "Rancher Desktop", limit: 4 << 30)]
+    private func r(_ gb: UInt64, front: Bool = false) -> [MemoryRuleWatch.Reading] {
+        [.init(key: "rancher", bytes: gb << 30, frontmost: front)]
+    }
+
+    func testFiresOnlyAfterStayingOverForTheWindow() {
+        let w = MemoryRuleWatch(window: 300, cooldown: 1800)
+        let t = Date(timeIntervalSince1970: 1_000_000)
+        XCTAssertEqual(w.update(r(5), rules: rules, at: t), [])
+        XCTAssertEqual(w.update(r(5), rules: rules, at: t + 200), [])
+        XCTAssertEqual(w.update(r(5), rules: rules, at: t + 300), ["rancher"])
+    }
+
+    func testDippingUnderOrBeingInFrontResets() {
+        let w = MemoryRuleWatch(window: 300, cooldown: 1800)
+        let t = Date(timeIntervalSince1970: 1_000_000)
+        _ = w.update(r(5), rules: rules, at: t)
+        _ = w.update(r(3), rules: rules, at: t + 100)
+        XCTAssertEqual(w.update(r(5), rules: rules, at: t + 300), [])
+        _ = w.update(r(5, front: true), rules: rules, at: t + 400)
+        XCTAssertEqual(w.update(r(5), rules: rules, at: t + 650), [])
+        XCTAssertEqual(w.update(r(5), rules: rules, at: t + 950), ["rancher"])
+    }
+
+    func testCooldownStopsAQuitLoop() {
+        let w = MemoryRuleWatch(window: 300, cooldown: 1800)
+        let t = Date(timeIntervalSince1970: 1_000_000)
+        _ = w.update(r(5), rules: rules, at: t)
+        XCTAssertEqual(w.update(r(5), rules: rules, at: t + 300), ["rancher"])
+        _ = w.update(r(5), rules: rules, at: t + 400)
+        XCTAssertEqual(w.update(r(5), rules: rules, at: t + 800), [])
+        XCTAssertEqual(w.update(r(5), rules: rules, at: t + 2200), ["rancher"])
+    }
+
+    func testNoRuleNeverFires() {
+        let w = MemoryRuleWatch(window: 0)
+        XCTAssertEqual(w.update([.init(key: "chrome", bytes: 99 << 30, frontmost: false)], rules: rules, at: Date()), [])
+    }
+
+    func testRulesPersist() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("memrules-\(UUID()).json")
+        defer { try? FileManager.default.removeItem(at: url) }
+        MemoryRuleStore(fileURL: url).set(MemoryRule(name: "Rancher Desktop", limit: 8 << 30), for: "rancher")
+        XCTAssertEqual(MemoryRuleStore(fileURL: url).rules["rancher"]?.limit, 8 << 30)
+        XCTAssertEqual(MemoryRule(name: "x", limit: 8 << 30).label, "auto-quit over 8 GB")
+    }
+
+    func testMovedNamesAppsThatWentOutOfRAM() {
+        func p(_ t: Int, _ vm: UInt64, _ chrome: UInt64?) -> MemoryHistory.Point {
+            var apps = [MemoryHistory.App(key: "vm", name: "VM", bytes: 4 << 30, outOfRAM: vm)]
+            if let chrome { apps.append(.init(key: "chrome", name: "Chrome", bytes: 3 << 30, outOfRAM: chrome)) }
+            return MemoryHistory.Point(t: t, used: 0, compressed: 0, swap: 0, pressure: 1, apps: apps)
+        }
+        let points = [p(0, 1 << 30, 500 << 20), p(60, 2 << 30, 100 << 20), p(120, 3 << 30, nil)]
+        let m = MemoryAnalysis.moved(points, from: 60, to: 120)
+        XCTAssertEqual(m.map(\.key), ["vm", "chrome"])
+        XCTAssertEqual(m[0].delta, 1 << 30)
+        XCTAssertEqual(m[1].delta, -(400 << 20))
+        // Chrome is missing from the later reading: unknown, not reported.
+        XCTAssertEqual(MemoryAnalysis.moved(points, from: 60, to: 180).map(\.key), ["vm"])
+    }
+}

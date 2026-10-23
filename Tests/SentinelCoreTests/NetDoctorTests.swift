@@ -71,6 +71,20 @@ final class NetDoctorTests: XCTestCase {
                            HostsEntry(address: "10.0.0.5", names: ["jira.corp", "git.corp"])])
     }
 
+    func testFailedLookupsAreListedNewestFirst() {
+        var h = DNSHistory()
+        let t = Date(timeIntervalSince1970: 1_800_000_000)
+        h.record(ok: false, ms: 6012, at: t, keep: 86_400)
+        h.record(ok: true, ms: 20, at: t + 60, keep: 86_400)
+        h.record(ok: false, ms: 3, at: t + 120, keep: 86_400)
+        let f = h.failed(since: t - 1)
+        XCTAssertEqual(f.map(\.ms), [3, 6012])
+        let lines = DNSHistory.describe(f)
+        XCTAssertTrue(lines[0].hasSuffix("refused after 3 ms (no network, or the server said no)"), lines[0])
+        XCTAssertTrue(lines[1].hasSuffix("no answer after 6.0 s (timed out)"), lines[1])
+        XCTAssertEqual(DNSHistory.describe(f, limit: 1).last, "and 1 earlier")
+    }
+
     func testDNSHistory() {
         var h = DNSHistory()
         let t0 = Date(timeIntervalSince1970: 2_000_000)

@@ -132,6 +132,20 @@ extension Model {
         }
     }
 
+    func confirmMemoryRule(_ limit: UInt64, for a: MemoryApp) {
+        let t = ruleTarget(a)
+        Confirm.ask("Quit \(t.name) over \(limit >> 30) GB?",
+                    "From now on System Sentinel quits \(t.name) by itself when it holds more than \(limit >> 30) GB (now \(ReportDocument.bytes(ruleBytes(t)))), without asking.",
+                    symbol: "bolt.fill", tint: Theme.heat(100),
+                    points: ["Only after 5 minutes over the limit, and never while it is the app in front.",
+                             "It is asked to quit politely, as with Cmd-Q, so it can save first and shut its virtual machine down cleanly.",
+                             "At most once every 30 minutes, and you get a notification each time."],
+                    undo: "Pick No rule from its Rule menu on the Memory tab, or remove it on Settings, then Rules.",
+                    button: "Set rule", destructive: true) {
+            self.setMemoryRule(limit, for: a)
+        }
+    }
+
     func confirmRemove(_ item: BackgroundItem) {
         var points = ["Stops it now, and it no longer starts at login.",
                       "Its file (\((item.plist as NSString).lastPathComponent)) goes to the Trash."]

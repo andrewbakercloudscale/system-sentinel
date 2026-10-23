@@ -177,7 +177,7 @@ final class NetworkStore: ObservableObject {
             }
             async let internet = CheckParse.ping(sh("/sbin/ping", ["-c", "8", "-i", "0.2", "-t", "5", "1.1.1.1"], timeout: 8))
             let t0 = Date()
-            let resolved = !sh("/usr/bin/dscacheutil", ["-q", "host", "-a", "name", "www.apple.com"], timeout: 6).isEmpty
+            let resolved = !sh("/usr/bin/dscacheutil", ["-q", "host", "-a", "name", DNSHistory.probeName], timeout: 6).isEmpty
             let dnsMs = Date().timeIntervalSince(t0) * 1000
             let (r, icmp) = await (router, internet)
             // Zero trust networks drop pings: time TCP handshakes instead, as tcping does.
@@ -195,7 +195,8 @@ final class NetworkStore: ObservableObject {
                                icmpBlocked: (tcp?.loss ?? 100) < 100, at: Date())
             await MainActor.run {
                 if sweep { self.mtuAt = Date() }
-                self.recordLookup(ok: h.dnsOK, ms: h.dnsMs)
+                // A failure keeps how long it waited: a timeout and an instant refusal mean different things.
+                self.recordLookup(ok: h.dnsOK, ms: dnsMs)
                 self.health = h
                 self.testing = false
                 self.refresh()

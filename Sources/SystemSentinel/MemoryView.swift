@@ -11,11 +11,11 @@ struct MemoryView: View {
         VStack(spacing: 10) {
             if let m = model.memory {
                 MemoryHero(memory: m, swapSince: MemoryAnalysis.summary(model.memoryHistory.points).swapSince)
+                CleanUp(model: model, memory: m)
                 InsightList(model: model, only: model.insights.filter { $0.id == "memory" } + model.memoryInsights,
                             title: "Memory insights")
                 MemoryTimeline(model: model)
                 LargestApps(model: model)
-                CleanUp(model: model, memory: m)
                 Breakdown(memory: m, model: model)
                 MemoryGuide()
             } else {
@@ -89,6 +89,8 @@ private struct MemoryHero: View {
 private struct MemoryTimeline: View {
     @ObservedObject var model: Model
     @AppStorage("memoryRange") private var range = "6 hours"
+    /// The swap bar clicked, to show who moved in or out of RAM then.
+    @State private var picked: Date?
 
     struct Bucket: Identifiable {
         let start: Date
@@ -170,11 +172,32 @@ private struct MemoryTimeline: View {
                 }
 
                 Text("SWAP ACTIVITY").sectionLabel().padding(.top, 4)
-                Chart(buckets) { b in
-                    BarMark(x: .value("Time", b.start, unit: unit), y: .value("MB/s", b.swapOut), width: .ratio(0.8))
-                        .foregroundStyle(by: .value("Direction", "Written to swap"))
-                    BarMark(x: .value("Time", b.start, unit: unit), y: .value("MB/s", -b.swapIn), width: .ratio(0.8))
-                        .foregroundStyle(by: .value("Direction", "Read back from swap"))
+                Chart {
+                    if let picked {
+                        RectangleMark(xStart: .value("Start", picked), xEnd: .value("End", picked.addingTimeInterval(Double(bucket))))
+                            .foregroundStyle(Color.primary.opacity(0.1))
+                    }
+                    ForEach(buckets) { b in
+                        BarMark(x: .value("Time", b.start, unit: unit), y: .value("MB/s", b.swapOut), width: .ratio(0.8))
+                            .foregroundStyle(by: .value("Direction", "Written to swap"))
+                        BarMark(x: .value("Time", b.start, unit: unit), y: .value("MB/s", -b.swapIn), width: .ratio(0.8))
+                            .foregroundStyle(by: .value("Direction", "Read back from swap"))
+                    }
+                }
+                .chartOverlay { proxy in
+                    GeometryReader { g in
+                        Rectangle().fill(.clear).contentShape(Rectangle())
+                            .onTapGesture { loc in
+                                guard let plot = proxy.plotFrame else { return }
+                                let x = loc.x - g[plot].origin.x
+                                guard let d: Date = proxy.value(atX: x) else { return }
+                                let start = Date(timeIntervalSince1970: Double(Int(d.timeIntervalSince1970) / bucket * bucket))
+                                picked = picked == start ? nil : start
+                            }
+                            .onContinuousHover { phase in
+                                if case .active = phase { NSCursor.pointingHand.set() } else { NSCursor.arrow.set() }
+                            }
+                    }
                 }
                 .chartForegroundStyleScale(["Written to swap": Color(hex: "#d97706"), "Read back from swap": Theme.heat(100)])
                 .chartXScale(domain: now.addingTimeInterval(-span)...now)
@@ -187,8 +210,13 @@ private struct MemoryTimeline: View {
                 .chartXAxis(.hidden)
                 .chartLegend(position: .bottom, spacing: 4)
                 .frame(height: 80)
+                if let picked {
+                    SwapMoment(start: picked, size: bucket, bucket: buckets.first { $0.start == picked },
+                               moved: MemoryAnalysis.moved(points, from: Int(picked.timeIntervalSince1970),
+                                                           to: Int(picked.timeIntervalSince1970) + bucket)) { self.picked = nil }
+                }
             }
-            Text("Swap that sits still is harmless. Bars below the line are memory read back from disk: that is the part that makes a Mac feel slow.")
+            Text("Swap that sits still is harmless. Bars below the line are memory read back from disk: that is the part that makes a Mac feel slow. Click a bar to see which apps moved in or out of RAM then.")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
     }
@@ -213,6 +241,57 @@ private struct MemoryTimeline: View {
                           swapOut: p.reduce(0) { $0 + $1.swapOut } / n / mb)
         }
         .sorted { $0.start < $1.start }
+    }
+}
+
+/// Who moved out of RAM, or back in, around a clicked swap bar.
+private struct SwapMoment: View {
+    let start: Date
+    let size: Int
+    let bucket: MemoryTimeline.Bucket?
+    let moved: [MemoryAnalysis.Moved]
+    let close: () -> Void
+
+    var body: some View {
+        let end = start.addingTimeInterval(Double(size))
+        let fmt: Date.FormatStyle = size >= 3600 ? .dateTime.weekday(.abbreviated).hour().minute() : .dateTime.hour().minute()
+        let out = moved.filter { $0.delta > 0 }, back = moved.filter { $0.delta < 0 }
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("\(start.formatted(fmt)) to \(end.formatted(.dateTime.hour().minute()))").font(.callout.weight(.semibold))
+                if let b = bucket {
+                    Text(String(format: "%.1f MB/s written, %.1f MB/s read back", b.swapOut, b.swapIn))
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button(action: close) { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }.buttonStyle(.plain)
+            }
+            if moved.isEmpty {
+                Text("None of the largest apps moved 64 MB or more in or out of RAM then. Smaller apps and macOS itself are not tracked per minute.")
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+            if !out.isEmpty { group("Pushed out of RAM", symbol: "arrow.down.to.line", color: Color(hex: "#d97706"), out) }
+            if !back.isEmpty { group("Back into RAM, or quit", symbol: "arrow.up.to.line", color: Theme.heat(100), back) }
+            if !moved.isEmpty {
+                Text("macOS counts swap for the whole Mac only, so this is each app's memory outside RAM: compressed and swapped together.")
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(10)
+        .background(RoundedRectangle(cornerRadius: 9).fill(Color.primary.opacity(0.04)))
+    }
+
+    private func group(_ title: String, symbol: String, color: Color, _ items: [MemoryAnalysis.Moved]) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Label(title, systemImage: symbol).font(.caption.weight(.semibold)).foregroundStyle(color)
+            ForEach(items, id: \.key) { m in
+                HStack {
+                    Text(m.name).font(.callout).lineLimit(1).truncationMode(.middle)
+                    Spacer()
+                    Text(gb(UInt64(m.delta.magnitude))).font(.callout.weight(.semibold)).monospacedDigit()
+                }
+            }
+        }
     }
 }
 
@@ -260,6 +339,9 @@ private struct LargestApps: View {
                     }
                     if let before, a.bytes > before, a.bytes - before >= 256 << 20 {
                         Pill(text: "+\(gb(a.bytes - before)) in 1 h", symbol: "arrow.up.right", color: Color(hex: "#d97706"))
+                    }
+                    if let rule = model.memoryRules.rules[model.ruleTarget(a).key] {
+                        Pill(text: rule.label, symbol: "bolt.fill", color: Theme.heat(100))
                     }
                     Spacer(minLength: 4)
                     Text(gb(a.bytes)).font(.callout.weight(.bold)).monospacedDigit()
@@ -317,11 +399,35 @@ private struct LargestApps: View {
                 .fixedSize()
                 .tip("Stop all \(a.pids.count) of its processes at once, without saving")
             }
+            if canQuit {
+                ruleMenu(a, target: target)
+            }
             if !canQuit, !canForce {
                 Text("part of macOS").font(.caption).foregroundStyle(.secondary).fixedSize()
                     .tip("Not offered for quitting: the Mac depends on it")
             }
         }
+    }
+
+    private func ruleMenu(_ a: Model.MemoryApp, target: Model.MemoryApp) -> some View {
+        let current = model.memoryRules.rules[target.key]
+        return Menu {
+            Section("Quit \(target.name) by itself when it holds over") {
+                ForEach(MemoryRule.choices, id: \.self) { limit in
+                    Button("\(limit >> 30) GB\(current?.limit == limit ? " (current)" : "")") { model.confirmMemoryRule(limit, for: a) }
+                }
+            }
+            if current != nil {
+                Button("No rule") { model.setMemoryRule(nil, for: a) }
+            }
+        } label: {
+            Label(current == nil ? "Rule" : "Rule set", systemImage: "slider.horizontal.3")
+                .font(.caption.weight(.semibold))
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .tip("Quit \(target.name) automatically when it holds too much memory while you are not using it")
     }
 
     private func pill(_ title: String, symbol: String, fill: Color, action: @escaping () -> Void) -> some View {
@@ -364,11 +470,21 @@ private struct CleanUp: View {
         let m = memory
         let up = MemoryStatus.uptime()
         Card(title: "Free up memory", symbol: "wand.and.stars", tint: Tab.memory.color) {
-            action(symbol: "xmark.app.fill", title: "Quit what you are not using",
-                   text: "The only thing that frees app memory and swap while the Mac runs. Use the Quit buttons above, largest first.",
-                   button: nil)
+            if let top = model.memoryApps.max(by: { $0.outOfRAM < $1.outOfRAM }), top.outOfRAM >= 256 << 20 {
+                let t = model.ruleTarget(top)
+                let canQuit = t.sample.pid != getpid() && Safety.canKillManually(t.sample)
+                action(symbol: "xmark.app.fill", title: "Quit \(t.name)",
+                       text: "Frees about \(gb(model.ruleBytes(t))), including \(gb(top.outOfRAM)) compressed or in swap: the most of any app. Quitting apps is the only way to free swap while the Mac runs. The rest are under Memory by app.",
+                       button: canQuit ? AnyView(button("Quit", symbol: "xmark.circle.fill", color: Theme.heat(100)) {
+                           model.confirmAndPerform(.quit(pids: t.pids, name: t.name))
+                       }) : nil)
+            } else {
+                action(symbol: "xmark.app.fill", title: "Quit what you are not using",
+                       text: "The only thing that frees app memory and swap while the Mac runs. Use the Quit buttons under Memory by app, largest first.",
+                       button: nil)
+            }
             action(symbol: "doc.on.doc.fill", title: "Free cached files (purge)",
-                   text: "Drops \(gb(m.cached)) of cached files from memory. Asks for your password. It does not touch apps or swap, and macOS refills the cache as you work, so it rarely makes the Mac faster.",
+                   text: "Drops \(gb(m.cached)) of cached files from memory. Asks for your password. It does not empty swap (macOS has no command for that), and macOS refills the cache as you work, so it rarely makes the Mac faster.",
                    button: AnyView(button(model.purging ? "Purging…" : "Purge", symbol: "arrow.3.trianglepath", color: Color(hex: "#d97706")) { model.purgeCaches() }
                     .disabled(model.purging)))
             action(symbol: "restart.circle.fill", title: "Restart to clear swap",

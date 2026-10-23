@@ -354,6 +354,26 @@ struct RulesView: View {
                     .padding(.vertical, 2)
                 }
             }
+            if !model.memoryRules.rules.isEmpty {
+                Card(title: "Memory rules", symbol: "memorychip.fill", tint: Tab.memory.color) {
+                    ForEach(model.memoryRules.rules.sorted { $0.key < $1.key }, id: \.key) { key, rule in
+                        HStack(spacing: 10) {
+                            SymbolTile(symbol: "memorychip.fill", color: Tab.memory.color, size: 26)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(rule.name).font(.callout.weight(.medium)).lineLimit(1)
+                                Text("Quit when it holds over \(rule.limit >> 30) GB for 5 minutes in the background").font(.caption).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Pill(text: rule.label, symbol: "bolt.fill", color: Theme.heat(100))
+                            FooterButton(title: "Remove", symbol: "trash", color: Theme.heat(100)) {
+                                model.memoryRules.set(nil, for: key)
+                                model.objectWillChange.send()
+                            }
+                        }
+                        .padding(.vertical, 2)
+                    }
+                }
+            }
             BackgroundItemsCard(model: model)
         }
     }
