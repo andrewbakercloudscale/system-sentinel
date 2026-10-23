@@ -62,7 +62,7 @@ private struct BatteryHero: View {
                     if let a = b.adapterWatts, !b.onBattery { chip("\(a) W charger", "powerplug.fill") }
                     if let t = b.temperature { chip(String(format: "%.0f°C", t), "thermometer.medium") }
                 }
-                HStack(spacing: 6) {
+                FlowLayout(spacing: 6) {
                     PowerFlow(battery: b)
                     BatteryTimeChip(battery: b, minutesLeft: minutesLeft).fixedSize()
                 }
