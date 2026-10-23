@@ -50,6 +50,12 @@ final class NetworkStore: ObservableObject {
     private var looking: Set<String> = []
     private var busy = false
     private var mtuAt: Date?
+    /// Bytes sent and resent per 10 s reading, for the resend rate over the last 5 minutes.
+    private var resends: [(at: Date, sent: UInt64, resent: UInt64)] = []
+    /// `netstat -s -p ip` fragment counters at the previous test.
+    private var lastFragments: (made: UInt64, lost: UInt64)?
+    /// The tunnel's path measured at the last packet-size sweep.
+    private var lastTunnel: PacketHealth.TunnelPath?
 
     init(readOnly: Bool) {
         self.readOnly = readOnly
@@ -97,7 +103,7 @@ final class NetworkStore: ObservableObject {
     /// Every 10 s: per-process totals since each started, from nettop, and rates from them.
     private func readTraffic() {
         Task.detached(priority: .utility) {
-            let t = NetParse.nettop(sh("/usr/bin/nettop", ["-P", "-L", "1", "-n", "-x", "-J", "bytes_in,bytes_out,packets_in,packets_out"], timeout: 8))
+            let t = NetParse.nettop(sh("/usr/bin/nettop", ["-P", "-L", "1", "-n", "-x", "-J", "bytes_in,bytes_out,packets_in,packets_out,re-tx"], timeout: 8))
             await MainActor.run {
                 let now = Date()
                 if let last = self.lastTraffic, now > last.at {
@@ -107,6 +113,8 @@ final class NetworkStore: ObservableObject {
                         return (Double(cur.bytesIn >= p.bytesIn ? cur.bytesIn - p.bytesIn : 0) / dt,
                                 Double(cur.bytesOut >= p.bytesOut ? cur.bytesOut - p.bytesOut : 0) / dt)
                     }
+                    let r = PacketHealth.resent(from: last.by, to: t)
+                    self.resends = self.resends.filter { now.timeIntervalSince($0.at) < 300 } + [(now, r.sent, r.resent)]
                 }
                 self.lastTraffic = (now, t)
                 self.traffic = t
@@ -171,6 +179,19 @@ final class NetworkStore: ObservableObject {
         // The packet-size sweep sends up to 9 pings; every half hour is plenty.
         let sweep = mtuAt.map { Date().timeIntervalSince($0) >= 1800 } ?? true
         let known = (health?.pathMTU, health?.interfaceMTU)
+        let knownTunnel = lastTunnel
+        let vpn = link.vpn
+        let open = tracker.open
+        let tunnelEdges = DNSMap.tunnels(open)
+        // The tunnel app also proxies some apps' connections itself; its server is the one carrying the most.
+        let edgeIP = tunnelEdges.first.flatMap { t in
+            open.filter { $0.process == t.process && t.edges.contains($0.remoteHost) && !$0.remoteHost.contains(":") }
+                .max { $0.rx + $0.tx < $1.rx + $1.tx }?.remoteHost
+        }
+        let sent = resends.reduce(UInt64(0)) { $0 + $1.sent }, again = resends.reduce(UInt64(0)) { $0 + $1.resent }
+        // Under 1 MB sent says little either way.
+        let resent: Double? = sent >= 1_000_000 ? Double(again) / Double(sent) * 100 : nil
+        let prevFragments = lastFragments
         Task.detached(priority: .utility) {
             async let router: (loss: Double, avg: Double?)? = gateway.flatMap { g in
                 g.contains(":") ? nil : CheckParse.ping(sh("/sbin/ping", ["-c", "8", "-i", "0.2", "-t", "5", g], timeout: 8))
@@ -205,11 +226,38 @@ final class NetworkStore: ObservableObject {
                 }
                 mtu = (path, ifMTU)
             }
+            // A tunnel (Zscaler, a VPN) carrying the internet: its packets, once wrapped, must fit the
+            // path to its server. Pings inside the tunnel are dropped, but its server answers pings
+            // sent straight out of the Wi-Fi or Ethernet port.
+            var tunnel = knownTunnel
+            let via = CheckParse.defaultRoute(sh("/sbin/route", ["-n", "get", "1.1.1.1"], timeout: 4)).interface
+            if let via, DNSMap.isTunnelInterface(via), via != iface, let tMTU = CheckParse.mtu(sh("/sbin/ifconfig", [via], timeout: 3)) {
+                let t = tunnelEdges.first
+                let edge = edgeIP
+                if tunnel?.interface != via || tunnel?.mtu != tMTU || tunnel?.edge != edge || sweep {
+                    var path: Int?
+                    if let edge, let iface, let ifMTU = CheckParse.mtu(sh("/sbin/ifconfig", [iface], timeout: 3)) {
+                        path = PathMTU.find(interfaceMTU: ifMTU) { size in
+                            (CheckParse.ping(sh("/sbin/ping", ["-b", iface, "-D", "-c", "1", "-t", "2", "-s", String(size), edge], timeout: 4))?.loss ?? 100) < 100
+                        }
+                    }
+                    tunnel = PacketHealth.TunnelPath(name: t?.vendor ?? vpn ?? via, interface: via, mtu: tMTU, edge: edge, underlayMTU: path)
+                }
+            } else {
+                tunnel = nil
+            }
+            let frag = PacketHealth.fragmentCounters(sh("/usr/sbin/netstat", ["-s", "-p", "ip"], timeout: 4))
+            let packets = PacketHealth(resentPercent: resent,
+                                       fragmentsMade: prevFragments.map { frag.made >= $0.made ? frag.made - $0.made : 0 } ?? 0,
+                                       fragmentsLost: prevFragments.map { frag.lost >= $0.lost ? frag.lost - $0.lost : 0 } ?? 0,
+                                       tunnel: tunnel)
             let h = LinkHealth(routerMs: r?.avg, routerLoss: r?.loss, internetMs: i?.avg, internetLoss: i?.loss,
                                dnsMs: resolved ? dnsMs : nil, dnsOK: resolved, pathMTU: mtu.0, interfaceMTU: mtu.1,
-                               icmpBlocked: (tcp?.loss ?? 100) < 100, at: Date())
+                               icmpBlocked: (tcp?.loss ?? 100) < 100, packets: packets, at: Date())
             await MainActor.run {
                 if sweep { self.mtuAt = Date() }
+                self.lastTunnel = tunnel
+                self.lastFragments = frag
                 // A failure keeps how long it waited: a timeout and an instant refusal mean different things.
                 self.recordLookup(ok: h.dnsOK, ms: dnsMs, servers: servers,
                                   offline: h.dnsOK ? nil : (h.internetLoss ?? 100) >= 100)

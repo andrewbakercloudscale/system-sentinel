@@ -648,6 +648,9 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
         case .goTo(let tab, let card, _):
             goTab = tab
             if let card { DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { self.focus = card } }
+        case .copy(let text, _):
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(text, forType: .string)
         case .optimiseScreen:
             OptimiseWindow.show(self)
         case .openApp(let id, _):

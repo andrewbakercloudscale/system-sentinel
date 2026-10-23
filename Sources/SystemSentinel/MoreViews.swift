@@ -89,6 +89,7 @@ struct FixButtons: View {
         case .leaveHotspot: return "Turns Wi-Fi off and on, so the Mac rejoins its usual network instead of the phone."
         case .optimiseScreen: return "Shows the settings that make WindowServer work less, to apply one by one or all at once. Each can be undone."
         case .goTo(let tab, _, _): return "Opens the \(tab) tab."
+        case .copy(let text, _): return "Copies \(text) to paste into Terminal. It asks for your admin password."
         }
     }
 }

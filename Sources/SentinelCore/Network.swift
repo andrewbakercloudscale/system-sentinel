@@ -100,6 +100,7 @@ public enum NetParse {
                 case "bytes_out": t.bytesOut += x
                 case "packets_in": t.packetsIn += x
                 case "packets_out": t.packetsOut += x
+                case "re-tx": t.resent += x
                 default: break
                 }
             }
@@ -127,9 +128,11 @@ public struct AppTraffic: Equatable, Sendable {
     public var bytesOut: UInt64 = 0
     public var packetsIn: UInt64 = 0
     public var packetsOut: UInt64 = 0
-    public init(pid: Int32, name: String, bytesIn: UInt64 = 0, bytesOut: UInt64 = 0, packetsIn: UInt64 = 0, packetsOut: UInt64 = 0) {
+    /// TCP bytes sent again because the first copy was lost.
+    public var resent: UInt64 = 0
+    public init(pid: Int32, name: String, bytesIn: UInt64 = 0, bytesOut: UInt64 = 0, packetsIn: UInt64 = 0, packetsOut: UInt64 = 0, resent: UInt64 = 0) {
         self.pid = pid; self.name = name; self.bytesIn = bytesIn; self.bytesOut = bytesOut
-        self.packetsIn = packetsIn; self.packetsOut = packetsOut
+        self.packetsIn = packetsIn; self.packetsOut = packetsOut; self.resent = resent
     }
 }
 
@@ -424,6 +427,8 @@ public struct LinkHealth: Equatable, Sendable {
     /// Pings to the internet got no answer but TCP did, so the internet figures are TCP handshakes:
     /// a zero trust network or firewall that drops ICMP.
     public var icmpBlocked = false
+    /// Loss, resends and fragmentation judged together; nil until the first full test.
+    public var packets: PacketHealth?
     public var at: Date
 
     /// Packets bigger than the path allows get split or dropped.
@@ -433,10 +438,67 @@ public struct LinkHealth: Equatable, Sendable {
     }
     public init(routerMs: Double? = nil, routerLoss: Double? = nil, internetMs: Double? = nil, internetLoss: Double? = nil,
                 dnsMs: Double? = nil, dnsOK: Bool = true, pathMTU: Int? = nil, interfaceMTU: Int? = nil,
-                icmpBlocked: Bool = false, at: Date) {
+                icmpBlocked: Bool = false, packets: PacketHealth? = nil, at: Date) {
         self.routerMs = routerMs; self.routerLoss = routerLoss; self.internetMs = internetMs
         self.internetLoss = internetLoss; self.dnsMs = dnsMs; self.dnsOK = dnsOK
-        self.pathMTU = pathMTU; self.interfaceMTU = interfaceMTU; self.icmpBlocked = icmpBlocked; self.at = at
+        self.pathMTU = pathMTU; self.interfaceMTU = interfaceMTU; self.icmpBlocked = icmpBlocked; self.packets = packets; self.at = at
+    }
+}
+
+/// Are packets getting through whole and first time: resends, fragments, and whether full-size
+/// packets fit the path, including through a tunnel such as Zscaler.
+public struct PacketHealth: Equatable, Sendable {
+    /// TCP bytes sent again, as a percent of bytes sent, over the last few minutes (nettop re-tx).
+    public var resentPercent: Double?
+    /// Since the previous test: packets this Mac had to split, and pieces lost before reassembly.
+    public var fragmentsMade: UInt64 = 0
+    public var fragmentsLost: UInt64 = 0
+    /// A tunnel interface carrying internet traffic, and the largest packet that reaches its server
+    /// outside the tunnel. The tunnel's packets plus its wrapping must fit in that.
+    public var tunnel: TunnelPath?
+
+    public struct TunnelPath: Equatable, Sendable {
+        public var name: String
+        public var interface: String
+        public var mtu: Int
+        public var edge: String?
+        public var underlayMTU: Int?
+        public init(name: String, interface: String, mtu: Int, edge: String? = nil, underlayMTU: Int? = nil) {
+            self.name = name; self.interface = interface; self.mtu = mtu; self.edge = edge; self.underlayMTU = underlayMTU
+        }
+        /// What the tunnel adds to each packet: room for the largest common wrapping
+        /// (WireGuard over IPv6 80, IPsec 73, DTLS and GRE less).
+        public static let overhead = 80
+        /// The tunnel MTU that fits the path, never under 1280 (the IPv6 minimum).
+        public var fittingMTU: Int? { underlayMTU.map { max(1280, $0 - Self.overhead) } }
+        public var fits: Bool? { underlayMTU.map { mtu + Self.overhead <= $0 } }
+    }
+
+    public init(resentPercent: Double? = nil, fragmentsMade: UInt64 = 0, fragmentsLost: UInt64 = 0, tunnel: TunnelPath? = nil) {
+        self.resentPercent = resentPercent; self.fragmentsMade = fragmentsMade; self.fragmentsLost = fragmentsLost; self.tunnel = tunnel
+    }
+
+    /// `netstat -s -p ip`: (packets split by this Mac, pieces dropped before reassembly).
+    public static func fragmentCounters(_ s: String) -> (made: UInt64, lost: UInt64) {
+        var made: UInt64 = 0, lost: UInt64 = 0
+        for line in s.split(separator: "\n") {
+            let t = line.trimmingCharacters(in: .whitespaces)
+            guard let n = UInt64(t.prefix { $0.isNumber }) else { continue }
+            if t.hasSuffix("output datagrams fragmented") { made = n }
+            else if t.contains("dropped (dup or out of space)") || t.contains("dropped after timeout") { lost += n }
+        }
+        return (made, lost)
+    }
+
+    /// Bytes sent and bytes resent between two nettop readings, from processes in both.
+    public static func resent(from a: [Int32: AppTraffic], to b: [Int32: AppTraffic]) -> (sent: UInt64, resent: UInt64) {
+        var sent: UInt64 = 0, again: UInt64 = 0
+        for (pid, n) in b {
+            guard let o = a[pid], n.bytesOut >= o.bytesOut, n.resent >= o.resent else { continue }
+            sent += n.bytesOut - o.bytesOut
+            again += n.resent - o.resent
+        }
+        return (sent, again)
     }
 }
 
@@ -589,6 +651,89 @@ public enum NetworkAnalysis {
 
     static func gb(_ b: UInt64) -> String { ReportDocument.bytes(b) }
 
+    /// One line on loss, resends and fragmentation: healthy, or what is wrong and the packet
+    /// size to set, with the command.
+    public static func packetInsight(link: NetworkLink, health h: LinkHealth, packets p: PacketHealth) -> Insight {
+        let iface = link.interface ?? "en0"
+        var bad: [String] = [], fine: [String] = [], why: [String] = [], steps: [String] = []
+        var fixes: [FixAction] = []
+        var unknown = false
+
+        if let loss = h.internetLoss {
+            if loss >= 1 {
+                bad.append("\(Int(loss.rounded()))% packet loss")
+                steps.append("Loss: compare To the router in Quality. Loss there is the Wi-Fi or cable; loss only beyond it is the line, the provider\(link.vpn.map { " or \($0)" } ?? "").")
+            } else { fine.append("no packet loss") }
+            why.append(h.icmpBlocked ? "Loss: \(Int(loss.rounded()))% of TCP handshakes to 1.1.1.1 failed (pings are blocked here)."
+                                     : "Loss: \(Int(loss.rounded()))% of pings to 1.1.1.1 got no answer.")
+        }
+        if let r = p.resentPercent {
+            let pct = String(format: "%.1f", r)
+            if r >= 2 {
+                bad.append("\(pct)% of data resent")
+                steps.append("Resends: usually a weak Wi-Fi signal, a busy link or a struggling \(link.vpn ?? "router"). Move closer to the router or use Ethernet and see if it drops.")
+            } else { fine.append("\(pct)% resent") }
+            why.append("Retries: \(pct)% of the data this Mac sent over TCP in the last few minutes had to be sent again. Under 1% is normal, over 2% slows everything down.")
+        }
+
+        var split = false
+        if let t = p.tunnel, let fits = t.fits, let u = t.underlayMTU, let f = t.fittingMTU {
+            why.append("Fragmentation: \(t.name) sends through \(t.interface) in packets up to \(t.mtu) bytes. Wrapped for the tunnel that is up to \(t.mtu + PacketHealth.TunnelPath.overhead), and the path to its server\(t.edge.map { " (\($0))" } ?? "") carries \(u), measured with do-not-split pings outside the tunnel.")
+            if !fits {
+                split = true
+                bad.append("\(t.name) packets too big for the path")
+                steps.append("Set the \(t.name) tunnel MTU to \(f) (TCP MSS \(f - 40)). It is IT's setting: the adapter or tunnel MTU in the client's profile.")
+                steps.append("To test now, until the tunnel reconnects: sudo ifconfig \(t.interface) mtu \(f)")
+                steps.append("Leave the Wi-Fi MTU at \(h.interfaceMTU ?? 1500): it is the tunnel's packets that must shrink.")
+                fixes.append(.copy(text: "sudo ifconfig \(t.interface) mtu \(f)", label: "Copy tunnel MTU command"))
+            } else {
+                why.append("Correct values here: tunnel MTU \(f) or less (now \(t.mtu)), Wi-Fi or Ethernet MTU \(h.interfaceMTU ?? 1500). Nothing to change.")
+            }
+        } else if let pm = h.pathMTU, let i = h.interfaceMTU {
+            why.append("Fragmentation: the largest packet that crosses whole is \(pm) bytes; this Mac sends up to \(i). Measured with do-not-split pings to 1.1.1.1.")
+            if pm < i {
+                split = true
+                bad.append("packets over \(pm) bytes get split")
+                steps.append("Set this Mac's MTU to \(pm): System Settings, Network, Wi-Fi or Ethernet, Details, Hardware, Configure Manually, MTU Custom \(pm).")
+                steps.append("Or in Terminal: sudo networksetup -setMTU \(iface) \(pm) (undo: sudo networksetup -setMTU \(iface) \(i)).")
+                steps.append("Better for every device: clamp TCP MSS on the router or firewall to \(pm - 40) (IPv6: \(pm - 60)).")
+                fixes.append(.copy(text: "sudo networksetup -setMTU \(iface) \(pm)", label: "Copy MTU command"))
+                fixes.append(.openSettings(.network))
+            } else {
+                why.append("Correct values here: MTU \(i), TCP MSS \(i - 40). Nothing to change.")
+            }
+        } else {
+            unknown = true
+            why.append("Fragmentation: not measured. It needs do-not-split pings to 1.1.1.1 or to the tunnel's server, and neither answered.")
+        }
+        if p.fragmentsLost > 0 {
+            split = true
+            bad.append("\(p.fragmentsLost) packet pieces lost")
+            why.append("Since the last test \(p.fragmentsLost) pieces of split packets never arrived, so whole packets were lost.")
+        }
+        if p.fragmentsMade > 0 {
+            why.append("This Mac split \(p.fragmentsMade) outgoing packets since the last test. A few are normal for large UDP messages; many mean the MTU is set too high somewhere.")
+        }
+        if !split && !unknown { fine.append("no fragmentation") }
+        if unknown { fine.append("fragmentation not measured") }
+
+        var x: Insight
+        if bad.isEmpty {
+            x = Insight(id: "net-packets", tone: unknown ? .info : .good, symbol: "checkmark.seal",
+                        title: unknown ? "Packets: " + fine.joined(separator: ", ") : "Packets healthy: " + fine.joined(separator: ", "),
+                        detail: "Nothing lost, little resent, and full-size packets cross whole.")
+        } else {
+            x = Insight(id: "net-packets", tone: .warning, symbol: "exclamationmark.triangle",
+                        title: "Packets not healthy: " + bad.joined(separator: ", "),
+                        detail: split ? "Big transfers can stall and some sites hang half-loaded. The fix is the packet size below."
+                                      : "Pages load slowly and calls stutter while packets are lost or resent.")
+        }
+        x.why = why.joined(separator: "\n\n")
+        x.steps = steps
+        x.fixes = fixes
+        return x
+    }
+
     public static func insights(link: NetworkLink, health: LinkHealth?, problems: [ConnectionProblem],
                                 apps: [AppRow], closeWait: [String: Int] = [:], at now: Date) -> [Insight] {
         var out: [Insight] = []
@@ -651,7 +796,9 @@ public enum NetworkAnalysis {
                     : "Some company and guest networks drop ICMP at the firewall. A TCP handshake times the same round trip a web page sees."
                 out.append(x)
             }
-            if h.fragments, let p = h.pathMTU, let i = h.interfaceMTU {
+            if let p = h.packets {
+                out.append(packetInsight(link: link, health: h, packets: p))
+            } else if h.fragments, let p = h.pathMTU, let i = h.interfaceMTU {
                 var x = Insight(id: "net-mtu", tone: p < 1400 ? .warning : .info, symbol: "square.split.2x1",
                                 title: "Packets over \(p) bytes get split up (this Mac sends up to \(i))",
                                 detail: (link.vpn.map { "Usually the VPN: \($0) wraps each packet in its own, leaving less room. " } ?? "Usually a VPN or a PPPoE internet line. ")
