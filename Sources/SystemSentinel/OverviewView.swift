@@ -266,7 +266,7 @@ private struct BatteryTimeChip: View {
             HeroChip(text: "Full: \(Self.when(m))", symbol: "battery.100.bolt", fill: Color(hex: "#2563eb"))
                 .tip("When the battery will be full at this charging pace")
         } else if let m = b.minutesIfUnplugged {
-            HeroChip(text: "No power: \(Self.short(m)) unplugged",
+            HeroChip(text: "If unplugged: \(Self.short(m))",
                      symbol: "hourglass", fill: Color(hex: "#2563eb"))
                 .tip("How long the \(b.percent)% charge would last if you unplugged now, at what the Mac is using: \(Insights.duration(Double(m) * 60))")
         }
