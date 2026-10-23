@@ -434,7 +434,7 @@ private struct DNSDoctorCard: View {
                  else { RowButton(title: "Check now", symbol: "arrow.clockwise", color: netTint) { store.runDNSDoctor() } }
              })) {
             if let d = store.dns {
-                Text("EACH SERVER").font(.caption2.weight(.bold)).foregroundStyle(.secondary)
+                Text("EACH SERVER").sectionLabel()
                 ForEach(Array(d.servers.enumerated()), id: \.offset) { i, s in
                     HStack(spacing: 8) {
                         Circle().fill(s.status == nil ? Theme.heat(100) : ((s.ms ?? 0) >= 300 ? Color(hex: "#d97706") : Tab.battery.color)).frame(width: 8, height: 8)
@@ -445,7 +445,7 @@ private struct DNSDoctorCard: View {
                             .foregroundStyle(s.status == nil ? Theme.heat(100) : .primary)
                     }
                 }
-                Text("CHECKS").font(.caption2.weight(.bold)).foregroundStyle(.secondary).padding(.top, 4)
+                Text("CHECKS").sectionLabel().padding(.top, 4)
                 check(!d.captive, d.captive ? "A sign-in page is in the way" : "No sign-in page in the way")
                 check(d.madeUp.isEmpty, d.madeUp.isEmpty ? "Made-up names are refused, as they should be" : "Made-up names get an answer (\(d.madeUp.first ?? "")): lookups are redirected")
                 if let h = d.workHost {

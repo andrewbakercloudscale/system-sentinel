@@ -167,7 +167,7 @@ private struct MemoryTimeline: View {
                     legend(Color(hex: "#d97706").opacity(0.35), "Under pressure")
                 }
 
-                Text("SWAP ACTIVITY").font(.system(size: 9, weight: .bold)).foregroundStyle(.secondary).kerning(0.5).padding(.top, 4)
+                Text("SWAP ACTIVITY").sectionLabel().padding(.top, 4)
                 Chart(buckets) { b in
                     BarMark(x: .value("Time", b.start, unit: unit), y: .value("MB/s", b.swapOut), width: .ratio(0.8))
                         .foregroundStyle(by: .value("Direction", "Written to swap"))

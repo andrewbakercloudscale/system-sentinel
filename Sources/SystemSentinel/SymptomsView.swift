@@ -204,7 +204,7 @@ struct SymptomsCard: View {
                 Label("Nothing wrong found on its own right now. If something feels wrong, pick it below.", systemImage: "checkmark.circle.fill")
                     .font(.callout).foregroundStyle(Tab.battery.color).fixedSize(horizontal: false, vertical: true)
             } else {
-                Text("FOUND ON ITS OWN").font(.caption.weight(.bold)).foregroundStyle(.secondary)
+                Text("FOUND ON ITS OWN").sectionLabel()
                 ForEach(found, id: \.symptom) { f in
                     Button { toggle(f.symptom) } label: {
                         HStack(spacing: 10) {
@@ -244,7 +244,7 @@ struct SymptomsCard: View {
                         .tip("Flag everything you have ignored again")
                 }
             }
-            Text("OR SAY WHAT FEELS WRONG").font(.caption.weight(.bold)).foregroundStyle(.secondary).padding(.top, 4)
+            Text("OR SAY WHAT FEELS WRONG").sectionLabel().padding(.top, 4)
             FlowLayout(spacing: 6) {
                 ForEach(Symptom.allCases) { s in chip(s, flagged[s]) }
             }

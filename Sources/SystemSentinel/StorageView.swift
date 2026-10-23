@@ -331,7 +331,7 @@ private struct StorageTimeline: View {
     @ViewBuilder
     private func jumpList(_ jumps: [StorageAnalysis.Jump]) -> some View {
         if !jumps.isEmpty {
-            Text("BIGGEST CHANGES").font(.system(size: 9, weight: .bold)).foregroundStyle(.secondary).kerning(0.5)
+            Text("BIGGEST CHANGES").sectionLabel()
             ForEach(jumps.prefix(5)) { j in
                 HStack {
                     Image(systemName: j.bytes > 0 ? "arrow.up.circle.fill" : "arrow.down.circle.fill")
@@ -549,7 +549,7 @@ private struct WhereIsTheSpace: View {
             if let t = store.tree {
                 let culprits = t.culprits()
                 if !culprits.isEmpty {
-                    Text("BIGGEST FOLDERS").font(.system(size: 9, weight: .bold)).foregroundStyle(.secondary).kerning(0.5)
+                    Text("BIGGEST FOLDERS").sectionLabel()
                     let top = Double(culprits.first?.bytes ?? 1)
                     ForEach(culprits, id: \.path) { c in
                         folderRow(c.path, c.bytes, share: Double(c.bytes) / top, full: true)
@@ -557,7 +557,7 @@ private struct WhereIsTheSpace: View {
                 }
                 Divider()
                 HStack(spacing: 4) {
-                    Text("BROWSE").font(.system(size: 9, weight: .bold)).foregroundStyle(.secondary).kerning(0.5)
+                    Text("BROWSE").sectionLabel()
                     Button("Home") { path = "" }.buttonStyle(.link).font(.caption)
                     ForEach(Array(crumbs.enumerated()), id: \.offset) { i, c in
                         Text("›").font(.caption).foregroundStyle(.secondary)
