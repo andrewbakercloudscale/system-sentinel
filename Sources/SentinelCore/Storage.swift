@@ -445,7 +445,7 @@ public enum Clutter {
     }
 
     /// A folder of photos: how many, how big, and the newest.
-    public struct PhotoFolder: Equatable, Sendable, Identifiable {
+    public struct PhotoFolder: Equatable, Sendable, Identifiable, Codable {
         public let path: String
         public let count: Int
         public let bytes: UInt64
@@ -543,7 +543,7 @@ public enum StorageAnalysis {
         .sorted { $0.delta.magnitude > $1.delta.magnitude }
     }
 
-    public struct Found: Sendable {
+    public struct Found: Sendable, Codable {
         public var places: [String: UInt64] = [:]
         public var downloads: [FoundItem] = []
         public var installers: [FoundItem] = []

@@ -325,7 +325,7 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
             }
         }
         // `top` takes about a second; run it off the main thread every 30 s.
-        guard !energyRunning, lastEnergy.map({ now.timeIntervalSince($0) >= 15 }) ?? true else { return }
+        guard !energyRunning, lastEnergy.map({ now.timeIntervalSince($0) >= 30 }) ?? true else { return }
         energyRunning = true
         lastEnergy = now
         let pids = sentinel.latest.map(\.pid)
