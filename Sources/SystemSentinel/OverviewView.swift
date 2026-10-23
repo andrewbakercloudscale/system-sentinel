@@ -260,7 +260,7 @@ private struct BatteryTimeChip: View {
         if b.onBattery || b.losingOnPower {
             if let m = minutesLeft {
                 HeroChip(text: "No power: \(Insights.duration(Double(m) * 60)), \(BatteryETABanner.clock(m))", symbol: "hourglass",
-                         fill: Color(hex: m <= 20 ? "#dc2626" : "#d97706"))
+                         fill: Self.fill(minutes: m))
                     .tip("When the battery runs out at this pace. You get a notification at 20 minutes left and again at 5.")
             }
         } else if let m = b.minutesUntilFull {
@@ -270,6 +270,13 @@ private struct BatteryTimeChip: View {
             HeroChip(text: "No power: \(Insights.duration(Double(m) * 60)) unplugged", symbol: "hourglass", fill: Color(hex: "#2563eb"))
                 .tip("How long the \(b.percent)% charge would last if you unplugged now, at what the Mac is using")
         }
+    }
+
+    /// Red under 30 minutes, amber under 90, green over 4 hours; in between it is plain.
+    static func fill(minutes m: Int) -> Color? {
+        if m < 30 { return Color(hex: "#dc2626") }
+        if m < 90 { return Color(hex: "#d97706") }
+        return m > 240 ? Color(hex: "#16a34a") : nil
     }
 }
 
