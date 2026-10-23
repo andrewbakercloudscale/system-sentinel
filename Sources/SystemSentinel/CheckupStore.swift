@@ -80,18 +80,41 @@ final class CheckupStore: ObservableObject {
             async let network = CheckupStore.networkChecks()
             async let system = CheckupStore.systemChecks()
             async let probes = CheckupStore.readProbes()
-            let pending: [String]? = needUpdates ? CheckParse.pendingUpdates(sh("/usr/sbin/softwareupdate", ["-l"], timeout: 180)) : known
             var all = await security + network + system
-            all.append(CheckupStore.updatesCheck(pending))
-            let sorted = all.sorted { ($0.status, $1.area.rawValue) > ($1.status, $0.area.rawValue) }
+            all.append(CheckupStore.updatesCheck(known, checking: needUpdates))
+            let sorted = CheckupStore.sorted(all)
             let read = await probes
             await MainActor.run {
                 self.checks = sorted
                 self.probes = read
-                if needUpdates { self.updates = pending; self.updatesAt = Date() }
                 self.ranAt = Date()
                 self.running = false
                 self.ran(.checkup)
+                if needUpdates { self.checkUpdates() }
+            }
+        }
+    }
+
+    nonisolated static func sorted(_ all: [Check]) -> [Check] {
+        all.sorted { ($0.status, $1.area.rawValue) > ($1.status, $0.area.rawValue) }
+    }
+
+    private var updatesRunning = false
+
+    /// `softwareupdate -l` can take minutes, or hang when Software Update is busy, so it runs
+    /// on its own and fills in its row when it answers instead of holding up the checkup.
+    private func checkUpdates() {
+        guard !updatesRunning else { return }
+        updatesRunning = true
+        Task.detached(priority: .utility) {
+            let pending = CheckParse.pendingUpdates(answer: sh("/usr/sbin/softwareupdate", ["-l"], timeout: 120))
+            await MainActor.run {
+                self.updatesRunning = false
+                if let pending { self.updates = pending; self.updatesAt = Date() }
+                let row = CheckupStore.updatesCheck(self.updates, checking: false)
+                var list = self.checks.filter { $0.id != row.id }
+                list.append(row)
+                self.checks = CheckupStore.sorted(list)
             }
         }
     }
@@ -457,9 +480,14 @@ final class CheckupStore: ObservableObject {
         return out
     }
 
-    nonisolated static func updatesCheck(_ pending: [String]?) -> Check {
+    nonisolated static func updatesCheck(_ pending: [String]?, checking: Bool) -> Check {
         let os = ProcessInfo.processInfo.operatingSystemVersionString
-        guard let pending else { return Check(id: "macos-updates", area: .security, title: "macOS \(os)", status: .info, detail: "Checking for updates…") }
+        guard let pending else {
+            return Check(id: "macos-updates", area: .security, title: "macOS \(os)", status: .info,
+                         detail: checking ? "Checking for updates… Software Update can take a few minutes."
+                                          : "Software Update did not answer, so updates could not be checked. Open Software Update to look.",
+                         fixes: checking ? [] : [.settings(label: "Open Software Update", url: "x-apple.systempreferences:com.apple.Software-Update-Settings.extension")])
+        }
         if pending.isEmpty {
             return Check(id: "macos-updates", area: .security, title: "macOS is up to date", status: .ok, detail: "macOS \(os).")
         }

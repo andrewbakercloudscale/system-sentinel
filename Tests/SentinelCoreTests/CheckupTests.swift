@@ -26,6 +26,11 @@ final class CheckupTests: XCTestCase {
         """
         XCTAssertEqual(CheckParse.pendingUpdates(s), ["macOS Tahoe 26.6", "Safari"])
         XCTAssertEqual(CheckParse.pendingUpdates("No new software available."), [])
+        XCTAssertEqual(CheckParse.pendingUpdates(answer: "No new software available."), [])
+        XCTAssertEqual(CheckParse.pendingUpdates(answer: s), ["macOS Tahoe 26.6", "Safari"])
+        // Stopped or offline: no answer, never "up to date".
+        XCTAssertNil(CheckParse.pendingUpdates(answer: "Software Update Tool\n\nFinding available software\n"))
+        XCTAssertNil(CheckParse.pendingUpdates(answer: ""))
     }
 
     let netstat = """
