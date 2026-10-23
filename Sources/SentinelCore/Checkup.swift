@@ -118,6 +118,13 @@ public enum CheckParse {
     }
 
     /// `softwareupdate -l`: the titles of what is waiting.
+    /// The pending updates, or nil when `softwareupdate -l` gave no answer (stopped or offline),
+    /// so a timeout is never read as "up to date".
+    public static func pendingUpdates(answer s: String) -> [String]? {
+        let list = pendingUpdates(s)
+        return list.isEmpty && !s.contains("No new software available") ? nil : list
+    }
+
     public static func pendingUpdates(_ s: String) -> [String] {
         s.split(separator: "\n").compactMap { line in
             let l = line.trimmingCharacters(in: .whitespaces)

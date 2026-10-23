@@ -71,18 +71,19 @@ struct CheckupView: View {
                     .font(.callout).foregroundStyle(.white.opacity(0.9))
             }
             Spacer()
-            Button { capture(); store.run() } label: {
+            // Never greyed out while busy: a faded button on the gradient reads as broken.
+            Button { if !store.running { capture(); store.run() } } label: {
                 Group {
-                    if store.running { HStack(spacing: 6) { ProgressView().controlSize(.small); Text("Checking…") } }
+                    if store.running { HStack(spacing: 8) { ProgressView().controlSize(.small).tint(colors[0]); Text("Checking…") } }
                     else { Label("Check again", systemImage: "arrow.clockwise") }
                 }
-                .font(.callout.weight(.semibold)).foregroundStyle(colors[0])
-                .padding(.horizontal, 12).padding(.vertical, 6)
+                .font(.body.weight(.bold)).foregroundStyle(colors[0])
+                .padding(.horizontal, 16).padding(.vertical, 9)
                 .background(Capsule().fill(.white))
+                .shadow(color: .black.opacity(0.25), radius: 4, y: 2)
             }
             .buttonStyle(.plain)
-            .tip("Run every check again now. The page holds still while you read it and updates when you open it or press this")
-            .disabled(store.running)
+            .tip(store.running ? "Running every check now. Takes about a minute" : "Run every check again now. The page holds still while you read it and updates when you open it or press this")
         }
         .padding(16)
         .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing)))
