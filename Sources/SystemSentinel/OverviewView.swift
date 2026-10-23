@@ -130,7 +130,7 @@ private struct Hero: View {
             // Always shown on a Mac with a battery: power in and out, and how long it lasts.
             if let b = model.battery, b.present {
                 HStack(spacing: 6) {
-                    Text(b.losingOnPower ? "Losing charge on power" : b.onBattery ? "On battery" : "Power").font(.caption.weight(.semibold)).foregroundStyle(.white)
+                    Text(b.onBattery ? "On battery" : "Power").font(.caption.weight(.semibold)).foregroundStyle(.white)
                         .lineLimit(2)
                     PowerFlow(battery: b)
                     // Numbers never cut short: the label wraps instead.
@@ -259,17 +259,22 @@ private struct BatteryTimeChip: View {
         let b = battery
         if b.onBattery || b.losingOnPower {
             if let m = minutesLeft {
-                HeroChip(text: "No power: \(Insights.duration(Double(m) * 60)), \(BatteryETABanner.clock(m))", symbol: "hourglass",
-                         fill: Self.fill(minutes: m))
+                HeroChip(text: "No power: \(Self.when(m))", symbol: "hourglass", fill: Self.fill(minutes: m))
                     .tip("When the battery runs out at this pace. You get a notification at 20 minutes left and again at 5.")
             }
         } else if let m = b.minutesUntilFull {
-            HeroChip(text: "Full: \(Insights.duration(Double(m) * 60)), \(BatteryETABanner.clock(m))", symbol: "battery.100.bolt", fill: Color(hex: "#2563eb"))
+            HeroChip(text: "Full: \(Self.when(m))", symbol: "battery.100.bolt", fill: Color(hex: "#2563eb"))
                 .tip("When the battery will be full at this charging pace")
         } else if let m = b.minutesIfUnplugged {
-            HeroChip(text: "No power: \(Insights.duration(Double(m) * 60)) unplugged", symbol: "hourglass", fill: Color(hex: "#2563eb"))
+            HeroChip(text: m > 24 * 60 ? "No power: > 24 hrs unplugged" : "No power: \(Insights.duration(Double(m) * 60)) unplugged",
+                     symbol: "hourglass", fill: Color(hex: "#2563eb"))
                 .tip("How long the \(b.percent)% charge would last if you unplugged now, at what the Mac is using")
         }
+    }
+
+    /// "2h 28m, 13:40"; past a day the exact figure means little, so just "> 24 hrs".
+    static func when(_ m: Int) -> String {
+        m > 24 * 60 ? "> 24 hrs" : "\(Insights.duration(Double(m) * 60)), \(BatteryETABanner.clock(m))"
     }
 
     /// Red under 30 minutes, amber under 90, green over 4 hours; in between it is plain.
