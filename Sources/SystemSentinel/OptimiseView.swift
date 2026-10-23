@@ -212,6 +212,7 @@ enum OptimiseWindow {
             w.setContentSize(NSSize(width: 720, height: 760))
             w.setFrameAutosaveName("OptimiseWindow")
             if !w.setFrameUsingName("OptimiseWindow") { w.center() }
+            w.dropContentOnClose { window = nil }
             window = w
         }
         NSApp.activate(ignoringOtherApps: true)

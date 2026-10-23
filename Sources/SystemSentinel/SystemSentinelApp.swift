@@ -734,6 +734,22 @@ enum IconWatch {
     }
 }
 
+extension NSWindow {
+    /// A closed window keeps its SwiftUI view, which goes on redrawing every few seconds out of
+    /// sight. Drops it on close; `forget` clears the caller's reference so the next show builds
+    /// a fresh one.
+    func dropContentOnClose(_ forget: @escaping @MainActor () -> Void) {
+        var token: NSObjectProtocol?
+        token = NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: self, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                if let token { NotificationCenter.default.removeObserver(token) }
+                self?.contentViewController = nil
+                forget()
+            }
+        }
+    }
+}
+
 /// The same screens in an ordinary window, which can be dragged anywhere and stays open;
 /// a menu bar panel is pinned under its icon and closes when you click away.
 @MainActor
@@ -751,6 +767,7 @@ enum PopOut {
             w.isReleasedWhenClosed = false
             w.setFrameAutosaveName("SystemSentinelWindow")
             if !w.setFrameUsingName("SystemSentinelWindow") { w.center() }
+            w.dropContentOnClose { window = nil }
             window = w
         }
         NSApp.activate()

@@ -21,6 +21,7 @@ final class StorageStore: ObservableObject {
 
     let history: StorageHistory
     private let treeURL: URL
+    private let scanURL: URL
     private var timer: Timer?
     private var treeCancelled = false
     var toast: (Model.Toast) -> Void = { _ in }
@@ -34,6 +35,13 @@ final class StorageStore: ObservableObject {
         history = StorageHistory(fileURL: supportDir.appendingPathComponent("storage-90d.json"), readOnly: readOnly)
         treeURL = supportDir.appendingPathComponent("storage-tree.json")
         if let d = try? Data(contentsOf: treeURL), let t = try? JSONDecoder().decode(FolderTree.self, from: d) { tree = t }
+        // The last scan, so a relaunch does not walk the disk again within 6 hours.
+        scanURL = supportDir.appendingPathComponent("storage-scan.json")
+        if !readOnly, let d = try? Data(contentsOf: scanURL), let s = try? JSONDecoder().decode(SavedScan.self, from: d) {
+            found = s.found
+            largeFiles = s.large
+            foundAt = s.at
+        }
         readDisk()
         // Snapshots run from a throwaway, ad-hoc signed copy that macOS sees as a new app every
         // build, so scanning Downloads and Documents there asks for permission every time.
@@ -41,7 +49,16 @@ final class StorageStore: ObservableObject {
         timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.periodic() }
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 20) { [weak self] in SelfGuard.when("storage scan") { self?.scan() } }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 20) { [weak self] in
+            guard self?.foundAt.map({ Date().timeIntervalSince($0) >= 6 * 3600 }) ?? true else { return }
+            SelfGuard.when("storage scan") { self?.scan() }
+        }
+    }
+
+    private struct SavedScan: Codable {
+        var found: StorageAnalysis.Found
+        var large: [FoundItem]
+        var at: Date
     }
 
     private func periodic() {
@@ -83,6 +100,9 @@ final class StorageStore: ObservableObject {
                 self.fullAccess = result.fullAccess
                 self.foundAt = Date()
                 self.scanning = false
+                if let d = try? JSONEncoder().encode(SavedScan(found: result.found, large: result.large, at: Date())) {
+                    Diagnostics.write(d, to: self.scanURL, what: "storage scan")
+                }
                 self.history.record(scan: result.found.places, at: Date())
                 self.refreshInsights()
                 self.ran(.storageScan)

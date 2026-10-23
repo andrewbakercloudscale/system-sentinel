@@ -460,6 +460,7 @@ enum DNSMapWindow {
             w.setContentSize(NSSize(width: 920, height: 760))
             w.setFrameAutosaveName("DNSMapWindow")
             if !w.setFrameUsingName("DNSMapWindow") { w.center() }
+            w.dropContentOnClose { window = nil }
             window = w
         }
         NSApp.activate(ignoringOtherApps: true)

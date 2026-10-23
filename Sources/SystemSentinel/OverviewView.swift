@@ -608,6 +608,7 @@ enum ChartZoom {
             w.setContentSize(kind == .now ? NSSize(width: 760, height: 440) : NSSize(width: 960, height: 600))
             w.setFrameAutosaveName("SystemSentinelZoom-\(kind)")
             if !w.setFrameUsingName("SystemSentinelZoom-\(kind)") { w.center() }
+            w.dropContentOnClose { windows[kind] = nil }
             windows[kind] = w
         }
         NSApp.activate(ignoringOtherApps: true)

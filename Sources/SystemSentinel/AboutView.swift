@@ -276,6 +276,7 @@ enum AboutWindow {
             w.setContentSize(NSSize(width: 560, height: 760))
             w.setFrameAutosaveName("AboutWindow")
             if !w.setFrameUsingName("AboutWindow") { w.center() }
+            w.dropContentOnClose { window = nil }
             window = w
         }
         NSApp.activate(ignoringOtherApps: true)
