@@ -521,4 +521,16 @@ final class BatteryETATests: XCTestCase {
         XCTAssertEqual(mac.minutesUntilFull, 95)
         XCTAssertNil(BatteryStatus(charging: false, percent: 50).minutesUntilFull)
     }
+
+    func testDrainingOnPowerRecorded() {
+        let h = PowerHistory(fileURL: nil)
+        let t = Date(timeIntervalSince1970: 6000)
+        h.record(BatteryStatus(onBattery: false, percent: 70, watts: 30, powerIn: 20, batteryWatts: -10), at: t)
+        h.record(BatteryStatus(onBattery: false, percent: 80, watts: 10, powerIn: 20, batteryWatts: 10), at: t.addingTimeInterval(60))
+        h.record(BatteryStatus(onBattery: true, percent: 79, watts: 10, batteryWatts: -10), at: t.addingTimeInterval(120))
+        XCTAssertEqual(h.points.map(\.draining), [true, nil, nil], "only plugged in and losing charge counts")
+        // Older files have no such field and still load.
+        let old = try! JSONDecoder().decode([PowerHistory.Point].self, from: Data(#"[{"t":0,"watts":5,"onBattery":false,"percent":50,"n":1}]"#.utf8))
+        XCTAssertNil(old[0].draining)
+    }
 }

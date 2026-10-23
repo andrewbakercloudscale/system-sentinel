@@ -118,7 +118,10 @@ struct PowerChart: View {
         let start: Date
         let watts: Double
         let onBattery: Bool
+        /// Plugged in, but the charger cannot keep up so the battery covers the rest.
+        var draining = false
         var id: Date { start }
+        var source: String { onBattery ? "On battery" : draining ? "Plugged in, using battery" : "Plugged in" }
     }
 
     static let ranges: [(String, TimeInterval, Int)] = [("1 hour", 3600, 60), ("6 hours", 6 * 3600, 600),
@@ -148,10 +151,11 @@ struct PowerChart: View {
                 Chart(bars) { b in
                     BarMark(x: .value("Time", b.start, unit: bucket >= 3600 ? .hour : .minute),
                             y: .value("Watts", b.watts), width: .ratio(0.85))
-                        .foregroundStyle(by: .value("Source", b.onBattery ? "On battery" : "Plugged in"))
+                        .foregroundStyle(by: .value("Source", b.source))
                         .cornerRadius(2)
                 }
-                .chartForegroundStyleScale(["On battery": Color(hex: "#d97706"), "Plugged in": Tab.battery.color])
+                .chartForegroundStyleScale(["On battery": Color(hex: "#d97706"), "Plugged in": Tab.battery.color,
+                                            "Plugged in, using battery": Color(hex: "#dc2626")])
                 .chartXScale(domain: now.addingTimeInterval(-span)...now)
                 .chartYAxis {
                     AxisMarks(position: .leading, values: .automatic(desiredCount: 4)) { v in
@@ -179,7 +183,8 @@ struct PowerChart: View {
         for (start, p) in groups {
             let watts = p.reduce(0.0) { $0 + $1.watts } / Double(p.count)
             let battery = p.filter(\.onBattery).count * 2 > p.count
-            out.append(Bar(start: Date(timeIntervalSince1970: Double(start)), watts: watts, onBattery: battery))
+            let draining = !battery && p.filter { $0.draining == true }.count * 2 > p.count
+            out.append(Bar(start: Date(timeIntervalSince1970: Double(start)), watts: watts, onBattery: battery, draining: draining))
         }
         return out.sorted { $0.start < $1.start }
     }
