@@ -220,6 +220,12 @@ struct SymptomsCard: View {
                                 .padding(.horizontal, 10).padding(.vertical, 4)
                                 .background(Capsule().fill(color(f.check.status)))
                         }
+                        // Boxed like the insight cards under it, so the list reads as one set.
+                        .padding(10)
+                        .background(RoundedRectangle(cornerRadius: 9).fill(color(f.check.status).opacity(0.07)))
+                        .overlay(alignment: .leading) {
+                            UnevenRoundedRectangle(topLeadingRadius: 9, bottomLeadingRadius: 9).fill(color(f.check.status)).frame(width: 3)
+                        }
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
