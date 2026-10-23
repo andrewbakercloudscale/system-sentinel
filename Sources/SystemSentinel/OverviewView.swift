@@ -129,11 +129,11 @@ private struct Hero: View {
             }
             // Always shown on a Mac with a battery: power in and out, and how long it lasts.
             if let b = model.battery, b.present {
-                HStack(spacing: 6) {
+                // Chips wrap to a second line rather than push the window wider.
+                FlowLayout(spacing: 6) {
                     Text(b.onBattery ? "On battery" : "Power").font(.caption.weight(.semibold)).foregroundStyle(.white)
-                        .lineLimit(2)
+                        .padding(.vertical, 3)
                     PowerFlow(battery: b)
-                    // Numbers never cut short: the label wraps instead.
                     BatteryTimeChip(battery: b, minutesLeft: model.minutesToEmpty()).fixedSize()
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -221,7 +221,8 @@ struct PowerFlow: View {
 
     var body: some View {
         let b = battery
-        HStack(spacing: 6) {
+        // No stack of its own: the caller lays the chips out, so they can wrap.
+        Group {
             if let i = b.powerIn {
                 chip(String(format: "Charging: %.1f W", i), "powerplug.fill", Color(hex: "#16a34a"))
                     .tip(b.adapterWatts.map { "A \($0) W charger. What reaches the Mac after losses in the charger and cable." } ?? "What reaches the Mac from the charger")
@@ -671,15 +672,17 @@ struct FlowLayout: Layout {
     var spacing: CGFloat = 8
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        let width = proposal.width ?? 400
-        var x: CGFloat = 0, y: CGFloat = 0, line: CGFloat = 0
+        // Asked for an ideal size (no width, or infinite), lay out on one line.
+        let width = proposal.width.flatMap { $0.isFinite ? $0 : nil } ?? .greatestFiniteMagnitude
+        var x: CGFloat = 0, y: CGFloat = 0, line: CGFloat = 0, widest: CGFloat = 0
         for v in subviews {
             let s = v.sizeThatFits(.unspecified)
             if x + s.width > width, x > 0 { x = 0; y += line + 4; line = 0 }
             x += s.width + spacing
+            widest = max(widest, x - spacing)
             line = max(line, s.height)
         }
-        return CGSize(width: width, height: y + line)
+        return CGSize(width: width == .greatestFiniteMagnitude ? widest : width, height: y + line)
     }
 
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
