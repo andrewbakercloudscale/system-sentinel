@@ -46,13 +46,36 @@ struct ProcessesView: View {
         // Ranked across every process, not just the 30 busiest right now: the heaviest over
         // 6 hours may be idle at this moment.
         let all = frozen?.rows ?? (model.top.isEmpty ? [] : model.sentinel.latest)
-        let rows = Array(sorted(all.filter { search.isEmpty || $0.displayName.localizedCaseInsensitiveContains(search) }, by: sort).prefix(30))
+        // Flagged runaways sit above the list whatever the sort or filter, so the header's
+        // "runaway process" chip lands on them.
+        let runaways = all.filter { model.flagged.contains($0.pid) }.sorted { $0.cpu > $1.cpu }
+        let rows = Array(sorted(all.filter { !model.flagged.contains($0.pid) && (search.isEmpty || $0.displayName.localizedCaseInsensitiveContains(search)) }, by: sort).prefix(30))
         let window = sort.window ?? 900
         // A Section so the menu's scroll view can pin this bar: Filter, Pause, Sort and the
         // column headers stay in view however far the list is scrolled.
         Section {
+            let cols = ProcessColumns(trend: colTrend, now: colNow, avg: colAvg, mem: colMem, gpu: colGPU)
+            if !runaways.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                        Text(runaways.count == 1 ? "RUNAWAY PROCESS" : "\(runaways.count) RUNAWAY PROCESSES").sectionLabel()
+                    }
+                    .foregroundStyle(Theme.heat(100))
+                    Text("Using too much CPU for too long. Slow it down, quit it, or tell System Sentinel it is allowed.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    VStack(spacing: 2) {
+                        ForEach(runaways, id: \.pid) { s in
+                            ProcessRow(model: model, sample: s, zebra: false, window: window, cols: cols)
+                        }
+                    }
+                }
+                .padding(10)
+                .background(RoundedRectangle(cornerRadius: 9).fill(Theme.heat(100).opacity(0.07)))
+                .overlay(RoundedRectangle(cornerRadius: 9).stroke(Theme.heat(100).opacity(0.45), lineWidth: 1.5))
+                .id("runaway")
+            }
             VStack(spacing: 2) {
-                let cols = ProcessColumns(trend: colTrend, now: colNow, avg: colAvg, mem: colMem, gpu: colGPU)
                 ForEach(Array(rows.enumerated()), id: \.element.pid) { i, s in
                     ProcessRow(model: model, sample: s, zebra: i.isMultiple(of: 2), window: window, cols: cols)
                 }
