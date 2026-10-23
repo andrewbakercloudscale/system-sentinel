@@ -259,17 +259,25 @@ private struct BatteryTimeChip: View {
         let b = battery
         if b.onBattery || b.losingOnPower {
             if let m = minutesLeft {
-                HeroChip(text: "No power: \(Self.when(m))", symbol: "hourglass", fill: Self.fill(minutes: m))
-                    .tip("When the battery runs out at this pace. You get a notification at 20 minutes left and again at 5.")
+                HeroChip(text: "No power: \(Self.short(m))", symbol: "hourglass", fill: Self.fill(minutes: m))
+                    .tip("When the battery runs out at this pace: \(Self.when(m)). You get a notification at 20 minutes left and again at 5.")
             }
         } else if let m = b.minutesUntilFull {
             HeroChip(text: "Full: \(Self.when(m))", symbol: "battery.100.bolt", fill: Color(hex: "#2563eb"))
                 .tip("When the battery will be full at this charging pace")
         } else if let m = b.minutesIfUnplugged {
-            HeroChip(text: m > 24 * 60 ? "No power: > 24 hrs unplugged" : "No power: \(Insights.duration(Double(m) * 60)) unplugged",
+            HeroChip(text: "No power: \(Self.short(m)) unplugged",
                      symbol: "hourglass", fill: Color(hex: "#2563eb"))
-                .tip("How long the \(b.percent)% charge would last if you unplugged now, at what the Mac is using")
+                .tip("How long the \(b.percent)% charge would last if you unplugged now, at what the Mac is using: \(Insights.duration(Double(m) * 60))")
         }
+    }
+
+    /// The chip's figure, kept short: "45 min" under an hour, else to the nearest hour, "20 hrs".
+    static func short(_ m: Int) -> String {
+        if m > 24 * 60 { return "> 24 hrs" }
+        if m < 60 { return "\(m) min" }
+        let h = Int((Double(m) / 60).rounded())
+        return h == 1 ? "1 hr" : "\(h) hrs"
     }
 
     /// "2h 28m, 13:40"; past a day the exact figure means little, so just "> 24 hrs".
