@@ -113,7 +113,7 @@ The answer to "is my Mac busy, and why?" in one screen:
 - **Power line.** Always shown on a Mac with a battery: **Charging** (green, what the charger
   delivers), **Using** (red, the whole Mac), and **Battery** (green and + while charging, red
   and − while draining). Then **No power**: on battery, when it runs out ("No power: 1h 40m,
-  14:32", amber, red at 20 minutes or less). While charging it shows **Full** instead, in
+  14:32"): green with more than 4 hours left, amber under 90 minutes, red under 30). While charging it shows **Full** instead, in
   blue ("Full: 4h 8m, 18:40"). Plugged in and not charging, it shows how long the charge would
   last if you unplugged now. When the charger is too small for the load, the line reads **Losing charge on
   power** and the battery still counts down.
