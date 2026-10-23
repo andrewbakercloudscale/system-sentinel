@@ -166,7 +166,7 @@ struct MenuView: View {
                         if let rel = model.update {
                             Text("v\(Model.appVersion) is out of date  ·  v\(rel.version) is out").font(.caption.weight(.semibold)).foregroundStyle(Self.updateColor)
                         } else {
-                            Text("v\(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev")  ·  \(Int(model.cores)) cores  ·  sampled every 5 s").font(.caption2).foregroundStyle(.secondary)
+                            Text("v\(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev")  ·  \(Int(model.cores)) cores").font(.caption2).foregroundStyle(.secondary)
                         }
                     }
                 }
@@ -176,14 +176,10 @@ struct MenuView: View {
             .tip("About System Sentinel: version, updates and who made it")
             Spacer()
             HealthChip(health: model.health) { model.goTab = $0.title }
-            let load = model.machineLoad
-            HStack(spacing: 6) {
-                Circle().fill(Theme.machineHeat(load)).frame(width: 8, height: 8)
-                Text("\(Int(load))% of Mac").font(.callout.weight(.semibold)).monospacedDigit()
+            LoadPill(name: "CPU", load: model.machineLoad, tip: "CPU: share of all \(Int(model.cores)) cores in use right now")
+            if let gpu = model.gpu {
+                LoadPill(name: "GPU", load: gpu, tip: "GPU: how busy the graphics chip is right now")
             }
-            .padding(.horizontal, 10).padding(.vertical, 5)
-            .background(Capsule().fill(Theme.machineHeat(load).opacity(0.13)))
-            .tip("Share of all \(Int(model.cores)) cores in use right now")
         }
     }
 
@@ -825,5 +821,21 @@ enum Migration {
         if !old.isEmpty, SMAppService.mainApp.status != .enabled {
             try? SMAppService.mainApp.register()
         }
+    }
+}
+
+/// "CPU 22%" in the header, coloured by how busy it is.
+private struct LoadPill: View {
+    let name: String
+    let load: Double
+    let tip: String
+    var body: some View {
+        HStack(spacing: 6) {
+            Circle().fill(Theme.machineHeat(load)).frame(width: 8, height: 8)
+            Text("\(name) \(Int(load))%").font(.callout.weight(.semibold)).monospacedDigit()
+        }
+        .padding(.horizontal, 10).padding(.vertical, 5)
+        .background(Capsule().fill(Theme.machineHeat(load).opacity(0.13)))
+        .tip(tip)
     }
 }
