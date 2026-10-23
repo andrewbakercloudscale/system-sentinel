@@ -252,7 +252,7 @@ struct PowerFlow: View {
 
 /// When the power runs out (on battery, or on a charger that cannot keep up), when charging
 /// finishes, or, plugged in and holding, how long the charge would last if unplugged now.
-private struct BatteryTimeChip: View {
+struct BatteryTimeChip: View {
     let battery: BatteryStatus
     let minutesLeft: Int?
     var body: some View {
@@ -262,10 +262,22 @@ private struct BatteryTimeChip: View {
                 HeroChip(text: "No power: \(Self.short(m))", symbol: "hourglass", fill: Self.fill(minutes: m))
                     .tip("When the battery runs out at this pace: \(Self.when(m)). You get a notification at 20 minutes left and again at 5.")
             }
+        } else if b.fullyCharged || b.percent >= 100 {
+            HStack(spacing: 6) {
+                HeroChip(text: "Fully charged", symbol: "battery.100", fill: Color(hex: "#2563eb"))
+                    .tip("On the charger and full")
+                unplugged(b)
+            }
         } else if let m = b.minutesUntilFull {
             HeroChip(text: "Full: \(Self.when(m))", symbol: "battery.100.bolt", fill: Color(hex: "#2563eb"))
                 .tip("When the battery will be full at this charging pace")
-        } else if let m = b.minutesIfUnplugged {
+        } else {
+            unplugged(b)
+        }
+    }
+
+    @ViewBuilder private func unplugged(_ b: BatteryStatus) -> some View {
+        if let m = b.minutesIfUnplugged {
             HeroChip(text: "If unplugged: \(Self.short(m))",
                      symbol: "hourglass", fill: Color(hex: "#2563eb"))
                 .tip("How long the \(b.percent)% charge would last if you unplugged now, at what the Mac is using: \(Insights.duration(Double(m) * 60))")
@@ -285,11 +297,11 @@ private struct BatteryTimeChip: View {
         m > 24 * 60 ? "> 24 hrs" : "\(Insights.duration(Double(m) * 60)), \(BatteryETABanner.clock(m))"
     }
 
-    /// Red under 30 minutes, amber under 90, green over 4 hours; in between it is plain.
+    /// Red under 30 minutes, amber under 90, otherwise blue like the other time chips.
     static func fill(minutes m: Int) -> Color? {
         if m < 30 { return Color(hex: "#dc2626") }
         if m < 90 { return Color(hex: "#d97706") }
-        return m > 240 ? Color(hex: "#16a34a") : nil
+        return Color(hex: "#2563eb")
     }
 }
 
