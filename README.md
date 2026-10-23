@@ -18,7 +18,17 @@ automatically.
 
 ## Install
 
-Paste this into Terminal. It downloads the latest release, installs it to Applications,
+**Easiest:** open Terminal (Cmd+Space, type Terminal, press Return), paste this line and press Return:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/andrewbakercloudscale/system-sentinel/main/install.sh | bash
+```
+
+It runs [install.sh](install.sh): downloads the latest release, installs it to Applications,
+clears the quarantine flag and opens it. Run it again any time to update. To share it,
+click **Share with a friend** in About (or **Share** at the bottom of the main window).
+
+**Or** keep a copy of the script in your home folder. Paste this into Terminal. It downloads the latest release, installs it to Applications,
 clears the quarantine flag (the app is not notarised by Apple) and launches it:
 
 ```bash

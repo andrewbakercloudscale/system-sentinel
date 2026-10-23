@@ -240,6 +240,10 @@ struct MenuView: View {
                 }
                 .tip("Version, updates, links and who made it")
             }
+            FooterButton(title: "Share", symbol: "square.and.arrow.up", color: Tab.network.color) {
+                ShareApp.show()
+            }
+            .tip("Share with a friend: an install message by Messages, Mail, WhatsApp, AirDrop and more")
             FooterButton(title: "Activity Monitor", symbol: "waveform.path.ecg", color: Tab.battery.color) {
                 NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/Utilities/Activity Monitor.app"))
             }
