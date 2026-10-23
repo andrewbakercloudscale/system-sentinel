@@ -426,6 +426,13 @@ public final class PowerHistory {
         public var percent: Int
         /// Samples averaged into `watts`.
         public var n: Int
+        /// On the charger but the battery still going down: the charger cannot keep up.
+        /// nil in readings from before this was recorded.
+        public var draining: Bool?
+
+        public init(t: Int, watts: Double, onBattery: Bool, percent: Int, n: Int, draining: Bool? = nil) {
+            self.t = t; self.watts = watts; self.onBattery = onBattery; self.percent = percent; self.n = n; self.draining = draining
+        }
     }
 
     public private(set) var points: [Point] = []
@@ -453,9 +460,10 @@ public final class PowerHistory {
             last.n += 1
             last.onBattery = s.onBattery
             last.percent = s.percent
+            if s.losingOnPower { last.draining = true }
             points[points.count - 1] = last
         } else {
-            points.append(Point(t: minute, watts: w, onBattery: s.onBattery, percent: s.percent, n: 1))
+            points.append(Point(t: minute, watts: w, onBattery: s.onBattery, percent: s.percent, n: 1, draining: s.losingOnPower ? true : nil))
             let cutoff = minute - Int(retain)
             if let i = points.firstIndex(where: { $0.t >= cutoff }), i > 0 { points.removeFirst(i) }
         }
