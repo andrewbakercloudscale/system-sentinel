@@ -48,8 +48,10 @@ public final class DailyUsage {
     /// The longest gap a tick may stand for: a Mac waking from sleep must not count the
     /// whole night as sampled.
     public let maxStep: TimeInterval
-    /// Hours kept on disk.
-    public let retainHours: Int
+    /// Hours kept on disk. A shorter setting drops the oldest at the next new bucket.
+    public var retainHours: Int {
+        didSet { lastPrunedHour = nil }
+    }
     /// Seconds per bucket: 3600 for the 7 day store, 60 for the 6 hour one.
     public let bucket: Int
     /// How often a running app writes the file.

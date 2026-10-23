@@ -145,6 +145,8 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
     @AppStorage("threshold") var threshold: Double = 80 { didSet { sentinel.detector.threshold = threshold } }
     @AppStorage("windowSeconds") var windowSeconds: Double = 120 { didSet { sentinel.detector.window = windowSeconds } }
     @AppStorage("weeklyReport") var weeklyReport = true
+    /// Days of history kept: 7, 14 or 28 (`HistoryRetention`).
+    @AppStorage("historyDays") var historyDays = HistoryRetention.defaultDays { didSet { applyRetention() } }
     /// What the menu bar shows beside the icon: none, load, watts or battery.
     @AppStorage("menuBarShows") var menuBarShows = "none"
     @AppStorage("alertBlockers") var alertBlockers = true
@@ -206,8 +208,9 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
             policies: PolicyStore(fileURL: Model.supportDir.appendingPathComponent("policies.json")),
             history: History(fileURL: Model.snapshotDir == nil ? Model.supportDir.appendingPathComponent("history.jsonl") : nil,
                              seed: Model.snapshotDir == nil ? nil : Model.supportDir.appendingPathComponent("history.jsonl")),
+            // Hourly despite the file name, and up to 28 days: written every 5 minutes.
             dailyUsage: DailyUsage(fileURL: Model.supportDir.appendingPathComponent("usage-24h.json"),
-                                   readOnly: Model.snapshotDir != nil),
+                                   saveEvery: 300, readOnly: Model.snapshotDir != nil),
             // A larger file than the hourly one, so it is written every 5 minutes, not every minute.
             recentUsage: DailyUsage(fileURL: Model.supportDir.appendingPathComponent("usage-6h.json"),
                                     retainHours: 6, bucket: 60, saveEvery: 300, readOnly: Model.snapshotDir != nil))
@@ -234,6 +237,7 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
         backgroundItems = BackgroundItems.scan()
         sentinel.detector.threshold = threshold
         sentinel.detector.window = windowSeconds
+        applyRetention()
         setUpNotifications()
         tick()
         timer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
@@ -412,6 +416,17 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
     }
 
     /// Energy Impact by app over the last `hours`.
+    var retentionDays: Int { HistoryRetention.days(historyDays) }
+
+    /// Points every timeline at the kept span. A shorter one trims the oldest as each next records.
+    func applyRetention() {
+        let days = retentionDays
+        memoryHistory.retain = Double(days) * 86_400
+        powerHistory.retain = Double(days) * 86_400
+        energyUsage.retainHours = days * 24
+        sentinel.dailyUsage.retainHours = days * 24
+    }
+
     func energySummaries(hours: Int) -> [DailyUsage.Summary] {
         energyUsage.summaries(at: Date(), hours: hours, group: Model.appKey, name: Model.appName)
     }

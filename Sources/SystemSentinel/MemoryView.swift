@@ -102,17 +102,19 @@ private struct MemoryTimeline: View {
     }
 
     static let ranges: [(String, TimeInterval, Int)] = [("1 hour", 3600, 60), ("6 hours", 6 * 3600, 300),
-                                                       ("24 hours", 86_400, 900), ("7 days", 7 * 86_400, 3600)]
+                                                       ("24 hours", 86_400, 900), ("7 days", 7 * 86_400, 3600),
+                                                       ("14 days", 14 * 86_400, 3 * 3600), ("28 days", 28 * 86_400, 6 * 3600)]
 
     var body: some View {
-        let (_, span, bucket) = Self.ranges.first { $0.0 == range } ?? Self.ranges[1]
+        let offered = Self.ranges.filter { $0.1 <= Double(model.retentionDays) * 86_400 }
+        let (_, span, bucket) = offered.first { $0.0 == range } ?? offered[1]
         let now = Date()
         let points = model.memoryHistory.since(now.addingTimeInterval(-span))
         let buckets = Self.buckets(points, size: bucket)
         let s = MemoryAnalysis.summary(points)
         let total = Double(model.memory?.total ?? 0) / 1_073_741_824
         Card(title: "Memory and swap over time", symbol: "chart.xyaxis.line", tint: Tab.memory.color,
-             trailing: AnyView(ChipPicker(options: Self.ranges.map(\.0), selection: $range, color: Tab.memory.color))) {
+             trailing: AnyView(ChipPicker(options: offered.map(\.0), selection: $range, color: Tab.memory.color))) {
             HStack(spacing: 8) {
                 StatTile(symbol: "externaldrive.fill", color: Color(hex: "#d97706"), value: gb(s.peakSwap),
                          label: s.peakSwapAt.map { "peak swap, \($0.formatted(.dateTime.weekday(.abbreviated).hour().minute()))" } ?? "peak swap")
@@ -121,7 +123,7 @@ private struct MemoryTimeline: View {
                          value: Insights.duration(Double(s.warningMinutes + s.criticalMinutes) * 60), label: "under pressure")
             }
             if buckets.count < 2 {
-                Text("Collecting: the timeline fills in as System Sentinel runs. Readings are kept for 7 days.")
+                Text("Collecting: the timeline fills in as System Sentinel runs. Readings are kept for \(model.retentionDays) days.")
                     .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, minHeight: 60)
             } else {
                 let unit: Calendar.Component = bucket >= 3600 ? .hour : .minute
@@ -157,7 +159,7 @@ private struct MemoryTimeline: View {
                 }
                 .chartXAxis {
                     AxisMarks(values: .automatic(desiredCount: 6)) { _ in
-                        AxisValueLabel(format: span > 86_400 ? .dateTime.weekday(.abbreviated) : .dateTime.hour().minute()).font(.system(size: 9))
+                        AxisValueLabel(format: span > 7 * 86_400 ? .dateTime.day().month(.abbreviated) : span > 86_400 ? .dateTime.weekday(.abbreviated) : .dateTime.hour().minute()).font(.system(size: 9))
                     }
                 }
                 .frame(height: 140)

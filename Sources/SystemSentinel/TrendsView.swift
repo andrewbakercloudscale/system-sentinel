@@ -11,6 +11,10 @@ struct TrendsView: View {
 
     enum Range: String, CaseIterable {
         case halfHour = "30 min", threeHours = "3 hours", sixHours = "6 hours", day = "24 hours", week = "7 days"
+        case twoWeeks = "14 days", fourWeeks = "28 days"
+
+        /// The ranges the kept history covers (Settings, History).
+        static func offered(days: Int) -> [Range] { allCases.filter { $0.span <= Double(days) * 86_400 } }
 
         /// Up to 6 hours comes from the one-minute store, longer from the hourly one.
         var fine: Bool { self == .halfHour || self == .threeHours || self == .sixHours }
@@ -21,6 +25,8 @@ struct TrendsView: View {
             case .sixHours: return 6 * 3600
             case .day: return 24 * 3600
             case .week: return 7 * 24 * 3600
+            case .twoWeeks: return 14 * 24 * 3600
+            case .fourWeeks: return 28 * 24 * 3600
             }
         }
         /// Store buckets per bar, so every range has 24 to 36 bars.
@@ -30,6 +36,8 @@ struct TrendsView: View {
             case .threeHours: return 5
             case .sixHours: return 10
             case .week: return 6
+            case .twoWeeks: return 12
+            case .fourWeeks: return 24
             }
         }
         var barTitle: String {
@@ -39,6 +47,8 @@ struct TrendsView: View {
             case .sixHours: return "CPU per 10 minutes"
             case .day: return "CPU per hour"
             case .week: return "CPU per 6 hours"
+            case .twoWeeks: return "CPU per 12 hours"
+            case .fourWeeks: return "CPU per day"
             }
         }
     }
@@ -75,7 +85,7 @@ struct TrendsView: View {
         let d = data()
         VStack(spacing: 10) {
             HStack {
-                ChipPicker(options: Range.allCases.map(\.rawValue), selection: $range, color: Theme.trends)
+                ChipPicker(options: Range.offered(days: model.retentionDays).map(\.rawValue), selection: $range, color: Theme.trends)
                 Spacer()
                 Toggle("Group by app", isOn: $byApp).toggleStyle(.switch).controlSize(.mini).font(.caption)
             }
@@ -88,7 +98,7 @@ struct TrendsView: View {
     }
 
     private func data() -> Data {
-        let r = Range(rawValue: range) ?? .day
+        let r = Range(rawValue: range).flatMap { Range.offered(days: model.retentionDays).contains($0) ? $0 : .week } ?? .day
         let now = Date()
         let usage = r.fine ? model.sentinel.recentUsage : model.sentinel.dailyUsage
         let count = Int(r.span) / usage.bucket
@@ -275,6 +285,11 @@ private struct TrendChart: View {
                 AxisMarks(values: .stride(by: .day)) { _ in
                     AxisGridLine().foregroundStyle(Color.primary.opacity(0.06))
                     AxisValueLabel(format: .dateTime.weekday(.abbreviated)).font(.system(size: 9))
+                }
+            case .twoWeeks, .fourWeeks:
+                AxisMarks(values: .stride(by: .day, count: d.range == .twoWeeks ? 2 : 4)) { _ in
+                    AxisGridLine().foregroundStyle(Color.primary.opacity(0.06))
+                    AxisValueLabel(format: .dateTime.day().month(.abbreviated)).font(.system(size: 9))
                 }
             case .day:
                 AxisMarks(values: .stride(by: .hour, count: 3)) { _ in

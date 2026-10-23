@@ -40,7 +40,8 @@ extension NetworkStore {
     }
 
     func recordLookup(ok: Bool, ms: Double?) {
-        dnsHistory.record(ok: ok, ms: ms, at: Date())
+        let days = HistoryRetention.days(UserDefaults.standard.integer(forKey: "historyDays"))
+        dnsHistory.record(ok: ok, ms: ms, at: Date(), keep: Double(days) * 86_400)
         if !readOnly, let data = try? JSONEncoder().encode(dnsHistory) { Diagnostics.write(data, to: Self.historyURL, what: "DNS history") }
     }
 

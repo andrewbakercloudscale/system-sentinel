@@ -128,7 +128,7 @@ public struct DNSReport: Equatable, Sendable {
     public var splitDomains: [String] { resolvers.filter { $0.supplemental }.compactMap(\.domain) }
 }
 
-/// Lookups through the Mac's resolver over the last day, to catch DNS that breaks now and then.
+/// Lookups through the Mac's resolver over the last 7 to 28 days, to catch DNS that breaks now and then.
 public struct DNSHistory: Codable, Equatable, Sendable {
     public struct Point: Codable, Equatable, Sendable {
         public let t: Int
@@ -138,9 +138,9 @@ public struct DNSHistory: Codable, Equatable, Sendable {
     public private(set) var points: [Point] = []
     public init() {}
 
-    public mutating func record(ok: Bool, ms: Double?, at now: Date) {
+    public mutating func record(ok: Bool, ms: Double?, at now: Date, keep: TimeInterval = 7 * 86_400) {
         points.append(Point(t: Int(now.timeIntervalSince1970), ok: ok, ms: ms.map { Int($0.rounded()) }))
-        let cutoff = Int(now.timeIntervalSince1970) - 86_400
+        let cutoff = Int(now.timeIntervalSince1970) - Int(keep)
         points.removeAll { $0.t < cutoff }
     }
 

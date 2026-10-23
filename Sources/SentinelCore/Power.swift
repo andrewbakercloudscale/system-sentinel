@@ -408,7 +408,7 @@ public final class WakeupTracker {
     }
 }
 
-/// The Mac's power draw and battery level, minute by minute, for the last 7 days.
+/// The Mac's power draw and battery level, minute by minute, for the last 7 to 28 days.
 public final class PowerHistory {
     public struct Point: Codable, Equatable, Sendable {
         /// Minute start, seconds since 1970.
@@ -423,7 +423,8 @@ public final class PowerHistory {
     public private(set) var points: [Point] = []
     private let fileURL: URL?
     private let readOnly: Bool
-    private let retain: TimeInterval
+    /// How far back readings go. A shorter setting drops the oldest at the next new minute.
+    public var retain: TimeInterval
     private var lastSave: Date?
 
     public init(fileURL: URL?, retain: TimeInterval = 7 * 86_400, readOnly: Bool = false) {
