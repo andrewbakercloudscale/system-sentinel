@@ -114,10 +114,11 @@ The answer to "is my Mac busy, and why?" in one screen:
   GPU rather than the CPU, so a quiet CPU dial can sit beside a full GPU one.
 - **Power line.** Always shown on a Mac with a battery: **Charging** (green, what the charger
   delivers), **Using** (red, the whole Mac), and **Battery** (green and + while charging, red
-  and − while draining). Then **No power**: on battery, when it runs out ("No power: 1h 40m,
-  14:32"): green with more than 4 hours left, amber under 90 minutes, red under 30). While charging it shows **Full** instead, in
-  blue ("Full: 4h 8m, 18:40"). Plugged in and not charging, it shows how long the charge would
-  last if you unplugged now. When the charger is too small for the load, Battery shows red and − and the
+  and − while draining). Then **No power**: on battery, how long until it runs out, to the
+  nearest hour ("No power: 5 hrs", minutes under an hour; hover for the exact time and clock):
+  green with more than 4 hours left, amber under 90 minutes, red under 30. While charging it
+  shows **Full** instead, in blue ("Full: 4h 8m, 18:40"). Plugged in and barely charging, it
+  shows **If unplugged**: how long the charge would last at what the Mac is using now. When the charger is too small for the load, Battery shows red and − and the
   **No power** time still counts down.
 - **1 min / 15 min / 1 hour** on each panel. Use averaged over each period. A high 1 minute
   figure with a low 1 hour figure is a spike; all three high means it has been busy for a while.
