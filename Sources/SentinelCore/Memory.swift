@@ -1,6 +1,7 @@
 import Foundation
 
-/// Memory and swap, minute by minute, for the last 7 days, with the apps holding the most.
+/// Memory and swap, minute by minute, for the last 7 to 28 days (`HistoryRetention`), with the
+/// apps holding the most.
 public final class MemoryHistory {
     public struct App: Codable, Equatable, Sendable {
         /// Grouping key (an app bundle or a program path) and its display name.
@@ -55,8 +56,10 @@ public final class MemoryHistory {
     public private(set) var points: [Point] = []
     private let fileURL: URL?
     private let readOnly: Bool
-    private let retain: TimeInterval
+    /// How far back readings go. A shorter setting drops the oldest at the next new minute.
+    public var retain: TimeInterval
     private var lastSave: Date?
+    private var lastThinned: Int?
     private var lastCounters: (ins: UInt64, outs: UInt64, at: Date)?
     /// Apps kept per minute: enough for the top of the list and for spotting growth.
     public static let appsKept = 5
@@ -101,10 +104,26 @@ public final class MemoryHistory {
                                 pressure: m.pressure.rawValue, swapIn: swapIn, swapOut: swapOut, apps: top))
             let cutoff = minute - Int(retain)
             if let i = points.firstIndex(where: { $0.t >= cutoff }), i > 0 { points.removeFirst(i) }
+            if lastThinned != minute / 3600 {
+                thin(before: minute - Int(HistoryRetention.fullDetail))
+                lastThinned = minute / 3600
+            }
         }
         if lastSave.map({ now.timeIntervalSince($0) >= 300 }) ?? true {
             save()
             lastSave = now
+        }
+    }
+
+    /// The app list is most of each minute's size. Older than `before`, keeps it on the first
+    /// minute of each hour only, so a 28 day history is not four times the 7 day one; every
+    /// minute's totals, swap and pressure stay.
+    public func thin(before: Int) {
+        var hour: Int?
+        for i in points.indices {
+            guard points[i].t < before else { break }
+            let h = points[i].t / 3600
+            if h == hour { points[i].apps = [] } else { hour = h }
         }
     }
 
@@ -116,6 +135,23 @@ public final class MemoryHistory {
     public func save() {
         guard !readOnly, let url = fileURL, let data = try? JSONEncoder().encode(points) else { return }
         Diagnostics.write(data, to: url, what: url.lastPathComponent)
+    }
+}
+
+/// How long the timelines are kept: 7 days unless Settings says 14 or 28. Only the minute by
+/// minute CPU detail stays at 6 hours whatever the setting.
+public enum HistoryRetention {
+    public static let choices = [7, 14, 28]
+    public static let defaultDays = 7
+    /// Memory keeps its per-minute app list this long; older minutes keep one an hour.
+    public static let fullDetail: TimeInterval = 7 * 86_400
+
+    public static func days(_ stored: Int) -> Int { choices.contains(stored) ? stored : defaultDays }
+
+    /// Rough disk use, from a busy Mac: about 11 MB for the first week (memory 6, CPU by app 3,
+    /// energy 1.6, power 0.6) and 6.5 MB for each week after it, with the memory app list thinned.
+    public static func megabytes(days: Int) -> Int {
+        Int((11 + Double(max(days - 7, 0)) / 7 * 6.5).rounded())
     }
 }
 

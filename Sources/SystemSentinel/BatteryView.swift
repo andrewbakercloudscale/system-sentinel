@@ -118,16 +118,18 @@ struct PowerChart: View {
     }
 
     static let ranges: [(String, TimeInterval, Int)] = [("1 hour", 3600, 60), ("6 hours", 6 * 3600, 600),
-                                                       ("24 hours", 86_400, 1800), ("7 days", 7 * 86_400, 4 * 3600)]
+                                                       ("24 hours", 86_400, 1800), ("7 days", 7 * 86_400, 4 * 3600),
+                                                       ("14 days", 14 * 86_400, 8 * 3600), ("28 days", 28 * 86_400, 86_400)]
 
     var body: some View {
-        let (_, span, bucket) = Self.ranges.first { $0.0 == range } ?? Self.ranges[1]
+        let offered = Self.ranges.filter { $0.1 <= Double(model.retentionDays) * 86_400 }
+        let (_, span, bucket) = offered.first { $0.0 == range } ?? offered[1]
         let now = Date()
         let points = model.powerHistory.since(now.addingTimeInterval(-span))
         let bars = Self.bars(points, bucket: bucket)
         let summary = BatterySummary.from(points)
         Card(title: "Power draw", symbol: "bolt.fill", tint: Tab.battery.color,
-             trailing: AnyView(ChipPicker(options: Self.ranges.map(\.0), selection: $range, color: Tab.battery.color))) {
+             trailing: AnyView(ChipPicker(options: offered.map(\.0), selection: $range, color: Tab.battery.color))) {
             BatteryETABanner(model: model)
             HStack(spacing: 8) {
                 StatTile(symbol: "bolt.fill", color: Tab.battery.color, value: summary.averageWatts.map { String(format: "%.1f W", $0) } ?? "–", label: "average")
@@ -136,7 +138,7 @@ struct PowerChart: View {
                 StatTile(symbol: "chart.line.downtrend.xyaxis", color: Theme.trends, value: summary.drainPerHour.map { String(format: "%.0f%%/h", $0) } ?? "–", label: "drain on battery")
             }
             if bars.isEmpty {
-                Text("Collecting: the chart fills in as System Sentinel runs. Readings are kept for 7 days.")
+                Text("Collecting: the chart fills in as System Sentinel runs. Readings are kept for \(model.retentionDays) days.")
                     .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, minHeight: 60)
             } else {
                 Chart(bars) { b in
@@ -155,7 +157,7 @@ struct PowerChart: View {
                 }
                 .chartXAxis {
                     AxisMarks(values: .automatic(desiredCount: 6)) { _ in
-                        AxisValueLabel(format: span > 86_400 ? .dateTime.weekday(.abbreviated) : .dateTime.hour().minute()).font(.system(size: 9))
+                        AxisValueLabel(format: span > 7 * 86_400 ? .dateTime.day().month(.abbreviated) : span > 86_400 ? .dateTime.weekday(.abbreviated) : .dateTime.hour().minute()).font(.system(size: 9))
                     }
                 }
                 .chartLegend(position: .bottom, spacing: 4)
@@ -368,10 +370,14 @@ private struct EnergyCard: View {
     @ObservedObject var model: Model
     @AppStorage("energyRange") private var range = "Now"
 
+    private var options: [String] {
+        ["Now", "24 hours"] + HistoryRetention.choices.filter { $0 <= model.retentionDays }.map { "\($0) days" }
+    }
+
     var body: some View {
         Card(title: "Energy by app", symbol: "flame.fill", tint: Tab.battery.color,
-             trailing: AnyView(ChipPicker(options: ["Now", "24 hours", "7 days"], selection: $range, color: Tab.battery.color))) {
-            if range == "Now" { now } else { history(hours: range == "7 days" ? 24 * 7 : 24) }
+             trailing: AnyView(ChipPicker(options: options, selection: $range, color: Tab.battery.color))) {
+            if range == "Now" || !options.contains(range) { now } else { history(hours: range == "24 hours" ? 24 : (Int(range.split(separator: " ")[0]) ?? 7) * 24) }
             Text("Watts and watt-hours are estimates: the Mac's measured draw above idle, split by each app's Energy Impact (Activity Monitor's unitless score for CPU, wakeups, graphics and disk). Wakeups are times a second the app interrupts the chip's rest.")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }

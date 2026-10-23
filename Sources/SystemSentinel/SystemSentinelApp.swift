@@ -358,6 +358,7 @@ struct SettingsDraft: Equatable {
     var alarmPressure: Bool, alarmPressureMinutes: Double
     var alarmDisk: Bool, alarmDiskGB: Double
     var dnsWorkHost: String, hotspotAlerts: Bool
+    var historyDays: Int
 
     @MainActor init(_ m: Model) {
         threshold = m.threshold; window = m.windowSeconds; login = m.launchAtLogin
@@ -369,6 +370,7 @@ struct SettingsDraft: Equatable {
         alarmPressure = m.alarmPressure; alarmPressureMinutes = m.alarmPressureMinutes
         alarmDisk = m.alarmDisk; alarmDiskGB = m.alarmDiskGB
         dnsWorkHost = m.dnsWorkHost; hotspotAlerts = m.hotspotAlerts
+        historyDays = m.retentionDays
     }
 
     @MainActor func apply(to m: Model) {
@@ -384,6 +386,7 @@ struct SettingsDraft: Equatable {
         let hostChanged = m.dnsWorkHost != dnsWorkHost
         m.dnsWorkHost = dnsWorkHost.trimmingCharacters(in: .whitespaces); m.hotspotAlerts = hotspotAlerts
         if hostChanged { m.network.runDNSDoctor() }
+        if historyDays != m.retentionDays { m.historyDays = historyDays }
     }
 }
 
@@ -445,6 +448,7 @@ struct SettingsView: View {
                 Text("Top apps, CPU hours, time on battery and average power draw for the last 7 days. The same report is always on the Events tab.")
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
+            HistorySettingsCard(days: draft.historyDays)
             UpdatesCard(model: model, auto: draft.autoUpdateCheck)
             Button { AboutWindow.show(model) } label: {
                 Label("About System Sentinel", systemImage: "info.circle")
@@ -477,6 +481,26 @@ struct SettingsView: View {
                 Text("Protected and never killed automatically: WindowServer, kernel_task, launchd, loginwindow, Finder, Dock and other core macOS processes; these get a sudo button instead. Root processes can be killed by hand (asks for your password), never automatically. Auto-kill stops after 3 kills of the same app in an hour.")
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
+        }
+    }
+}
+
+/// How many days of CPU, memory, energy, power and DNS history to keep.
+struct HistorySettingsCard: View {
+    @Binding var days: Int
+
+    var body: some View {
+        Card(title: "History", symbol: "clock.arrow.circlepath", tint: Theme.trends) {
+            HStack {
+                Text("Keep")
+                ChipPicker(options: HistoryRetention.choices.map { "\($0) days" },
+                           selection: Binding(get: { "\(days) days" }, set: { days = Int($0.split(separator: " ")[0]) ?? days }),
+                           color: Theme.trends)
+                Spacer()
+                Text("about \(HistoryRetention.megabytes(days: days)) MB").font(.callout.weight(.semibold))
+            }
+            Text("CPU, memory, energy, power and DNS readings. The CPU, memory, power and energy charts get 14 and 28 day ranges to match. A shorter setting deletes the older readings within a few minutes. CPU minute by minute is kept for 6 hours whatever this says.")
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
     }
 }

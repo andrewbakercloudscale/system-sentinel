@@ -405,6 +405,11 @@ Settings has two pages, picked at the top: **Settings** (below) and **[Rules](#r
 - **Launch System Sentinel at login.**
 - **Weekly report notification** on Monday morning (on by default; applies at once).
 - **Menu bar:** nothing, CPU load, power draw or battery beside the icon.
+- **History:** keep 7 (default), 14 or 28 days of CPU, memory, energy, power and DNS
+  readings, about 11, 18 or 31 MB on disk. The longer settings add 14 and 28 day ranges to
+  the CPU, Memory, Power draw and Energy charts. Memory older than a week keeps its list of
+  the largest apps once an hour, which keeps the file small. CPU minute by minute is always
+  kept for 6 hours. A shorter setting deletes the older readings within a few minutes.
 - **Heat and power alerts** (on by default): a pop-up when macOS reports the Mac is hot,
   or when the power draw stays over your level (10 to 60 W, default 25 W) for your chosen
   time (1 to 30 minutes, default 3). A MacBook idles at 3 to 8 W; 20 to 30 W is heavy

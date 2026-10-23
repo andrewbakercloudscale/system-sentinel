@@ -151,3 +151,56 @@ final class ClusterTimeTests: XCTestCase {
         XCTAssertTrue(ClusterTime.read(getpid()) != nil)
     }
 }
+
+final class RetentionTests: XCTestCase {
+    let now = Date(timeIntervalSince1970: 1_800_000_000)
+
+    func testDaysFallBackToAWeek() {
+        XCTAssertEqual(HistoryRetention.days(14), 14)
+        XCTAssertEqual(HistoryRetention.days(0), 7)
+        XCTAssertEqual(HistoryRetention.days(30), 7)
+        XCTAssertEqual(HistoryRetention.megabytes(days: 7), 11)
+        XCTAssertLessThan(HistoryRetention.megabytes(days: 28), 40)
+    }
+
+    func testMemoryKeepsAppsHourlyPastAWeek() {
+        let h = MemoryHistory(fileURL: nil, retain: 28 * 86_400)
+        let app = MemoryHistory.App(key: "a", name: "A", bytes: GB)
+        // Two days ago is still full detail; ten days ago is thinned.
+        for days in [10.0, 2.0] {
+            for m in 0..<120 { h.record(status(swap: 0), apps: [app], at: now.addingTimeInterval(-days * 86_400 + Double(m) * 60)) }
+        }
+        h.record(status(swap: 0), apps: [app], at: now)
+        let cut = Int(now.timeIntervalSince1970 - 7 * 86_400)
+        let old = h.points.filter { $0.t < cut }, recent = h.points.filter { $0.t >= cut }
+        XCTAssertEqual(old.count, 120, "every minute's totals stay")
+        XCTAssertLessThanOrEqual(old.filter { !$0.apps.isEmpty }.count, 3, "the app list once an hour")
+        XCTAssertTrue(recent.allSatisfy { !$0.apps.isEmpty })
+    }
+
+    func testShorterRetentionTrims() {
+        let h = MemoryHistory(fileURL: nil, retain: 28 * 86_400)
+        h.record(status(swap: 0), apps: [], at: now.addingTimeInterval(-20 * 86_400))
+        h.record(status(swap: 0), apps: [], at: now.addingTimeInterval(-60))
+        h.retain = 7 * 86_400
+        h.record(status(swap: 0), apps: [], at: now)
+        XCTAssertEqual(h.points.count, 2)
+
+        let u = DailyUsage(fileURL: nil, retainHours: 28 * 24)
+        let s = ProcessSample(pid: 1, uid: 501, cpu: 50, path: "/bin/a")
+        u.record([s], at: now.addingTimeInterval(-20 * 86_400))
+        u.record([s], at: now.addingTimeInterval(-20 * 86_400 + 5))
+        XCTAssertEqual(u.sampled(at: now, hours: 28 * 24), 5)
+        u.retainHours = 7 * 24
+        u.record([s], at: now)
+        XCTAssertEqual(u.sampled(at: now, hours: 28 * 24), 15, "only the new tick is left")
+
+        var d = DNSHistory()
+        d.record(ok: true, ms: 10, at: now.addingTimeInterval(-3 * 86_400))
+        d.record(ok: false, ms: nil, at: now)
+        XCTAssertEqual(d.failures(since: now.addingTimeInterval(-7 * 86_400)), 1)
+        XCTAssertEqual(d.points.count, 2, "a week by default")
+        d.record(ok: true, ms: 10, at: now, keep: 86_400)
+        XCTAssertEqual(d.points.count, 2)
+    }
+}

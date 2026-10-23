@@ -83,7 +83,7 @@ final class NetDoctorTests: XCTestCase {
         XCTAssertEqual(hours.count, 24)
         XCTAssertEqual(hours.last?.slow, 1)
         XCTAssertEqual(hours[hours.count - 2].failed, 1)
-        h.record(ok: true, ms: 10, at: t0.addingTimeInterval(90_000))
+        h.record(ok: true, ms: 10, at: t0.addingTimeInterval(90_000), keep: 86_400)
         XCTAssertEqual(h.points.count, 3, "the first, now over a day old, drops out")
         XCTAssertEqual(h.points.first?.ok, false)
         let back = try? JSONDecoder().decode(DNSHistory.self, from: JSONEncoder().encode(h))
