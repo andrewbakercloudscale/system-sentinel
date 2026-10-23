@@ -213,7 +213,19 @@ private struct QualityCard: View {
                     Spacer()
                     Text(h.dnsOK ? "\(Int(h.dnsMs ?? 0)) ms" : "failing").font(.callout.weight(.bold)).monospacedDigit()
                 }
-                if let i = h.interfaceMTU {
+                if let t = h.packets?.tunnel, let u = t.underlayMTU {
+                    VStack(alignment: .leading, spacing: 1) {
+                        HStack {
+                            dot(t.fits == true ? .good : .poor)
+                            Text("Largest packet").font(.callout.weight(.semibold))
+                            Spacer()
+                            Text("\(String(t.mtu)) in \(t.name), path \(String(u))").font(.callout.weight(.bold)).monospacedDigit()
+                        }
+                        Text(t.fits == true ? "The tunnel's packets fit the path to its server whole: no fragmentation."
+                             : "The tunnel's packets are too big for the path: set its MTU to \(t.fittingMTU.map(String.init) ?? "less").")
+                            .font(.caption).foregroundStyle(.secondary).padding(.leading, 16)
+                    }
+                } else if let i = h.interfaceMTU {
                     VStack(alignment: .leading, spacing: 1) {
                         HStack {
                             dot(h.pathMTU == nil ? .fair : (h.fragments ? ((h.pathMTU ?? 0) < 1400 ? .poor : .fair) : .good))

@@ -220,6 +220,71 @@ final class NetworkTests: XCTestCase {
         XCTAssertFalse(fine.fragments)
     }
 
+    func testPacketHealth() {
+        let now = Date()
+        let ztn = NetworkLink(interface: "en0", gateway: "192.168.0.1", vpn: "Zscaler")
+        // Zscaler's 1300-byte tunnel over a 1500 path: fits.
+        let fits = PacketHealth.TunnelPath(name: "Zscaler", interface: "utun4", mtu: 1300, edge: "136.226.217.240", underlayMTU: 1500)
+        XCTAssertEqual(fits.fits, true)
+        XCTAssertEqual(fits.fittingMTU, 1420)
+        var h = LinkHealth(routerMs: 3, routerLoss: 0, internetMs: 30, internetLoss: 0, dnsMs: 20, interfaceMTU: 1500, icmpBlocked: true,
+                           packets: PacketHealth(resentPercent: 0.3, tunnel: fits), at: now)
+        var i = NetworkAnalysis.packetInsight(link: ztn, health: h, packets: h.packets!)
+        XCTAssertEqual(i.tone, .good)
+        XCTAssertTrue(i.title.hasPrefix("Packets healthy"), i.title)
+        XCTAssertTrue(i.title.contains("no fragmentation"))
+        XCTAssertTrue(NetworkAnalysis.insights(link: ztn, health: h, problems: [], apps: [], at: now).map(\.id).contains("net-packets"))
+
+        // A 1500 tunnel over a 1492 PPPoE line does not: say the size and the command.
+        let big = PacketHealth.TunnelPath(name: "Zscaler", interface: "utun4", mtu: 1500, underlayMTU: 1492)
+        h.packets = PacketHealth(resentPercent: 3.5, tunnel: big)
+        i = NetworkAnalysis.packetInsight(link: ztn, health: h, packets: h.packets!)
+        XCTAssertEqual(i.tone, .warning)
+        XCTAssertTrue(i.title.hasPrefix("Packets not healthy"))
+        XCTAssertTrue(i.title.contains("3.5% of data resent"))
+        XCTAssertTrue(i.steps.contains { $0.contains("1412") }, "1492 less 80 for the wrapping")
+        XCTAssertEqual(i.fixes, [.copy(text: "sudo ifconfig utun4 mtu 1412", label: "Copy tunnel MTU command")])
+
+        // No tunnel, path smaller than the interface: set the Mac's MTU, clamp MSS.
+        let plain = NetworkLink(interface: "en0")
+        let small = LinkHealth(internetMs: 20, internetLoss: 2, pathMTU: 1452, interfaceMTU: 1500, packets: PacketHealth(fragmentsLost: 4), at: now)
+        i = NetworkAnalysis.packetInsight(link: plain, health: small, packets: small.packets!)
+        XCTAssertTrue(i.title.contains("2% packet loss"))
+        XCTAssertTrue(i.title.contains("packets over 1452 bytes get split"))
+        XCTAssertTrue(i.title.contains("4 packet pieces lost"))
+        XCTAssertTrue(i.steps.contains { $0.contains("networksetup -setMTU en0 1452") })
+        XCTAssertTrue(i.steps.contains { $0.contains("1412") }, "MSS is MTU less 40")
+
+        // Nothing measurable: not called healthy.
+        let blind = LinkHealth(internetLoss: 0, icmpBlocked: true, packets: PacketHealth(), at: now)
+        i = NetworkAnalysis.packetInsight(link: ztn, health: blind, packets: blind.packets!)
+        XCTAssertEqual(i.tone, .info)
+        XCTAssertTrue(i.title.contains("not measured"))
+    }
+
+    func testPacketCounters() {
+        let ip = """
+        ip:
+        \t451 fragments received
+        \t\t3 dropped (dup or out of space)
+        \t\t2 dropped after timeout
+        \t\t224 reassembled ok
+        \t247 output datagrams fragmented
+        \t497 fragments created
+        """
+        let c = PacketHealth.fragmentCounters(ip)
+        XCTAssertEqual(c.made, 247)
+        XCTAssertEqual(c.lost, 5)
+
+        let t = NetParse.nettop(",bytes_in,bytes_out,rx_dupe,rx_ooo,re-tx,\napsd.364,242943,652523,1248,0,9444,\n")
+        XCTAssertEqual(t[364]?.resent, 9444)
+        let a = [Int32(1): AppTraffic(pid: 1, name: "a", bytesOut: 1000, resent: 10)]
+        let b = [Int32(1): AppTraffic(pid: 1, name: "a", bytesOut: 101_000, resent: 2010), 2: AppTraffic(pid: 2, name: "new", bytesOut: 5000)]
+        let r = PacketHealth.resent(from: a, to: b)
+        XCTAssertEqual(r.sent, 100_000, "a process not in the first reading is skipped")
+        XCTAssertEqual(r.resent, 2000)
+    }
+
     func testZeroTrust() {
         XCTAssertEqual(NetworkLink.vpn(processNames: ["tailscaled", "ZscalerTunnel"]), "Zscaler", "the zero trust client wins")
         XCTAssertTrue(NetworkLink(interface: "en0", vpn: "Zscaler").zeroTrust)
