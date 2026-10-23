@@ -179,6 +179,21 @@ final class NetworkStore: ObservableObject {
             let t0 = Date()
             let resolved = !sh("/usr/bin/dscacheutil", ["-q", "host", "-a", "name", DNSHistory.probeName], timeout: 6).isEmpty
             let dnsMs = Date().timeIntervalSince(t0) * 1000
+            // On a failure, ask each server straight away, so the history says which one failed and how.
+            var servers: [String]?
+            if !resolved {
+                let list = Array(NetParse.mainServers(NetParse.resolvers(sh("/usr/sbin/scutil", ["--dns"], timeout: 4))).prefix(4))
+                servers = await withTaskGroup(of: (Int, String).self) { group in
+                    for (n, a) in list.enumerated() {
+                        group.addTask {
+                            (n, NetParse.serverLine(a, NetParse.dig(sh("/usr/bin/dig", ["@\(a)", DNSHistory.probeName, "+time=2", "+tries=1"], timeout: 4))))
+                        }
+                    }
+                    var out: [(Int, String)] = []
+                    for await x in group { out.append(x) }
+                    return out.sorted { $0.0 < $1.0 }.map(\.1)
+                }
+            }
             let (r, icmp) = await (router, internet)
             // Zero trust networks drop pings: time TCP handshakes instead, as tcping does.
             let tcp = (icmp?.loss ?? 100) >= 100 ? TCPPing.ping("1.1.1.1", count: 5) : nil
@@ -196,7 +211,8 @@ final class NetworkStore: ObservableObject {
             await MainActor.run {
                 if sweep { self.mtuAt = Date() }
                 // A failure keeps how long it waited: a timeout and an instant refusal mean different things.
-                self.recordLookup(ok: h.dnsOK, ms: dnsMs)
+                self.recordLookup(ok: h.dnsOK, ms: dnsMs, servers: servers,
+                                  offline: h.dnsOK ? nil : (h.internetLoss ?? 100) >= 100)
                 self.health = h
                 self.testing = false
                 self.refresh()
