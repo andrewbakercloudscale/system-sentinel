@@ -263,9 +263,34 @@ public enum IOSampler {
         task.standardOutput = pipe
         task.standardError = FileHandle.nullDevice
         do { try task.run() } catch { return [:] }
+        // nettop now and then never finishes and spins a core; one left behind by a restart
+        // ran for hours at 100%. Stop it after 8 s, and kill it if it ignores that.
+        let pid = task.processIdentifier
+        let stop = DispatchWorkItem {
+            guard task.isRunning else { return }
+            task.terminate()
+            DispatchQueue.global().asyncAfter(deadline: .now() + 2) { if task.isRunning { kill(pid, SIGKILL) } }
+        }
+        DispatchQueue.global().asyncAfter(deadline: .now() + 8, execute: stop)
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
         task.waitUntilExit()
+        stop.cancel()
         return parseNettop(String(decoding: data, as: UTF8.self))
+    }
+
+    /// nettops left running by an earlier copy of this app (their parent is gone, so launchd
+    /// adopted them): stuck ones spin a core until killed.
+    public static func killOrphanedNettop() {
+        let me = getuid()
+        var size = 0
+        var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_UID, Int32(bitPattern: me)]
+        guard sysctl(&mib, 4, nil, &size, nil, 0) == 0, size > 0 else { return }
+        var procs = [kinfo_proc](repeating: kinfo_proc(), count: size / MemoryLayout<kinfo_proc>.stride)
+        guard sysctl(&mib, 4, &procs, &size, nil, 0) == 0 else { return }
+        for p in procs.prefix(size / MemoryLayout<kinfo_proc>.stride) where p.kp_eproc.e_ppid == 1 {
+            let name = withUnsafeBytes(of: p.kp_proc.p_comm) { String(decoding: $0.prefix { $0 != 0 }, as: UTF8.self) }
+            if name == "nettop" { kill(p.kp_proc.p_pid, SIGKILL) }
+        }
     }
 
     /// Lines like `Google Chrome H.1234,5000,600,`. The name may contain dots and commas

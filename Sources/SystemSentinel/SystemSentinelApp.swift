@@ -640,6 +640,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         if Model.snapshotDir == nil { IconWatch.start(); HotKey.start() }
+        DispatchQueue.global(qos: .utility).async { IOSampler.killOrphanedNettop() }
         guard !atLogin, Model.snapshotDir == nil else { return }
         // The model is created with the menu bar scene; give it a moment.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { if let m = Model.current { PopOut.show(m) } }
