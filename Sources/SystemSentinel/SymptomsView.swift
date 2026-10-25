@@ -155,8 +155,20 @@ extension Model {
         return map.first { c.id.hasSuffix($0.key) }?.value ?? []
     }
 
+    /// Kept until the next tick, or until a check or an Ignore changes it.
     func attention() -> Attention {
         let ignored = checkup.ignoredKeys
+        var h = Hasher()
+        h.combine(ignored)
+        for c in checkup.checks { h.combine(c.id); h.combine(c.status.rawValue) }
+        let key = h.finalize()
+        if let c = attentionCache, c.key == key { return c.value }
+        let a = freshAttention(ignored)
+        attentionCache = (key, a)
+        return a
+    }
+
+    private func freshAttention(_ ignored: Set<String>) -> Attention {
         var a = Attention()
         a.checks = checkup.checks.filter { $0.status >= .warning && !ignored.contains($0.ignoreKey) }
         // A symptom finding that is one of the checks above is counted there.

@@ -118,6 +118,9 @@ struct MenuView: View {
     /// Shown in the movable window rather than under the menu bar icon.
     var inWindow = false
     @StateObject private var tips = TipCenter()
+    /// True for a frame after a tab click: the tab lights up at once and its page, which can
+    /// take a moment to build, follows on the next frame.
+    @State private var switching = false
 
     static let width: CGFloat = 660
 
@@ -136,7 +139,12 @@ struct MenuView: View {
             header
             TabBar(selection: $tab, badges: [.events: model.flagged.count, .checkup: model.attention().count],
                    unsaved: model.settingsEdits.map { $0 != SettingsDraft(model) } == true ? [.settings] : [])
-                .onChange(of: tab) { _, t in if !fullLength { UserDefaults.standard.set(t.title, forKey: "lastTab") } }
+                .onChange(of: tab) { _, t in
+                    guard !fullLength else { return }
+                    UserDefaults.standard.set(t.title, forKey: "lastTab")
+                    switching = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) { switching = false }
+                }
                 .onChange(of: model.goTab) { _, t in
                     guard let t, let to = Tab.named(t) else { return }
                     if let page = to.page { UserDefaults.standard.set(page, forKey: to.tab.pageKey) }
@@ -153,7 +161,9 @@ struct MenuView: View {
                     ScrollViewReader { proxy in
                         ScrollView(.vertical) {
                             // Lazy only on Processes, whose bar pins; elsewhere scrollTo needs every card built.
-                            if tab == .processes {
+                            if switching {
+                                ProgressView().controlSize(.small).frame(maxWidth: .infinity).padding(.top, 40)
+                            } else if tab == .processes {
                                 LazyVStack(spacing: 10, pinnedViews: [.sectionHeaders]) { banners; page }.padding(.trailing, 2)
                             } else {
                                 VStack(spacing: 10) { banners; page }.padding(.trailing, 2)
@@ -717,7 +727,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if Model.snapshotDir == nil, !WelcomeWindow.seen {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) { if let m = Model.current { WelcomeWindow.showOnce(m) } }
         }
-        if ProcessInfo.processInfo.environment["SS_TABBENCH"] != nil { TabBench.start() }
         guard !atLogin, Model.snapshotDir == nil else { return }
         // The model is created with the menu bar scene; give it a moment.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { if let m = Model.current { PopOut.show(m) } }

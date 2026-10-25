@@ -278,10 +278,31 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
 
     enum Level { case normal, busy, alert }
 
+    /// Samples with `ps` off the main thread, then applies it here. Run on the main thread,
+    /// `ps` held it for up to a second each tick, so tab clicks hung.
+    private var sampling = false
+    private var tickAgain = false
+    /// `attention()` for the current tick, so every redraw does not redo the symptom checks.
+    var attentionCache: (key: Int, value: Attention)?
+
     func tick() {
+        guard !sampling else { tickAgain = true; return }
+        sampling = true
+        Task.detached {
+            let result = Result { try ProcessSampler.sample(foldingInto: getpid()) }
+            await MainActor.run {
+                self.sampling = false
+                self.apply(result)
+                if self.tickAgain { self.tickAgain = false; self.tick() }
+            }
+        }
+    }
+
+    private func apply(_ result: Result<[ProcessSample], Error>) {
         SelfGuard.record()
         do {
-            let events = try sentinel.tick()
+            let events = sentinel.tick(with: try result.get())
+            attentionCache = nil
             top = sentinel.top(30)
             totalCPU = sentinel.totalCPU
             let live = Set(sentinel.latest.map(\.pid))
@@ -1525,9 +1546,18 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
 
     // MARK: Launch at login
 
+    /// Asking SMAppService is a round trip to launchd; the Settings tab read it many times a
+    /// redraw and hung for seconds. Read once, then kept in step with what we set.
+    private var loginStatus: Bool?
     var launchAtLogin: Bool {
-        get { SMAppService.mainApp.status == .enabled }
+        get {
+            if let s = loginStatus { return s }
+            let s = SMAppService.mainApp.status == .enabled
+            loginStatus = s
+            return s
+        }
         set {
+            defer { loginStatus = nil }
             do {
                 if newValue { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
             } catch {
