@@ -143,7 +143,11 @@ struct MenuView: View {
                     guard !fullLength else { return }
                     UserDefaults.standard.set(t.title, forKey: "lastTab")
                     switching = true
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) { switching = false }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) {
+                        Activity.set("drawing the \(t.title) tab")
+                        switching = false
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { if Activity.current?.hasPrefix("drawing") == true { Activity.set(nil) } }
+                    }
                 }
                 .onChange(of: model.goTab) { _, t in
                     guard let t, let to = Tab.named(t) else { return }
@@ -430,6 +434,7 @@ struct SettingsDraft: Equatable {
     var alarmDisk: Bool, alarmDiskGB: Double
     var dnsWorkHost: String, hotspotAlerts: Bool
     var stopIdleScreenHelper: Bool
+    var alertHangs: Bool
     var historyDays: Int
 
     @MainActor init(_ m: Model) {
@@ -443,6 +448,7 @@ struct SettingsDraft: Equatable {
         alarmDisk = m.alarmDisk; alarmDiskGB = m.alarmDiskGB
         dnsWorkHost = m.dnsWorkHost; hotspotAlerts = m.hotspotAlerts
         stopIdleScreenHelper = m.stopIdleScreenHelper
+        alertHangs = m.alertHangs
         historyDays = m.retentionDays
     }
 
@@ -460,6 +466,7 @@ struct SettingsDraft: Equatable {
         m.dnsWorkHost = dnsWorkHost.trimmingCharacters(in: .whitespaces); m.hotspotAlerts = hotspotAlerts
         if hostChanged { m.network.runDNSDoctor() }
         m.stopIdleScreenHelper = stopIdleScreenHelper
+        m.alertHangs = alertHangs
         if historyDays != m.retentionDays { m.historyDays = historyDays }
     }
 }
@@ -507,6 +514,10 @@ struct SettingsView: View {
                 Divider()
                 Toggle("Stop ChatGPT's screen helper when idle", isOn: draft.stopIdleScreenHelper).toggleStyle(.switch)
                 Text("Its computer-use helper keeps taking screenshots while ChatGPT sits unused, which keeps WindowServer busy. After 15 minutes without ChatGPT in front it is stopped; ChatGPT starts it again the next time you use it.")
+                    .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                Divider()
+                Toggle("Tell me when an app stops responding", isOn: draft.alertHangs).toggleStyle(.switch)
+                Text("A notification when an app shows the spinning wheel for 10 seconds, with the likely reason. Every hang is listed on the Events tab either way.")
                     .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
             Card(title: "Startup", symbol: "power", tint: Tab.processes.color) {
@@ -721,7 +732,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        if Model.snapshotDir == nil { IconWatch.start(); HotKey.start() }
+        if Model.snapshotDir == nil { IconWatch.start(); HotKey.start(); HangWatch.start() }
         DispatchQueue.global(qos: .utility).async { IOSampler.killOrphanedNettop() }
         // The welcome shows once, even on a launch at login, so people who installed before it existed see it too.
         if Model.snapshotDir == nil, !WelcomeWindow.seen {

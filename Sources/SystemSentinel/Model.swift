@@ -101,6 +101,11 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
     @Published var io: [IORow] = []
     /// What recent kills and quits changed, newest first.
     @Published var impacts: [Impact] = []
+    /// Apps that stopped responding, this one included, newest first.
+    @Published var hangs: [Hang] = Model.loadHangs()
+    let hangTracker = HangTracker()
+    /// Disk and network rates per pid from the last energy read, for the wait reasons.
+    var ioRates: [Int32: IORate] = [:]
     let healthLog: HealthLog
     let storage: StorageStore
     let permissions = Permissions()
@@ -186,6 +191,8 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
     @AppStorage("hotspotAlerts") var hotspotAlerts = true
     /// Stop ChatGPT's screen helper (SkyComputerUseService) after 15 minutes without ChatGPT in front.
     @AppStorage("stopIdleScreenHelper") var stopIdleScreenHelper = false
+    /// Notify when an app has shown the spinning wheel for 10 seconds.
+    @AppStorage("alertHangs") var alertHangs = true
     private var chatGPTInFront = Date()
     private var helperStopped: Date?
     @AppStorage("alarmDiskGB") var alarmDiskGB: Double = 20
@@ -299,6 +306,8 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
     }
 
     private func apply(_ result: Result<[ProcessSample], Error>) {
+        Activity.set("updating after a process sample")
+        defer { Activity.set(nil) }
         SelfGuard.record()
         do {
             let events = sentinel.tick(with: try result.get())
@@ -391,7 +400,9 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
     private func finishEnergy(_ readings: [Int32: (power: Double, idleWakeups: Int)], _ blockers: [SleepBlocker], _ counters: [Int32: IOCounters]) {
         energyRunning = false
         let now = Date()
-        io = IORow.group(ioTracker.update(counters, at: now), processes: sentinel.latest, key: Model.appKey, name: Model.appName)
+        let rates = ioTracker.update(counters, at: now)
+        ioRates = Dictionary(rates.map { ($0.pid, $0) }, uniquingKeysWith: { a, _ in a })
+        io = IORow.group(rates, processes: sentinel.latest, key: Model.appKey, name: Model.appName)
         notifyOverdueBlockers(blockers, at: now)
         let samples = wakeups.update(readings, at: now)
         energyAt = now
@@ -1623,5 +1634,63 @@ extension Model {
         }
         source.resume()
         Model.termSource = source
+    }
+}
+
+// MARK: Hangs and waits
+
+extension Model {
+    /// What a process is held up by, for the Processes rows. nil when it is idle.
+    func waitReason(_ s: ProcessSample) -> WaitReason? {
+        let io = ioRates[s.pid]
+        let tight = (memory?.pressure ?? .normal) >= .warning
+        return WaitReason.of(cpu: s.cpu, state: s.state, diskPerSec: io?.disk ?? 0, netPerSec: io?.net ?? 0, memoryTight: tight)
+    }
+
+    /// Why things were slow at this moment: the app's own wait, then the Mac as a whole.
+    func hangReason(pid: Int32?) -> String {
+        var parts: [String] = []
+        if let pid, let s = sample(pid: pid), let w = waitReason(s) {
+            parts.append(w == .cpu ? "It was busy on CPU (\(Fmt.cpu(s.cpu)))" : "It was \(w.label.lowercased())")
+        }
+        if machineLoad >= 80 { parts.append("the Mac was \(Int(machineLoad))% busy") }
+        if let m = memory {
+            if m.pressure >= .warning { parts.append("memory pressure was \(m.pressure == .critical ? "critical" : "high")") }
+            if m.swapUsed >= 2 << 30 { parts.append("the Mac had \(ReportDocument.bytes(m.swapUsed)) in swap") }
+        }
+        if thermal.rawValue >= ProcessInfo.ThermalState.serious.rawValue { parts.append("the Mac was hot and slowed down") }
+        guard !parts.isEmpty else { return "No sign of CPU, memory or disk trouble: the app itself was stuck." }
+        let text = parts.joined(separator: ", ")
+        return text.prefix(1).uppercased() + text.dropFirst() + "."
+    }
+
+    func recordOwnHang(start: Date, seconds: Double, doing: String?) {
+        let what = doing.map { "Stuck \($0). " } ?? "Stuck drawing the window. "
+        addHang(Hang(app: "System Sentinel", start: start, seconds: seconds, reason: what + hangReason(pid: nil), own: true))
+    }
+
+    func updateHangs(_ hung: [Int32: String]) {
+        let now = Date()
+        for h in hangTracker.update(hung: hung, at: now, reason: { self.hangReason(pid: $0) }) { addHang(h) }
+        guard alertHangs, Model.snapshotDir == nil else { return }
+        for d in hangTracker.due(after: 10, at: now) {
+            let content = UNMutableNotificationContent()
+            content.title = "\(d.open.name) is not responding"
+            content.body = d.open.reason + " The Events tab lists every hang."
+            content.categoryIdentifier = "info"
+            content.threadIdentifier = "hang"
+            Snooze.post(UNNotificationRequest(identifier: "hang-\(d.pid)-\(Int(d.open.since.timeIntervalSince1970))", content: content, trigger: nil))
+        }
+    }
+
+    private func addHang(_ h: Hang) {
+        hangs.insert(h, at: 0)
+        if hangs.count > 50 { hangs.removeLast(hangs.count - 50) }
+        if let data = try? JSONEncoder().encode(hangs) { UserDefaults.standard.set(data, forKey: "hangs.v1") }
+    }
+
+    static func loadHangs() -> [Hang] {
+        guard let data = UserDefaults.standard.data(forKey: "hangs.v1") else { return [] }
+        return (try? JSONDecoder().decode([Hang].self, from: data)) ?? []
     }
 }
