@@ -31,6 +31,10 @@ final class StorageTests: XCTestCase {
         XCTAssertEqual(jumps.count, 1)
         XCTAssertGreaterThanOrEqual(jumps[0].bytes, Int64(5 * gb))
         XCTAssertNil(StorageAnalysis.growthPerDay(Array(points.prefix(10))))
+        // Rising all week, then 30 GB cleared at the end: emptier than it started, so not filling.
+        var cleared = points
+        cleared[cleared.count - 1].used -= 30 * gb
+        XCTAssertLessThan(StorageAnalysis.growthPerDay(cleared)!, 0)
     }
 
     func testChangesBetweenScans() {

@@ -83,7 +83,11 @@ private struct NetworkHero: View {
         if store.link.interface == nil { return "Offline" }
         switch t {
         case .critical: return "Connection problem"
-        case .warning: return "Connection is struggling"
+        case .warning:
+            // Checkup can say the internet is healthy (no loss, quick) while a warning here is about
+            // something else, such as resent packets; say it works, and that there is something to see.
+            let n = store.insights.filter { $0.tone >= .warning }.count
+            return "Internet works: \(n) thing\(n == 1 ? "" : "s") to look at"
         default: return "Connection is healthy"
         }
     }

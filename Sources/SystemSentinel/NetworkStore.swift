@@ -125,9 +125,12 @@ final class NetworkStore: ObservableObject {
 
     /// Every 30 s: which interface, router, address, DNS, VPN and Wi-Fi radio.
     private func readLink() {
-        let names = processes().map(\.name)
+        let known = processes().map(\.name)
         let wifi = Self.readWiFi()
         Task.detached(priority: .utility) {
+            // At launch the first process sample is not in yet; without this the card said
+            // "VPN or proxy: none seen" for the first 30 seconds with Zscaler running.
+            let names = known.isEmpty ? ((try? ProcessSampler.sample()) ?? []).map(\.name) : known
             let route = CheckParse.defaultRoute(sh("/sbin/route", ["-n", "get", "default"], timeout: 4))
             let dns = NetParse.dnsServers(sh("/usr/sbin/scutil", ["--dns"], timeout: 4))
             let address = route.interface.flatMap { i in

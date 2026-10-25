@@ -542,7 +542,11 @@ public struct NetworkLink: Equatable, Sendable {
     /// A zero trust client wins, then a named client over macOS's generic VPN service, which runs
     /// alongside most of them.
     public static func vpn(processNames: [String]) -> String? {
-        let found = processNames.compactMap { vpnClients[$0] }
+        var found = processNames.compactMap { vpnClients[$0] }
+        // A client whose process has another name ("Zscaler", "FortiTray"): the tunnel apps list.
+        if found.allSatisfy({ $0 == "VPN" }) {
+            found += processNames.compactMap { n in DNSMap.tunnelApps.first { n.localizedCaseInsensitiveContains($0.0) }?.1 }
+        }
         return found.first(where: zeroTrustClients.contains) ?? found.first { $0 != "VPN" } ?? found.first
     }
 }

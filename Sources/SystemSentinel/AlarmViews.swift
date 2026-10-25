@@ -59,12 +59,12 @@ struct AlarmsSettingsCard: View {
                 Stepper("Over \(Int(draft.alarmSwapGB)) GB", value: $draft.alarmSwapGB, in: 1...64)
             }
             row(on: $draft.alarmPressure, title: "Memory pressure", now: "now \(model.memory?.pressure.label.lowercased() ?? "…")") {
-                Stepper("Warning or worse for \(Int(draft.alarmPressureMinutes)) min", value: $draft.alarmPressureMinutes, in: 1...60)
+                Stepper("Under pressure or critical for \(Int(draft.alarmPressureMinutes)) min", value: $draft.alarmPressureMinutes, in: 1...60)
             }
             row(on: $draft.alarmDisk, title: "Disk space low", now: "now \(ReportDocument.bytes(model.storage.disk?.available ?? 0)) free") {
                 Stepper("Under \(Int(draft.alarmDiskGB)) GB free", value: $draft.alarmDiskGB, in: 5...200, step: 5)
             }
-            Text("Each alarm sends a notification once, then waits until things are back under the limit (and at least an hour) before it can go off again. Per-app CPU alarms are set at the top of this page; heat and sleep alarms below.")
+            Text("Each alarm sends a notification once, then waits until things are back under the limit (and at least an hour) before it can go off again. Per-app CPU alarms are set at the top of this page; heat, power and sleep alarms are in the cards above.")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             if !model.alarmLog.isEmpty {
                 Text("RECENT").sectionLabel()

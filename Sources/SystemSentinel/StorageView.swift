@@ -182,7 +182,7 @@ private struct StorageHero: View {
             .scaleEffect(1.35)
             .frame(width: 74, height: 74)
             VStack(alignment: .leading, spacing: 4) {
-                Label(status.text, systemImage: status.symbol)
+                Label(statusText, systemImage: status.symbol)
                     .font(.caption.weight(.bold)).foregroundStyle(.white)
                     .padding(.horizontal, 8).padding(.vertical, 3)
                     .background(Capsule().fill(.white.opacity(0.22)))
@@ -216,6 +216,14 @@ private struct StorageHero: View {
         case .low: return [Color(hex: "#d97706"), Color(hex: "#b45309")]
         case .critical: return [Color(hex: "#dc2626"), Color(hex: "#9f1239")]
         }
+    }
+
+    /// Space is fine today but the forecast says it will not be: say both in one line.
+    private var statusText: String {
+        if disk.level == .ok, let days = StorageAnalysis.daysUntilFull(free: disk.available, perDay: perDay), days < 60 {
+            return "Enough space today, but filling up"
+        }
+        return status.text
     }
 
     /// Red, amber or green in words too, with the line it is measured against.
