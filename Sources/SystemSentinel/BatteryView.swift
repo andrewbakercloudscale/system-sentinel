@@ -11,7 +11,7 @@ struct BatteryView: View {
     var body: some View {
         VStack(spacing: 10) {
             if let b = model.battery, b.present {
-                BatteryHero(battery: b, eta: model.batteryETA(), minutesLeft: model.minutesToEmpty())
+                BatteryHero(battery: b, eta: model.batteryETA(), minutesLeft: model.minutesToEmpty(), ifUnplugged: model.powerOutlook?.minutesIfUnplugged)
                 PowerChart(model: model)
             } else {
                 Card(title: "No battery", symbol: "powerplug.fill", tint: Tab.battery.color) {
@@ -40,6 +40,7 @@ private struct BatteryHero: View {
     let battery: BatteryStatus
     let eta: BatteryETA?
     let minutesLeft: Int?
+    let ifUnplugged: Int?
 
     var body: some View {
         let b = battery
@@ -64,7 +65,7 @@ private struct BatteryHero: View {
                 }
                 FlowLayout(spacing: 6) {
                     PowerFlow(battery: b)
-                    BatteryTimeChip(battery: b, minutesLeft: minutesLeft).fixedSize()
+                    BatteryTimeChip(battery: b, minutesLeft: minutesLeft, ifUnplugged: ifUnplugged).fixedSize()
                 }
             }
             Spacer()
@@ -84,9 +85,7 @@ private struct BatteryHero: View {
         if b.onBattery {
             return eta.map { "Empty in \(Insights.duration(Double($0.minutes) * 60))" } ?? "On battery"
         }
-        if b.losingOnPower {
-            return b.minutesLeftOnPower.map { "Losing charge: empty in \(Insights.duration(Double($0) * 60))" } ?? "Losing charge on power"
-        }
+        if let m = minutesLeft { return "Losing charge: empty in \(Insights.duration(Double(m) * 60))" }
         if b.charging { return b.minutesToFull.map { "Full in \(Insights.duration(Double($0) * 60))" } ?? "Charging" }
         return b.fullyCharged || b.percent >= 100 ? "Charged, on power" : "On power, not charging"
     }
@@ -95,7 +94,7 @@ private struct BatteryHero: View {
         let b = battery
         if b.onBattery, let e = eta { return "Around \(BatteryETABanner.clock(e.minutes)), \(BatteryETABanner.basis(e))" }
         if b.onBattery { return "Running on battery" }
-        if b.losingOnPower { return "Losing charge on power: the charger is too small for what the Mac is doing" }
+        if minutesLeft != nil { return "Losing charge on power: the charger is too small for what the Mac is doing" }
         if b.charging { return "Charging" }
         if b.percent < 100 { return "macOS is holding the charge to protect the battery" }
         return "Plugged in"

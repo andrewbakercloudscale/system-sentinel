@@ -32,6 +32,8 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
     private var recentKills: [String: (sample: ProcessSample, at: Date)] = [:]
     /// Battery and power, refreshed every tick. nil on a Mac without a battery.
     @Published var battery: BatteryStatus?
+    /// The time chips' figures, from the last hour, refreshed every 10 minutes.
+    @Published private(set) var powerOutlook: PowerOutlook?
     /// Load per core since the last tick, split into efficiency and performance cores.
     @Published var coreLoad: CoreLoad?
     /// Apps by CPU on each kind of core over the last sample, busiest first.
@@ -310,6 +312,9 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
         if let b = battery {
             powerHistory.record(b, at: now)
             healthLog.record(b, at: now)
+            if powerOutlook.map({ $0.stale(b, at: now) }) ?? true {
+                powerOutlook = PowerOutlook.of(b, lastHour: powerHistory.since(now.addingTimeInterval(-3600)), at: now)
+            }
         }
         checkLowBattery(now)
         coreLoad = coreSampler.sample() ?? coreLoad
@@ -1142,17 +1147,18 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
         battery.flatMap { BatteryETA.of($0, lastHour: powerHistory.since(Date().addingTimeInterval(-3600))) }
     }
 
-    /// Minutes until the battery is empty: on battery, or plugged into a charger that cannot keep up.
+    /// Minutes until the battery is empty: on battery, or plugged into a charger that has not
+    /// kept up over the last hour.
     func minutesToEmpty() -> Int? {
         guard let b = battery else { return nil }
-        return b.onBattery ? batteryETA()?.minutes : b.minutesLeftOnPower
+        return b.onBattery ? batteryETA()?.minutes : powerOutlook?.minutesLeftOnPower
     }
 
     /// A notification at 20 minutes of battery left, and again at 5.
     private func checkLowBattery(_ now: Date) {
         guard let b = battery, b.present, Model.snapshotDir == nil else { return }
         let left = minutesToEmpty()
-        guard let level = lowBattery.update(minutesLeft: left, draining: b.onBattery || b.losingOnPower), let m = left else { return }
+        guard let level = lowBattery.update(minutesLeft: left, draining: b.onBattery || left != nil), let m = left else { return }
         let content = UNMutableNotificationContent()
         content.title = level <= 5 ? "Battery almost empty: \(max(m, 1)) min left" : "Battery low: about \(m) min left"
         let fix = b.onBattery ? "Plug in the charger" : "This charger cannot keep up. Use a bigger one or quit something heavy"
