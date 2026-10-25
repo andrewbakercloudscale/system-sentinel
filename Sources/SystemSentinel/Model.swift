@@ -185,7 +185,7 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
     @AppStorage("dnsWorkHost") var dnsWorkHost = ""
     @AppStorage("hotspotAlerts") var hotspotAlerts = true
     /// Stop ChatGPT's screen helper (SkyComputerUseService) after 15 minutes without ChatGPT in front.
-    @AppStorage("stopIdleScreenHelper") var stopIdleScreenHelper = true
+    @AppStorage("stopIdleScreenHelper") var stopIdleScreenHelper = false
     private var chatGPTInFront = Date()
     private var helperStopped: Date?
     @AppStorage("alarmDiskGB") var alarmDiskGB: Double = 20
