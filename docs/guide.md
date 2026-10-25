@@ -240,7 +240,7 @@ second keeps WindowServer busy all the time:
 - **SkyComputerUseService, Codex Computer Use:** AI agents that screenshot your screen so
   the AI can see it. They can keep capturing while idle; a few percent of the Mac is normal.
   Quit ChatGPT with Cmd-Q (closing the window is not enough) to stop it. Settings, **Stop
-  ChatGPT's screen helper when idle** (on by default) stops it after 15 minutes without ChatGPT
+  ChatGPT's screen helper when idle** (off by default; turn it on there) stops it after 15 minutes without ChatGPT
   in front; ChatGPT starts it again when you use it.
 - **replayd:** macOS screen recording. Busy while any app records, streams or shares the screen.
 - **screencapture:** the screenshot command. If it keeps coming back, check **started by**

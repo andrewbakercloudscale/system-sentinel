@@ -489,7 +489,7 @@ public enum Insights {
                 steps += [
                     "Under 10% of the Mac you can leave it: the AI needs screenshots to see your screen, and the cost is small.",
                     "Quit ChatGPT (or Codex) with Cmd-Q when you are done with it. Closing its window is not enough; the helper keeps running until the app quits.",
-                    "Let System Sentinel do it: Settings, \"Stop ChatGPT's screen helper when idle\" (on by default) stops it after 15 minutes without ChatGPT in front. ChatGPT starts it again the next time you use it.",
+                    "Let System Sentinel do it: Settings, \"Stop ChatGPT's screen helper when idle\" (off by default) stops it after 15 minutes without ChatGPT in front. ChatGPT starts it again the next time you use it.",
                     "To stop it for good, switch ChatGPT off in System Settings > Privacy & Security > Screen & System Audio Recording. ChatGPT asks again if you later use computer use.",
                 ]
             }
