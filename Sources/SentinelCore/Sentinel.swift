@@ -61,7 +61,13 @@ public final class Sentinel {
 
     @discardableResult
     public func tick(at now: Date = Date()) throws -> [SentinelEvent] {
-        latest = try sampler()
+        tick(with: try sampler(), at: now)
+    }
+
+    /// The same with a sample taken elsewhere, so the app can run `ps` off the main thread.
+    @discardableResult
+    public func tick(with samples: [ProcessSample], at now: Date = Date()) -> [SentinelEvent] {
+        latest = samples
         cpuHistory.record(latest, at: now)
         dailyUsage.record(latest, at: now)
         recentUsage.record(latest, at: now)
