@@ -369,11 +369,21 @@ public enum Insights {
         let capturers: Set<String> = ["screencapture", "screencaptureui", "replayd", "SkyComputerUseService",
                                       "Codex Computer Use", "ScreenSharingAgent", "screensharingd"]
         if let ws = i.samples.first(where: { $0.name == "WindowServer" }), ws.cpu >= 20 {
-            let active = Set(i.samples.filter { capturers.contains($0.name) && $0.cpu >= 0.5 }.map(\.name)).sorted()
+            let capturing = i.samples.filter { capturers.contains($0.name) && $0.cpu >= 0.5 }
+            let active = Set(capturing.map(\.name)).sorted()
             if !active.isEmpty {
-                out.append(Insight(id: "ws-capture", tone: .warning, symbol: "camera.viewfinder",
-                                   title: "WindowServer (\(CPUScale.text(ws.cpu, cores: cores))) is busy because the screen is being captured",
-                                   detail: "\(active.joined(separator: ", ")) \(active.count == 1 ? "is" : "are") grabbing the screen, and every capture makes WindowServer render a fresh frame. Stop the recording, screen share or computer-use agent and it should drop."))
+                // What the captures cost in all: WindowServer plus the capturers themselves.
+                let cost = ws.cpu + capturing.reduce(0) { $0 + $1.cpu }
+                let costly = cost >= Self.captureWarnAt * cores
+                let who = active.joined(separator: ", ")
+                let agent = active.contains("SkyComputerUseService") ? "ChatGPT" : active.contains("Codex Computer Use") ? "Codex" : nil
+                out.append(Insight(id: "ws-capture", tone: costly ? .warning : .info, symbol: "camera.viewfinder",
+                                   title: costly
+                                       ? "Screen capture is costing \(CPUScale.text(cost, cores: cores)) of the Mac"
+                                       : "Screen capture by \(agent ?? who) costs \(CPUScale.text(cost, cores: cores)) of the Mac: fine",
+                                   detail: costly
+                                       ? "\(who) \(active.count == 1 ? "keeps" : "keep") grabbing the screen, and each grab makes WindowServer draw a fresh frame. \(agent.map { "Quit \($0) when you are not using it, or let System Sentinel stop its screen helper when it sits idle." } ?? "Stop the recording or screen share and it drops.")"
+                                       : "\(who) \(active.count == 1 ? "is" : "are") taking screenshots, which keeps WindowServer a little busy. Nothing to fix at this level\(agent.map { "; quit \($0) when you are done with it if you want it gone" } ?? "")."))
             } else {
                 out.append(Insight(id: "ws", tone: .info, symbol: "display.2",
                                    title: "WindowServer is at \(CPUScale.text(ws.cpu, cores: cores)) of the Mac",
@@ -453,6 +463,9 @@ public enum Insights {
     ]
 
     static let captureNames = Set(captureAbout.keys)
+    /// Screen capture is only worth a warning from this share of the Mac (WindowServer plus
+    /// the capturers). A computer-use agent idling at a few percent is normal.
+    public static let captureWarnAt = 10.0
 
     private static func related(_ s: ProcessSample, _ i: InsightInput, about: String? = nil) -> Insight.Related {
         Insight.Related(sample: s, about: about ?? ProcessGuide.note(for: s.name)?.headline, parent: i.parents[s.pid])
@@ -470,13 +483,25 @@ public enum Insights {
             x.why = "WindowServer is the part of macOS that composites every window into the image on your displays. Normally it only redraws what changes. A screen capture asks it for a complete, fresh copy of the whole screen, at full Retina resolution, every time. A recorder or an AI agent doing that several times a second keeps WindowServer working even when nothing on screen is moving, and the cost grows with the number and resolution of your displays."
             x.related = ws.map { related($0, i, about: "Composites everything you see. Its CPU is the cost of the captures below.") }
                 + caps.map { related($0, i, about: captureAbout[$0.name]) }
-            x.steps = [
-                "Stop any screen recording: look for the stop button in the menu bar, or press Cmd-Shift-5 and stop it.",
-                "Pause or quit AI computer-use agents (ChatGPT or Codex computer use, Sky) when you are not using them. Idle, they may still screenshot.",
-                "End Screen Sharing or remote support sessions you no longer need.",
-                "Review System Settings > Privacy & Security > Screen & System Audio Recording and switch off apps that should not be capturing.",
-                "If screencapture keeps coming back, quit the app shown as \"started by\".",
-            ]
+            let names = Set(caps.map(\.name))
+            var steps: [String] = []
+            if names.contains("SkyComputerUseService") || names.contains("Codex Computer Use") {
+                steps += [
+                    "Under 10% of the Mac you can leave it: the AI needs screenshots to see your screen, and the cost is small.",
+                    "Quit ChatGPT (or Codex) with Cmd-Q when you are done with it. Closing its window is not enough; the helper keeps running until the app quits.",
+                    "Let System Sentinel do it: Settings, \"Stop ChatGPT's screen helper when idle\" (on by default) stops it after 15 minutes without ChatGPT in front. ChatGPT starts it again the next time you use it.",
+                    "To stop it for good, switch ChatGPT off in System Settings > Privacy & Security > Screen & System Audio Recording. ChatGPT asks again if you later use computer use.",
+                ]
+            }
+            if !names.isSubset(of: ["SkyComputerUseService", "Codex Computer Use"]) {
+                steps += [
+                    "Stop any screen recording: look for the stop button in the menu bar, or press Cmd-Shift-5 and stop it.",
+                    "End Screen Sharing or remote support sessions you no longer need.",
+                    "Review System Settings > Privacy & Security > Screen & System Audio Recording and switch off apps that should not be capturing.",
+                    "If screencapture keeps coming back, quit the app shown as \"started by\".",
+                ]
+            }
+            x.steps = steps
         case "ws":
             x.related = i.samples.filter { $0.name == "WindowServer" }.map { related($0, i) }
             x.why = "WindowServer redraws whatever changes on any display. Its load scales with pixels times refresh rate: a 5K or scaled \"looks like\" resolution on an external display renders far more pixels than it shows, and 120 Hz doubles the work of 60 Hz. Transparency, blur, animated wallpapers, video and many visible windows all add to it."

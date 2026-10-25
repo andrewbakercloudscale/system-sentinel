@@ -421,6 +421,15 @@ final class InsightsTests: XCTestCase {
         XCTAssertFalse(ws!.steps.isEmpty)
         XCTAssertEqual(ws!.related.map(\.sample.name), ["WindowServer", "SkyComputerUseService"])
         XCTAssertNotNil(ws!.related[1].about)
+        XCTAssertEqual(ws!.tone, .info, "5% of a 10-core Mac is not worth a warning")
+        XCTAssertTrue(ws!.title.contains("ChatGPT") && ws!.title.hasSuffix("fine"))
+        XCTAssertTrue(ws!.steps.contains { $0.contains("Cmd-Q") }, "says how to stop it")
+        XCTAssertFalse(ws!.steps.contains { $0.contains("Cmd-Shift-5") }, "no screen recording steps for an AI agent")
+        // At 10% of the Mac and over, it is a warning.
+        let busy = Insights.generate(input([ProcessSample(pid: 395, uid: 88, cpu: 95, path: "/x/WindowServer"),
+                                            ProcessSample(pid: 7, uid: 501, cpu: 8, path: "/x/SkyComputerUseService")]))
+            .first { $0.id == "ws-capture" }
+        XCTAssertEqual(busy?.tone, .warning)
     }
 
     func testHeatComesFirstAndQuietIsGood() {
