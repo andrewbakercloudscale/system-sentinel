@@ -33,15 +33,14 @@
 
 ## The basics: what the percentages mean
 
-macOS counts CPU per core, and System Sentinel uses two scales:
+Every CPU figure is a **share of the whole Mac**: 100% means every core is flat out. On a
+10-core Mac, one process keeping one core busy shows as 10%. Activity Monitor counts per
+core instead (that same process shows 100% there, and a busy one can reach 1000%), so its
+numbers are the app's numbers times the core count. The Processes footer says how many cores
+your Mac has.
 
-| Where | Scale | Example on a 10-core Mac |
-|---|---|---|
-| Process lists, Trends table, notifications | **100% = one core**, like Activity Monitor | a process at 250% is using two and a half cores |
-| Gauge, charts, "CPU %" pill | **100% = every core** | 25% means two and a half of the ten cores are busy |
-
-So a single process can show more than 100%, and the whole Mac is busy only when the gauge
-approaches 100%.
+**Network speeds** are in Mbit/s, the unit speed tests and internet plans use (8 Mbit/s is
+1 MB/s). Disk speeds and sizes stay in bytes (MB/s, GB).
 
 **Averages** cover the time System Sentinel was running. If it was quit or the Mac was asleep,
 those hours count as unknown, not idle, so an evening with the Mac closed doesn't pull the
@@ -49,7 +48,7 @@ average down.
 
 **Sampling.** System Sentinel reads the process table every 5 seconds with `ps`, the same
 source Activity Monitor uses. System Sentinel and the commands it runs for its checks (`ps`,
-`top`, `nettop`, `ping`) average a few percent of one core, well under 1% of a 10-core Mac.
+`top`, `nettop`, `ping`) average well under 1% of the Mac.
 Those commands count as System Sentinel in every list and chart, so they are never flagged.
 **About, Details, Its own CPU** shows the figure for the last minute, and background checks
 wait while it is over its budget.
@@ -99,14 +98,17 @@ tab you were last on.
 - **What's wrong?** at the top. **Found on its own** lists what System Sentinel noticed
   without being asked: the Mac running hot, the processor or memory short, the battery
   draining fast, the disk nearly full, an app keeping the Mac awake, an app that keeps
-  crashing, and the insights below. Each has **Fix it** and **Ignore**. **Worth knowing**
+  crashing, and the insights below. Each has **Fix it** and **Ignore** (or **Snooze a day**). **Worth knowing**
   holds findings that are not problems.
 - **Or say what feels wrong:** eleven symptoms (Slow or hot, Battery drains, Disk full, Wi-Fi
   or internet, Won't sleep, Mic or camera, App crashes or won't open, Bluetooth, Display or
   dock, iCloud stuck, Restarted by itself). A dot means something was found there. Picking
   one opens a panel with what was found and the fixes.
-- **Ignore** a finding that is on purpose. One about a particular app stays ignored until
-  you click **Show again**; a passing state such as running hot is hidden for a day.
+- **Ignore** a finding about a particular app that is on purpose: it stays ignored until you
+  click **Show again**. A passing state such as running hot has **Snooze a day** instead.
+- **Pause alerts:** the bell at the top right pauses alert notifications for 1 hour, 4 hours
+  or until tomorrow morning, for a meeting or a presentation. Monitoring carries on, and a
+  low battery still warns. While paused it shows the time they come back.
 - **The checks**, performance first and security last: System, Apps, Network, Backup,
   Security, each with fix buttons. Buttons with a lock ask for your admin password.
 - **Quick fixes:** the everyday restarts (sound, Bluetooth, Wi-Fi, Finder, Dock, iCloud
@@ -125,8 +127,8 @@ The answer to "is my Mac busy, and why?" in one screen:
 - **CPU panel.** A dial with the whole Mac's load, how many cores are busy, a thermal chip
   (Cool, Warm, Hot, throttling, or Overheating) and the watts the CPU is drawing. When the
   Mac is hot, macOS slows the CPU down, so the same work takes more of it. From 30% load it
-  also names the two apps doing most of it, in their chart colours, with cores used and
-  their share ("claude 1.4 cores, 38%").
+  also names the two apps doing most of it, in their chart colours, with their share of the
+  Mac ("claude 14%").
 - **GPU panel.** The same for the graphics chip: a dial, its name and core count, its watts
   and the two apps using it most (5% or more each). Local AI models, video and games load the
   GPU rather than the CPU, so a quiet CPU dial can sit beside a full GPU one.
@@ -141,12 +143,12 @@ The answer to "is my Mac busy, and why?" in one screen:
 - **1 min / 15 min / 1 hour** on each panel. Use averaged over each period. A high 1 minute
   figure with a low 1 hour figure is a spike; all three high means it has been busy for a while.
 - **Right now.** A donut of the five apps using the most CPU at this moment, plus
-  everything else. The number in the middle is cores in use.
+  everything else. The number in the middle is how busy the whole Mac is.
 - **Last hour, by app.** A stacked chart of the top apps over the last hour, as a share of
   the whole Mac. Colours stay with each app across every chart in the app, so Chrome is
   always the same colour.
 - **Click either chart** to open a larger, live version in its own window. The larger
-  Right now chart lists more apps with cores used; the larger Last hour chart shows the
+  Right now chart lists more apps; the larger Last hour chart shows the
   values at any moment when you hover over it.
 - **Cores.** The load on each core over the last 5 seconds. On Apple silicon the
   efficiency cores (E) come first and the performance cores (P) after. macOS runs
@@ -190,7 +192,7 @@ several asks first, except `caffeinate`), **Turn on Low Power Mode** (asks for y
 password). Blue ones open the right page of System Settings.
 
 A minute after you quit or kill something, a banner says what it changed, for example
-"power 14.0 W → 6.0 W, CPU 3.0 cores → 80% of a core, about 4h 0m more battery". The
+"power 14.0 W → 6.0 W, CPU 30% of the Mac → 8.0% of the Mac, about 4h 0m more battery". The
 Events tab keeps the recent results.
 
 ### Insights you may see
@@ -199,7 +201,7 @@ Events tab keeps the recent results.
 |---|---|---|
 | **Overheating / hot / running warm** | macOS reports a raised thermal state | macOS is slowing the CPU to cool down. Close the heaviest apps and give the Mac airflow. |
 | **Low Power Mode is on** | Low Power Mode is enabled | The CPU runs slower, so everything reads higher. |
-| **N% of all cores are busy** | 70% or more of the whole Mac is busy | The Mac is close to flat out. |
+| **The Mac is N% busy** | 70% or more of the whole Mac is busy | The Mac is close to flat out. |
 | **Busier than usual** | Load is at least twice the last hour's average | Something new has started. |
 | **All quiet** | Under 10% of the Mac is in use | Nothing needs attention. |
 | **X has averaged N% for 15 minutes** | A process has stayed at 50% or more for the last 15 minutes | Sustained use, not a spike: a candidate for a rule. |
@@ -495,8 +497,8 @@ listed under Rules with a Remove button.
 
 Settings has two pages, picked at the top: **Settings** (below) and **[Rules](#rules)**.
 
-- **Over N% CPU for N minutes without a break** decides when a process is flagged. The
-  default is 80% (of one core) for 2 minutes. Builds and other short bursts never count;
+- **Over N% of the Mac for N minutes without a break** decides when a process is flagged.
+  The default is 80% of one core (8% of a 10-core Mac) for 2 minutes. Builds and other short bursts never count;
   only a process that stays over the line the whole time does.
 - **Launch System Sentinel at login.**
 - **Weekly report notification** on Monday morning (on by default).
@@ -521,10 +523,24 @@ Settings has two pages, picked at the top: **Settings** (below) and **[Rules](#r
 - **Updates:** automatic checks (at launch and every 6 hours) and Reinstall.
 - **Permissions:** what System Sentinel may do, and what stops working without each one.
 - **Diagnostics:** background jobs, recent errors, **Copy diagnostics**, **Report a
-  problem** and **Reset all settings…**.
+  problem**, **Export…** and **Reset all settings…**.
 
 Changes apply when you click **Save**; **Revert** throws them away. Unsaved changes are kept
-if you go to another tab and come back, until you Save or Revert.
+if you go to another tab and come back, until you Save or Revert; a pencil on the Settings
+tab shows they are waiting.
+
+### Export
+
+**Export…** (Settings, Diagnostics; also on Events and Processes) saves your data as CSV, for
+a spreadsheet, or JSON:
+
+- **History:** CPU, memory, swap, power, battery, disk and network readings over time, one
+  reading per row (time, metric, value, unit).
+- **Events:** flags, kills, crashes and alerts.
+- **Processes now:** every process with CPU, 15-minute average, memory and GPU.
+- **Full report** (JSON): all of the above plus the Mac, macOS and app version, for IT.
+
+Times are in UTC, decimals use a dot, and CPU is a share of the whole Mac.
 
 ---
 

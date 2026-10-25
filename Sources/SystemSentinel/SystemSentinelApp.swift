@@ -635,7 +635,8 @@ enum Snapshot {
             let win = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 600, height: 800), styleMask: [.borderless], backing: .buffered, defer: false)
             win.appearance = NSAppearance(named: appearance)
             win.contentView = host
-            let size = host.fittingSize
+            // It scrolls; tall enough to show every card.
+            let size = NSSize(width: host.fittingSize.width, height: 2300)
             win.setContentSize(size)
             host.frame = NSRect(origin: .zero, size: size)
             host.layoutSubtreeIfNeeded()
