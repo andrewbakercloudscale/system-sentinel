@@ -628,6 +628,7 @@ enum ChartZoom {
             windows[kind] = w
         }
         NSApp.activate(ignoringOtherApps: true)
+        if let w = windows[kind] { keepOnScreen(w) }
         windows[kind]?.makeKeyAndOrderFront(nil)
     }
 }

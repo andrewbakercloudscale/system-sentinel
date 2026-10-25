@@ -464,6 +464,7 @@ enum DNSMapWindow {
             window = w
         }
         NSApp.activate(ignoringOtherApps: true)
+        if let w = window { keepOnScreen(w) }
         window?.makeKeyAndOrderFront(nil)
         if name != nil { store.start() }
     }
