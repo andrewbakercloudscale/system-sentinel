@@ -298,6 +298,7 @@ struct SymptomsCard: View {
                 }
                 .buttonStyle(.plain)
                 .tip("Close")
+                .accessibilityLabel("Close")
             }
             ForEach(Diagnose.checks(s, v)) { c in row(c) }
         }

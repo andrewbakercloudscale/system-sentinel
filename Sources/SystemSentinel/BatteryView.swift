@@ -711,7 +711,7 @@ struct CoresCard: View {
                     .font(.caption.weight(.semibold))
                 Spacer()
                 Button { selected = nil } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }
-                    .buttonStyle(.plain).tip("Close")
+                    .buttonStyle(.plain).tip("Close").accessibilityLabel("Close")
             }
             if apps.isEmpty {
                 Text("Nothing measurable in the last few seconds.").font(.caption).foregroundStyle(.secondary)
@@ -805,9 +805,11 @@ struct BackgroundItemsCard: View {
                     }
                     .buttonStyle(.borderless)
                     .tip("Reveal \(item.plist) in Finder")
+                    .accessibilityLabel("Show \(item.name) in Finder")
                     Button { model.confirmRemove(item) } label: { Image(systemName: "trash") }
                         .buttonStyle(.borderless)
                         .tip("Stop it and move it to the Trash")
+                        .accessibilityLabel("Remove \(item.name)")
                 }
             }
             if items.count > 8 {

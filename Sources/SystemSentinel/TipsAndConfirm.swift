@@ -59,6 +59,7 @@ private struct TipModifier: ViewModifier {
                 .onHover { inside in center.hover(id, text, at: frame, inside: inside) }
                 .onDisappear { center.hover(id, text, at: frame, inside: false) }
                 .simultaneousGesture(TapGesture().onEnded { center.hide() })
+                .accessibilityHint(text)
         } else {
             content.help(text)
         }

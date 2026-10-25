@@ -131,6 +131,7 @@ struct CheckupView: View {
                     }
                     .buttonStyle(.plain)
                     .tip(isOpen ? "Hide the details" : "Show the details")
+                    .accessibilityLabel(isOpen ? "Hide the details" : "Show the details")
                 }
             }
             if isOpen {

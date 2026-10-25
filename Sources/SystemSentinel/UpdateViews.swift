@@ -201,6 +201,7 @@ struct UpdateBanner: View {
             }
             .buttonStyle(.plain)
             .tip("Hide until the next version. Settings still has Install.")
+            .accessibilityLabel("Hide")
         }
         .padding(.horizontal, 12).padding(.vertical, 10)
         .background(RoundedRectangle(cornerRadius: 10).fill(tint))

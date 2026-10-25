@@ -15,6 +15,8 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
     @Published var flagged: Set<Int32> = []
     @Published var lastError: String?
     @Published var lastAction: String?
+    /// Settings changed but not yet saved (Settings, Save or Revert).
+    @Published var settingsEdits: SettingsDraft?
     /// Kills in progress, so their buttons can say so: a polite stop waits up to 5 s.
     @Published var killing: Set<Int32> = []
     /// The result of the last kill, shown as a banner over the page.
