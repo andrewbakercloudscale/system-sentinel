@@ -180,6 +180,7 @@ enum WelcomeWindow {
             window = w
         }
         NSApp.activate()
+        if let w = window { keepOnScreen(w) }
         window?.makeKeyAndOrderFront(nil)
         window?.orderFrontRegardless()
     }

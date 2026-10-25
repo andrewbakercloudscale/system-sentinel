@@ -911,7 +911,9 @@ enum PopOut {
             // which aborts the app ("quit unexpectedly", 0.8.26 and 0.8.32).
             host.sizingOptions = []
             let w = NSWindow(contentViewController: host)
-            w.setContentSize(host.view.fittingSize)
+            // A scrolling page can measure only a few points tall; never open as a bare title bar.
+            let fit = host.view.fittingSize
+            w.setContentSize(NSSize(width: fit.width, height: fit.height < 400 ? 750 : fit.height))
             w.title = "System Sentinel"
             w.styleMask = [.titled, .closable, .miniaturizable]
             w.isReleasedWhenClosed = false
@@ -920,11 +922,25 @@ enum PopOut {
             w.dropContentOnClose { window = nil }
             window = w
         }
+        if let w = window { keepOnScreen(w) }
         NSApp.activate()
         if window?.isMiniaturized == true { window?.deminiaturize(nil) }
         window?.makeKeyAndOrderFront(nil)
         window?.orderFrontRegardless()
     }
+}
+
+/// Pulls a window fully onto the screen it is on (or the main one): a saved position from a
+/// display that is gone, or one partly under the Dock, otherwise leaves it out of reach.
+@MainActor
+func keepOnScreen(_ w: NSWindow) {
+    guard let vis = (w.screen ?? NSScreen.main)?.visibleFrame else { return }
+    var f = w.frame
+    f.size.width = min(f.width, vis.width)
+    f.size.height = min(f.height, vis.height)
+    f.origin.x = min(max(f.minX, vis.minX), vis.maxX - f.width)
+    f.origin.y = min(max(f.minY, vis.minY), vis.maxY - f.height)
+    if f != w.frame { w.setFrame(f, display: true) }
 }
 
 /// The result of a kill, over the top of the page where it cannot be missed: green when the
