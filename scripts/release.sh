@@ -24,8 +24,10 @@ echo "== tests"
 swift test >/dev/null 2>&1 || { echo "tests failed, not releasing"; exit 1; }
 
 echo "== build $VERSION"
-swift build -c release
-BIN="$(swift build -c release --show-bin-path)/SystemSentinel"
+# Universal: Apple chips and Intel Macs.
+swift build -c release --arch arm64 --arch x86_64
+BIN="$(swift build -c release --arch arm64 --arch x86_64 --show-bin-path)/SystemSentinel"
+lipo "$BIN" -verify_arch arm64 x86_64 || { echo "not universal, not releasing"; exit 1; }
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" dist
 cp "$BIN" "$APP/Contents/MacOS/SystemSentinel"
