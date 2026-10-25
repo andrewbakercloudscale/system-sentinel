@@ -253,7 +253,7 @@ struct MenuView: View {
                 FooterButton(title: "Pop out", symbol: "macwindow.on.rectangle", color: Theme.trends) {
                     PopOut.show(model)
                 }
-                .tip("Open in a window you can move around and keep open")
+                .tip("Open in a window you can move around and keep open. From any app: Control Option Command S (⌃⌥⌘S)")
             }
             if let rel = model.update {
                 FooterButton(title: "About: v\(rel.version) is out", symbol: "arrow.down.circle.fill", color: Self.updateColor, attention: true) {
@@ -447,7 +447,12 @@ struct SettingsDraft: Equatable {
 
 struct SettingsView: View {
     @ObservedObject var model: Model
-    @State private var edits: SettingsDraft?
+    /// Unsaved edits live on the model, so switching tab or closing the panel keeps them
+    /// until Save or Revert.
+    private var edits: SettingsDraft? {
+        get { model.settingsEdits }
+        nonmutating set { model.settingsEdits = newValue }
+    }
 
     private var draft: Binding<SettingsDraft> {
         Binding(get: { edits ?? SettingsDraft(model) }, set: { edits = $0 })

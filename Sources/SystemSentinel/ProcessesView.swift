@@ -380,6 +380,7 @@ private struct ProcessRow: View {
             .menuIndicator(.hidden)
             .fixedSize()
             .tip(fix ? "Actions: there is a fix for this one" : "Actions: explain, optimise, kill")
+            .accessibilityLabel("Actions for \(s.displayName)")
             .popover(isPresented: $optimise, arrowEdge: .leading) {
                 OptimisePopover(model: model, sample: s) { optimise = false }
             }
@@ -617,6 +618,7 @@ struct KillButton: View {
                 .buttonStyle(.plain)
                 .fixedSize()
                 .tip("Force kill (kill -9): stops it at once, with no chance to save. Asks first.")
+                .accessibilityLabel("Force kill \(sample.displayName)")
             }
             kill
         }
@@ -723,7 +725,7 @@ struct ExplainButton: View {
                 .contentShape(RoundedRectangle(cornerRadius: 9))
         }
         .buttonStyle(.plain)
-        .tip("Opens ChatGPT with a prompt describing this process and your Mac")
+        .tip("Opens ChatGPT in your browser with a prompt describing this and your Mac. The prompt is sent to OpenAI.")
     }
 }
 

@@ -646,6 +646,8 @@ struct ZoomOnClick: ViewModifier {
         content
             .contentShape(Rectangle())
             .onTapGesture { ChartZoom.show(kind, model: model) }
+            .accessibilityAddTraits(.isButton)
+            .accessibilityHint("Opens a larger, live chart in its own window")
             .onHover { inside in if inside { NSCursor.pointingHand.push() } else { NSCursor.pop() } }
             .tip("Click to open a larger version")
     }
@@ -901,11 +903,13 @@ private struct RelatedRow: View {
                 Image(systemName: "sparkles").foregroundStyle(Theme.trends)
             }
             .buttonStyle(.plain)
-            .tip("Explain \(s.name) with ChatGPT")
+            .tip("Explain \(s.name): opens ChatGPT in your browser and sends it a prompt about this process and your Mac")
+            .accessibilityLabel("Explain \(s.name) with ChatGPT")
             if let app = NSRunningApplication(processIdentifier: s.pid), app.bundleURL != nil, app.activationPolicy == .regular {
                 Button { app.activate() } label: { Image(systemName: "eye.fill").foregroundStyle(Tab.processes.color) }
                     .buttonStyle(.plain)
                     .tip("Bring \(s.name) to the front")
+                    .accessibilityLabel("Bring \(s.name) to the front")
             }
             if s.pid == getpid() {
                 EmptyView()

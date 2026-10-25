@@ -340,6 +340,7 @@ private struct TweakRow: View {
                 if let url = tweak.settingsURL {
                     Button { NSWorkspace.shared.open(URL(string: url)!) } label: { Image(systemName: "gearshape") }
                         .buttonStyle(.borderless).tip("Open the same setting in System Settings")
+                        .accessibilityLabel("Open in System Settings")
                 }
             }
             if let m = store.message[tweak.id] {

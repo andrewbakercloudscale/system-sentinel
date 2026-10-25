@@ -21,6 +21,7 @@ struct OptimiseButton: View {
         }
         .buttonStyle(.plain)
         .tip(specific ? "Optimise: there is a fix for this one" : lowered ? "At background priority. Optimise to change it." : "Optimise: lower its priority or restart it")
+        .accessibilityLabel("Optimise \(sample.displayName)")
         .popover(isPresented: $open, arrowEdge: .leading) {
             OptimisePopover(model: model, sample: sample) { open = false }
         }
