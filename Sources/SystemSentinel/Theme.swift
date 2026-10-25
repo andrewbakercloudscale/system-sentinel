@@ -278,6 +278,8 @@ struct TabPages<Content: View>: View {
 struct TabBar: View {
     @Binding var selection: Tab
     var badges: [Tab: Int] = [:]
+    /// Tabs holding unsaved changes: a pencil dot instead of a count.
+    var unsaved: Set<Tab> = []
     @State private var hover: Tab?
 
     var body: some View {
@@ -305,13 +307,18 @@ struct TabBar: View {
                                 .padding(.horizontal, 4).padding(.vertical, 1)
                                 .background(Capsule().fill(Color.red))
                                 .offset(x: -6, y: 3)
+                        } else if unsaved.contains(tab) {
+                            Image(systemName: "pencil").font(.system(size: 8, weight: .bold)).foregroundStyle(.white)
+                                .frame(width: 15, height: 15).background(Circle().fill(Tab.events.color))
+                                .offset(x: -6, y: 3)
+                                .accessibilityLabel("Unsaved changes")
                         }
                     }
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .onHover { hover = $0 ? tab : (hover == tab ? nil : hover) }
-                .tip(tab.title)
+                .tip(unsaved.contains(tab) ? "\(tab.title): unsaved changes" : tab.title)
             }
         }
     }

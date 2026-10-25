@@ -160,6 +160,7 @@ private struct LinkCard: View {
                     VStack(alignment: .leading, spacing: 1) {
                         Text("\(w.quality.label) Wi-Fi\(w.ssid.map { ": \($0)" } ?? "")").font(.callout.weight(.semibold))
                         Text("Signal \(w.rssi) dBm · noise \(w.noise) dBm · \(w.snr) dB clear").font(.caption).foregroundStyle(.secondary)
+                            .tip("Signal strength in dBm: closer to zero is stronger, -50 is excellent, -75 is weak. Noise is the background radio hiss. \"Clear\" is the gap between them: 25 dB or more is comfortable")
                     }
                 }
                 row("Link speed", "\(Int(w.txRate)) Mbit/s")

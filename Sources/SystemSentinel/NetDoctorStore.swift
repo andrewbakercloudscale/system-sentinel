@@ -288,7 +288,7 @@ extension NetworkStore {
         c.categoryIdentifier = "info"
         c.threadIdentifier = "hotspot"
         if sound { c.sound = .default }
-        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "hotspot", content: c, trigger: nil))
+        Snooze.post(UNNotificationRequest(identifier: "hotspot", content: c, trigger: nil))
     }
 
     func doctorInsights(paths: [Int32: String], at now: Date) -> [Insight] {

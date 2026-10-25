@@ -527,7 +527,7 @@ private struct InfoPopover: View {
             Divider()
             VStack(alignment: .leading, spacing: 3) {
                 Text(s.path).font(.caption.monospaced()).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
-                Text("pid \(s.pid)  ·  uid \(s.uid)  ·  \(Fmt.memory(s.rssKB))\(model.started(s).map { "  ·  " + $0 } ?? "")")
+                Text("process ID \(s.pid)  ·  \(s.uid == 0 ? "runs as root" : "user \(s.uid)")  ·  \(Fmt.memory(s.rssKB))\(model.started(s).map { "  ·  " + $0 } ?? "")")
                     .font(.caption).foregroundStyle(.secondary)
             }
         }

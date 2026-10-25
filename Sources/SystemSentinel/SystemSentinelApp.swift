@@ -134,7 +134,8 @@ struct MenuView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             header
-            TabBar(selection: $tab, badges: [.events: model.flagged.count, .checkup: model.attention().count])
+            TabBar(selection: $tab, badges: [.events: model.flagged.count, .checkup: model.attention().count],
+                   unsaved: model.settingsEdits.map { $0 != SettingsDraft(model) } == true ? [.settings] : [])
                 .onChange(of: tab) { _, t in if !fullLength { UserDefaults.standard.set(t.title, forKey: "lastTab") } }
                 .onChange(of: model.goTab) { _, t in
                     guard let t, let to = Tab.named(t) else { return }
@@ -206,6 +207,7 @@ struct MenuView: View {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { model.focus = "runaway" }
                 }
             }
+            SnoozeButton()
             LoadPill(name: "CPU", load: model.machineLoad, tip: "CPU: share of all \(Int(model.cores)) cores in use right now")
             if let gpu = model.gpu {
                 LoadPill(name: "GPU", load: gpu, tip: "GPU: how busy the graphics chip is right now")
@@ -510,11 +512,6 @@ struct SettingsView: View {
             }
             HistorySettingsCard(days: draft.historyDays)
             UpdatesCard(model: model, auto: draft.autoUpdateCheck)
-            Button { AboutWindow.show(model) } label: {
-                Label("About System Sentinel", systemImage: "info.circle")
-            }
-            .buttonStyle(.bordered).tint(Tab.overview.color)
-            .tip("Version, updates, links and who made it")
             PermissionsCard(permissions: model.permissions)
             DiagnosticsCard(model: model)
             HStack(spacing: 8) {
@@ -630,6 +627,22 @@ enum Snapshot {
                 try? rep.representation(using: .png, properties: [:])?
                     .write(to: URL(fileURLWithPath: dir).appendingPathComponent("\(name)-\(appearance == .aqua ? "light" : "dark").png"))
             }
+        }
+        // The About window, at the size it opens at.
+        for appearance in [NSAppearance.Name.aqua, .darkAqua] {
+            let host = NSHostingView(rootView: AboutView(model: model).background(Color(nsColor: .windowBackgroundColor)))
+            host.appearance = NSAppearance(named: appearance)
+            let win = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 600, height: 800), styleMask: [.borderless], backing: .buffered, defer: false)
+            win.appearance = NSAppearance(named: appearance)
+            win.contentView = host
+            let size = host.fittingSize
+            win.setContentSize(size)
+            host.frame = NSRect(origin: .zero, size: size)
+            host.layoutSubtreeIfNeeded()
+            guard let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { continue }
+            host.cacheDisplay(in: host.bounds, to: rep)
+            try? rep.representation(using: .png, properties: [:])?
+                .write(to: URL(fileURLWithPath: dir).appendingPathComponent("about-\(appearance == .aqua ? "light" : "dark").png"))
         }
         // The DNS map window, when `--dnsmap <name>` started one.
         if let r = DNSMapStore.shared.result {

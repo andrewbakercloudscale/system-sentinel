@@ -499,7 +499,7 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
         content.body = weekly().text
         content.categoryIdentifier = "info"
         content.threadIdentifier = "reports"
-        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "weekly-\(Int(now.timeIntervalSince1970))", content: content, trigger: nil))
+        Snooze.post(UNNotificationRequest(identifier: "weekly-\(Int(now.timeIntervalSince1970))", content: content, trigger: nil))
     }
 
     func sample(pid: Int32) -> ProcessSample? { sentinel.latest.first { $0.pid == pid } }
@@ -523,7 +523,7 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
         }
         content.categoryIdentifier = "info"
         content.threadIdentifier = "awake"
-        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "blocker-\(SleepBlockers.reportKey(first))", content: content, trigger: nil))
+        Snooze.post(UNNotificationRequest(identifier: "blocker-\(SleepBlockers.reportKey(first))", content: content, trigger: nil))
     }
 
     /// Pops up a notification naming the culprit when the Mac runs hot or draws a lot of power.
@@ -557,7 +557,7 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
             content.categoryIdentifier = "info"
             content.threadIdentifier = "heat"
             // A new heat warning replaces the last rather than piling up.
-            UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "heat", content: content, trigger: nil))
+            Snooze.post(UNNotificationRequest(identifier: "heat", content: content, trigger: nil))
             return
         }
         notify(s, title: title, body: body + " Most likely: \(s.displayName), at \(Fmt.cpu(sentinel.cpuHistory.average(s.pid, over: 60, at: now))) of the Mac's CPU.", actions: true)
@@ -1455,7 +1455,7 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
         content.categoryIdentifier = actions && Safety.canKillManually(s) ? "badActor" : "info"
         // Stacked by app in Notification Centre, so a busy day reads as a few groups.
         content.threadIdentifier = "app-" + Model.appKey(s.path)
-        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: id, content: content, trigger: nil))
+        Snooze.post(UNNotificationRequest(identifier: id, content: content, trigger: nil))
     }
 
     nonisolated func userNotificationCenter(
