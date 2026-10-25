@@ -75,7 +75,7 @@ EOF
 chmod +x ~/install-system-sentinel.sh && ~/install-system-sentinel.sh
 ```
 
-Run `~/install-system-sentinel.sh` again any time to update. You need macOS 14 or later.
+Run `~/install-system-sentinel.sh` again any time to update. You need macOS 14 or later, on an Apple chip (M1 or later) or an Intel Mac. The script checks first and says so if this Mac cannot run it; on an account that is not an administrator it installs to your own Applications folder.
 Look for the red chip ![menu bar icon](docs/images/menubar-normal.png) in the menu bar.
 
 **Build from source instead** (needs Xcode or its command line tools, `xcode-select --install`):
