@@ -265,6 +265,10 @@ The 30 busiest processes, refreshed every 5 seconds.
   including ones idle right now.
 - **pid and uptime:** "up 13d 0h" means the process has been running for 13 days. A busy
   process with a long uptime is a classic stuck process.
+- **What it is waiting on**, after the uptime, for a process doing something: **Busy on
+  CPU**, **Waiting on disk** (heavy reads or writes, or stuck in the kernel on disk),
+  **Waiting on memory** (stuck paging while memory is tight) or **Waiting on network**.
+  Nothing is shown for an idle process.
 - **Badges** are small icons beside the name; point at one to read it: a lock (runs as
   root, needs your password to kill), a flame (over your threshold, and for how long), a
   warning (flagged), a tortoise (background priority), and its rule if it has one. A
@@ -458,6 +462,13 @@ Everything System Sentinel did, or decided not to do:
 The tiles count the last 7 days, the chart shows each day, and the log lists every event
 with its time and CPU.
 
+**Not responding** lists apps that froze (the spinning wheel) for more than 2 seconds, and
+System Sentinel's own window if it froze for more than half a second, each with the likely
+reason taken at the moment it froze: the app busy on CPU or waiting on disk, memory or
+network, the whole Mac busy, memory pressure or swap, or heat. "No sign of CPU, memory or
+disk trouble" means the app itself was stuck. **Copy all** puts the list on the clipboard
+for a bug report.
+
 **What stopping things changed** lists the measured result of recent quits and kills.
 **Share a report** saves the week, today, battery, sleep and memory as Markdown or PDF.
 
@@ -506,6 +517,8 @@ Settings has two pages, picked at the top: **Settings** (below) and **[Rules](#r
 - **Over N% of the Mac for N minutes without a break** decides when a process is flagged.
   The default is 80% of one core (8% of a 10-core Mac) for 2 minutes. Builds and other short bursts never count;
   only a process that stays over the line the whole time does.
+- **Tell me when an app stops responding** (on by default): a notification when an app has
+  shown the spinning wheel for 10 seconds, with the likely reason.
 - **Launch System Sentinel at login.**
 - **Weekly report notification** on Monday morning (on by default).
 - **Menu bar:** nothing, CPU load, power draw or battery beside the icon.

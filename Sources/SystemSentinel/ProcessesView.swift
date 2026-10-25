@@ -397,6 +397,7 @@ private struct ProcessRow: View {
     private func subtitle(_ s: ProcessSample) -> String {
         var parts = ["pid \(s.pid)"]
         if let up = model.uptime(s) { parts.append(up) }
+        if let w = model.waitReason(s) { parts.append(w.label) }
         return parts.joined(separator: "  ·  ")
     }
 

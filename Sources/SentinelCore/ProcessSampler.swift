@@ -10,9 +10,13 @@ public struct ProcessSample: Equatable, Sendable {
     public let rssKB: Int
     /// Full executable path where `ps` gives one, else the bare command name.
     public let path: String
+    /// `ps` state letters: "R" running, "S" sleeping, "U" stuck waiting (disk or paging).
+    /// Empty where the sample did not read it.
+    public let state: String
 
-    public init(pid: Int32, uid: UInt32, cpu: Double, path: String, rssKB: Int = 0) {
+    public init(pid: Int32, uid: UInt32, cpu: Double, path: String, rssKB: Int = 0, state: String = "") {
         self.pid = pid
+        self.state = state
         self.uid = uid
         self.cpu = cpu
         self.rssKB = rssKB
@@ -51,6 +55,8 @@ public enum ProcessSampler {
     public static let arguments = ["-axww", "-o", "pid=,uid=,%cpu=,rss=,comm="]
     /// The same with the parent pid, so the commands this app runs can be told apart.
     public static let argumentsWithParent = ["-axww", "-o", "pid=,uid=,%cpu=,rss=,ppid=,comm="]
+    /// The same with the state, so the Processes tab can say what a process is waiting on.
+    public static let argumentsWithState = ["-axww", "-o", "pid=,uid=,%cpu=,rss=,ppid=,stat=,comm="]
 
     public static func sample() throws -> [ProcessSample] {
         try sample(foldingInto: nil)
@@ -63,7 +69,7 @@ public enum ProcessSampler {
         let task = Process()
         task.executableURL = URL(fileURLWithPath: "/bin/ps")
         task.qualityOfService = .utility
-        task.arguments = me == nil ? arguments : argumentsWithParent
+        task.arguments = me == nil ? arguments : argumentsWithState
         let pipe = Pipe()
         task.standardOutput = pipe
         task.standardError = FileHandle.nullDevice
@@ -75,7 +81,7 @@ public enum ProcessSampler {
         }
         let text = String(decoding: data, as: UTF8.self)
         guard let me else { return resolve(parse(text)) }
-        return resolve(fold(parseWithParents(text), into: me))
+        return resolve(fold(parseWithState(text), into: me))
     }
 
     /// Adds the CPU and memory of every descendant of `me` to `me`'s own row and drops them.
@@ -98,7 +104,7 @@ public enum ProcessSampler {
         }
         guard cpu > 0 || rss > 0, let i = out.firstIndex(where: { $0.pid == me }) else { return out }
         let s = out[i]
-        out[i] = ProcessSample(pid: s.pid, uid: s.uid, cpu: s.cpu + cpu, path: s.path, rssKB: s.rssKB + rss)
+        out[i] = ProcessSample(pid: s.pid, uid: s.uid, cpu: s.cpu + cpu, path: s.path, rssKB: s.rssKB + rss, state: s.state)
         return out
     }
 
@@ -114,7 +120,7 @@ public enum ProcessSampler {
             var path = s.path
             if path.hasPrefix("("), path.hasSuffix(")") { path = String(path.dropFirst().dropLast()) }
             if let full = pathOf(s.pid), (full as NSString).lastPathComponent == path { path = full }
-            return path == s.path ? s : ProcessSample(pid: s.pid, uid: s.uid, cpu: s.cpu, path: path, rssKB: s.rssKB)
+            return path == s.path ? s : ProcessSample(pid: s.pid, uid: s.uid, cpu: s.cpu, path: path, rssKB: s.rssKB, state: s.state)
         }
     }
 
@@ -135,6 +141,11 @@ public enum ProcessSampler {
     /// `pid uid %cpu rss ppid comm` lines.
     public static func parseWithParents(_ output: String) -> [(sample: ProcessSample, ppid: Int32)] {
         rows(output, fields: 5)
+    }
+
+    /// `pid uid %cpu rss ppid stat comm` lines.
+    public static func parseWithState(_ output: String) -> [(sample: ProcessSample, ppid: Int32)] {
+        rows(output, fields: 6)
     }
 
     private static func rows(_ output: String, fields count: Int) -> [(sample: ProcessSample, ppid: Int32)] {
@@ -158,7 +169,8 @@ public enum ProcessSampler {
                   !path.isEmpty
             else { continue }
             let ppid = count > 4 ? Int32(fields[4]) ?? 0 : 0
-            out.append((ProcessSample(pid: pid, uid: uid, cpu: cpu, path: String(path), rssKB: rss), ppid))
+            let state = count > 5 ? String(fields[5]) : ""
+            out.append((ProcessSample(pid: pid, uid: uid, cpu: cpu, path: String(path), rssKB: rss, state: state), ppid))
         }
         return out
     }

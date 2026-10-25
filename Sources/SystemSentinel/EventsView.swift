@@ -32,6 +32,7 @@ struct EventsView: View {
             }
             WeeklyCard(report: model.weekly())
             if !model.impacts.isEmpty { ImpactsCard(impacts: model.impacts) }
+            HangsCard(hangs: model.hangs)
             ExportCard(model: model)
             Card(title: "Last 7 days", symbol: "calendar", tint: Tab.events.color) {
                 Chart(perDay) { d in

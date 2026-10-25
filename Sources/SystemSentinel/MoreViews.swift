@@ -644,3 +644,44 @@ struct MenuBarSettingsCard: View {
         }
     }
 }
+
+// MARK: Hangs
+
+/// Apps that stopped responding, System Sentinel included, and what was going on then.
+struct HangsCard: View {
+    let hangs: [Hang]
+
+    var body: some View {
+        Card(title: "Not responding", symbol: "hourglass", tint: Tab.events.color) {
+            if hangs.isEmpty {
+                Text("No app has frozen for more than 2 seconds since this list started. When one does, it is listed here with the likely reason.")
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            } else {
+                ForEach(Array(hangs.prefix(8).enumerated()), id: \.offset) { _, h in
+                    HStack(alignment: .top, spacing: 8) {
+                        Image(systemName: h.own ? "gauge.with.dots.needle.33percent" : "hourglass")
+                            .foregroundStyle(h.seconds >= 10 ? Theme.heat(100) : Tab.events.color)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text("\(h.app) froze for \(Self.length(h.seconds))").font(.callout.weight(.medium))
+                            Text(h.reason).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                        }
+                        Spacer()
+                        Text(h.start.formatted(date: .abbreviated, time: .shortened)).font(.caption2).foregroundStyle(.secondary)
+                    }
+                }
+                HStack {
+                    Text("Freezes of System Sentinel over 0.5 s and of other apps over 2 s.").font(.caption2).foregroundStyle(.secondary)
+                    Spacer()
+                    Button {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(hangs.map(\.line).joined(separator: "\n"), forType: .string)
+                    } label: { Label("Copy all", systemImage: "doc.on.doc") }
+                }
+            }
+        }
+    }
+
+    static func length(_ s: Double) -> String {
+        s < 10 ? String(format: "%.1f s", s) : Model.duration(s)
+    }
+}
