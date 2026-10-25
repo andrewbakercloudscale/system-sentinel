@@ -39,7 +39,7 @@ extension Model {
             content.sound = .default
             // Grouped together, and a repeat of the same alarm replaces the last one.
             content.threadIdentifier = "alarms"
-            UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "alarm-\(alarm.rawValue)", content: content, trigger: nil))
+            Snooze.post(UNNotificationRequest(identifier: "alarm-\(alarm.rawValue)", content: content, trigger: nil))
         }
     }
 }

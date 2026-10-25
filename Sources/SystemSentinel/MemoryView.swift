@@ -70,6 +70,7 @@ private struct MemoryHero: View {
                 Text(gb(m.swapUsed)).font(.system(size: 26, weight: .bold, design: .rounded)).foregroundStyle(.white).monospacedDigit()
                 Text("in swap").font(.caption).foregroundStyle(.white.opacity(0.85))
             }
+            .tip("Swap is memory macOS moved out to the disk because RAM ran short. It is slower than RAM, and only a restart empties it")
         }
         .padding(16)
         .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing)))

@@ -303,7 +303,9 @@ struct MTRCard: View {
             GridRow {
                 Text("#").gridColumnAlignment(.trailing)
                 Text("Host").gridColumnAlignment(.leading)
-                Text("Loss"); Text("Sent"); Text("Last"); Text("Avg"); Text("Best"); Text("Worst"); Text("Jitter")
+                Text("Loss").tip("Share of pings this hop did not answer. Loss at one hop only, with none after it, is that router ignoring pings, not a fault")
+                Text("Sent"); Text("Last"); Text("Avg"); Text("Best"); Text("Worst")
+                Text("Jitter").tip("How much the delay varies from ping to ping, in ms. High jitter makes calls and games stutter")
             }
             .font(.callout.weight(.semibold)).foregroundStyle(.secondary)
             Divider().gridCellUnsizedAxes(.horizontal)

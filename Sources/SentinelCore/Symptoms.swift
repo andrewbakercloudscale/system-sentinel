@@ -499,9 +499,8 @@ public enum Diagnose {
         return out
     }
 
-    static func bytes(_ b: UInt64) -> String {
-        ByteCountFormatter.string(fromByteCount: Int64(b), countStyle: .memory)
-    }
+    /// Dot decimals like every other figure in the app, whatever the region's separator.
+    static func bytes(_ b: UInt64) -> String { ReportDocument.bytes(b) }
 }
 
 /// Reading what the probes behind the symptoms print. Pure, so each is tested with real output.

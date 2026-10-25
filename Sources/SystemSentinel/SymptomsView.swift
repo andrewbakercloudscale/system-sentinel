@@ -216,7 +216,7 @@ struct SymptomsCard: View {
                             }
                             Spacer(minLength: 6)
                             IgnoreButton(subject: f.check.subject != nil) { withAnimation { store.ignore(f.check) } }
-                            Text(open == f.symptom ? "Hide" : "Fix it").font(.caption.weight(.semibold)).foregroundStyle(.white)
+                            Text(open == f.symptom ? "Less" : "Fix it").font(.caption.weight(.semibold)).foregroundStyle(.white)
                                 .padding(.horizontal, 10).padding(.vertical, 4)
                                 .background(Capsule().fill(color(f.check.status)))
                         }
@@ -320,13 +320,16 @@ struct IgnoreButton: View {
 
     var body: some View {
         Button(action: action) {
-            Text("Ignore").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+            // Not "Hide": that reads like the More/Less toggle beside it.
+            Label(subject ? "Ignore" : "Snooze a day", systemImage: subject ? "eye.slash" : "moon.zzz")
+                .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                 .padding(.horizontal, 10).padding(.vertical, 4)
                 .background(Capsule().strokeBorder(Color.secondary.opacity(0.5)))
                 .contentShape(Capsule())
         }
         .buttonStyle(.plain)
         .tip(subject ? "It is on purpose: stop flagging this. Something else causing it still shows. Show again on Checkup brings it back"
-                     : "Hide this for a day. Show again on Checkup brings it back")
+                     : "Leave this out for a day. Show again on Checkup brings it back")
+        .accessibilityLabel(subject ? "Ignore" : "Snooze a day")
     }
 }
