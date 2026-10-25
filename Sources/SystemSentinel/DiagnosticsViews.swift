@@ -188,6 +188,12 @@ struct DiagnosticsCard: View {
                     .tip("Copies the diagnostics and opens a new GitHub issue with your version and Mac filled in. Paste the diagnostics into it.")
             }
             HStack {
+                Text("Export saves your history, the events log, the processes running now, or all of it as CSV or JSON. Times are in UTC; CPU is a percent of the whole Mac.")
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 8)
+                ExportMenu(model: model)
+            }
+            HStack {
                 Text("Reset puts every setting and rule back to how it was when installed. History is kept unless you choose to delete it.")
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 8)
