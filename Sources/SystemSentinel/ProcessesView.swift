@@ -80,7 +80,7 @@ struct ProcessesView: View {
                     ProcessRow(model: model, sample: s, zebra: i.isMultiple(of: 2), window: window, cols: cols)
                 }
             }
-            Text("100% is one full core; a busy process can use several. Averages count idle time, so they show what has been chewing the CPU, not how hot it runs when it does. GPU is each process's share of the graphics chip over the last 5 seconds, where 100% is all of it. Click a column title to sort by it.")
+            Text("CPU is a share of the whole Mac and all its \(Int(CPUScale.cores)) cores, so one core flat out shows as \(Fmt.cpu(100)). Averages count idle time, so they show what has been chewing the CPU, not how hot it runs when it does. GPU is each process's share of the graphics chip over the last 5 seconds, where 100% is all of it. Click a column title to sort by it.")
                 .font(.caption2).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
         } header: {
             toolbar(sort: sort, window: window)
@@ -113,6 +113,7 @@ struct ProcessesView: View {
                 ColumnHeader(title: "15 min trend", width: $colTrend, standard: 84, minWidth: 50, maxWidth: room - used + colTrend, alignment: .center)
                 ColumnHeader(title: "CPU", width: $colNow, standard: 64, minWidth: 54, maxWidth: room - used + colNow,
                              sorted: sort == .now, onSort: { sortRaw = Sort.now.rawValue })
+                    .tip("Share of the whole Mac, all \(Int(CPUScale.cores)) cores")
                 ColumnHeader(title: window == 900 ? "15 min" : window == 3600 ? "1 hour" : "6 hours", width: $colAvg, standard: 60, minWidth: 44, maxWidth: room - used + colAvg,
                              sorted: sort.window != nil, onSort: { sortRaw = (sort.window == nil ? Sort.m15 : sort == .m15 ? .h1 : sort == .h1 ? .h6 : .m15).rawValue })
                 ColumnHeader(title: "memory", width: $colMem, standard: 66, minWidth: 54, maxWidth: room - used + colMem,
@@ -293,10 +294,15 @@ private struct ProcessRow: View {
             IconView(icon: IconCache.shared.icon(for: s), size: 26)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 5) {
-                    Text(s.displayName).font(.callout.weight(.medium)).lineLimit(1).truncationMode(.middle).layoutPriority(1)
-                    if flagged { Pill(text: "Flagged: using too much CPU", symbol: "exclamationmark.triangle.fill", color: Theme.heat(100), compact: true) }
+                    Text(s.displayName).font(.callout.weight(.medium)).lineLimit(1).truncationMode(.middle).layoutPriority(2)
+                        .tip(s.displayName == s.name ? s.path : "\(s.displayName)\n\(s.path)")
+                    if flagged { Pill(text: "Flagged", symbol: "exclamationmark.triangle.fill", color: Theme.heat(100), compact: true).tip("Flagged: it stayed over your CPU limit") }
                     if let hot { Pill(text: "Hot for \(hot)", symbol: "flame.fill", color: Theme.heat(50), compact: true) }
-                    if s.isRoot { Pill(text: "Runs as root", symbol: "lock.fill", color: Color(hex: "#b45309"), compact: true) }
+                    if s.isRoot {
+                        Image(systemName: "lock.fill").font(.caption2).foregroundStyle(Color(hex: "#b45309"))
+                            .accessibilityLabel("Runs as root")
+                            .tip("Runs as root: stopping it asks for your password")
+                    }
                     policyPill(model.policy(for: s))
                     if model.isSlowed(s) {
                         Pill(text: "background", symbol: "tortoise.fill", color: Theme.rules, compact: true)
@@ -315,11 +321,11 @@ private struct ProcessRow: View {
                 .frame(width: cols.trend, height: 22)
 
             VStack(alignment: .trailing, spacing: 3) {
-                Text(Fmt.pct(s.cpu)).font(.callout.weight(.semibold)).monospacedDigit().foregroundStyle(Theme.heat(s.cpu))
+                Text(Fmt.cpu(s.cpu)).font(.callout.weight(.semibold)).monospacedDigit().foregroundStyle(Theme.heat(s.cpu))
                 HeatBar(value: s.cpu).frame(width: max(20, cols.now - 10), height: 4)
             }
             .frame(width: cols.now, alignment: .trailing)
-            Text(Fmt.pct(avg15)).font(.caption).monospacedDigit().foregroundStyle(Theme.heat(avg15)).frame(width: cols.avg, alignment: .trailing)
+            Text(Fmt.cpu(avg15)).font(.caption).monospacedDigit().foregroundStyle(Theme.heat(avg15)).frame(width: cols.avg, alignment: .trailing)
             Text(Fmt.memory(s.rssKB)).font(.caption).monospacedDigit().foregroundStyle(.secondary).frame(width: cols.mem, alignment: .trailing)
             let gpu = model.gpuShares[s.pid] ?? 0
             Text(gpu >= 0.05 ? Fmt.pct(gpu) : "–").font(.caption.weight(gpu >= 5 ? .semibold : .regular)).monospacedDigit()
@@ -530,7 +536,7 @@ private struct InfoPopover: View {
 
     private func stat(_ label: String, _ v: Double) -> some View {
         VStack(spacing: 1) {
-            Text(Fmt.pct(v)).font(.system(size: 15, weight: .bold, design: .rounded)).foregroundStyle(Theme.heat(v))
+            Text(Fmt.cpu(v)).font(.system(size: 15, weight: .bold, design: .rounded)).foregroundStyle(Theme.heat(v))
             Text(label).font(.caption2).foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity)

@@ -93,10 +93,9 @@ private struct Hero: View {
                         let colors = ColorBook.shared.colors(for: top.map(\.key))
                         HStack(spacing: 6) {
                             ForEach(top) { s in
-                                HeroChip(text: String(format: "%@ %.1f cores, %d%%", s.name, s.cpu / 100,
-                                                      Int((total > 0 ? s.cpu / total * 100 : 0).rounded())),
+                                HeroChip(text: "\(s.name) \(Fmt.cpu(s.cpu))",
                                          symbol: "arrow.up.circle.fill", fill: colors[s.key]?.opacity(0.85))
-                                    .tip("Share of the CPU in use right now")
+                                    .tip("Its share of the whole Mac's CPU right now")
                             }
                         }
                     }
@@ -338,7 +337,7 @@ struct NowDonut: View {
         let total = slices.reduce(0) { $0 + $1.cpu }
         let ring: CGFloat = zoomed ? 260 : 92
         Card(title: "Right now", symbol: "chart.pie.fill", tint: Tab.overview.color,
-             trailing: zoomed ? AnyView(Text("share of CPU in use").font(.caption).foregroundStyle(.secondary)) : AnyView(ZoomHint()),
+             trailing: zoomed ? AnyView(Text("share of the whole Mac").font(.caption).foregroundStyle(.secondary)) : AnyView(ZoomHint()),
              fill: true) {
             HStack(alignment: .center, spacing: zoomed ? 28 : 10) {
                 Chart(slices) { s in
@@ -350,8 +349,8 @@ struct NowDonut: View {
                 .frame(width: ring, height: ring)
                 .overlay {
                     VStack(spacing: 0) {
-                        Text(String(format: "%.1f", total / 100)).font(.system(size: zoomed ? 40 : 16, weight: .bold, design: .rounded))
-                        Text("cores").font(.system(size: zoomed ? 14 : 9)).foregroundStyle(.secondary)
+                        Text(Fmt.cpu(total)).font(.system(size: zoomed ? 40 : 16, weight: .bold, design: .rounded))
+                        Text("busy").font(.system(size: zoomed ? 14 : 9)).foregroundStyle(.secondary)
                     }
                 }
                 VStack(alignment: .leading, spacing: zoomed ? 9 : 4) {
@@ -361,11 +360,7 @@ struct NowDonut: View {
                                 .frame(width: zoomed ? 12 : 8, height: zoomed ? 12 : 8)
                             Text(s.name).lineLimit(1).truncationMode(.tail)
                             Spacer(minLength: 2)
-                            if zoomed {
-                                Text(String(format: "%.2f cores", s.cpu / 100)).foregroundStyle(.secondary).monospacedDigit()
-                                    .frame(width: 90, alignment: .trailing)
-                            }
-                            Text(Fmt.pct(total > 0 ? s.cpu / total * 100 : 0)).foregroundStyle(.secondary).monospacedDigit()
+                            Text(Fmt.cpu(s.cpu)).foregroundStyle(.secondary).monospacedDigit()
                                 .frame(width: zoomed ? 56 : nil, alignment: .trailing)
                         }
                         .font(zoomed ? .body : .caption2)
@@ -522,7 +517,7 @@ struct LastHourChart: View {
                             }
                     }
                     ForEach(points) { p in
-                        AreaMark(x: .value("Time", p.time), y: .value("CPU", p.value), stacking: .standard)
+                        AreaMark(x: .value("Time", p.time), y: .value("CPU", p.value / CPUScale.cores), stacking: .standard)
                             .foregroundStyle(by: .value("App", p.key))
                             .interpolationMethod(.monotone)
                     }
@@ -531,7 +526,7 @@ struct LastHourChart: View {
                             .foregroundStyle(Color.primary.opacity(0.35))
                             .lineStyle(StrokeStyle(lineWidth: 1))
                             .annotation(position: t > now.addingTimeInterval(-window / 2) ? .leading : .trailing, alignment: .top) {
-                                HoverCard(time: t, rows: hovered.reversed().map { ($0.key == "other" ? "Other" : $0.name, colors[$0.key] ?? Theme.other, $0.value) })
+                                HoverCard(time: t, rows: hovered.reversed().map { ($0.key == "other" ? "Other" : $0.name, colors[$0.key] ?? Theme.other, $0.value / CPUScale.cores) })
                             }
                     }
                 }
@@ -557,7 +552,7 @@ struct LastHourChart: View {
                 .chartYAxis {
                     AxisMarks(position: .leading, values: .automatic(desiredCount: zoomed ? 6 : 3)) { v in
                         AxisGridLine().foregroundStyle(Color.primary.opacity(0.08))
-                        AxisValueLabel { if let d = v.as(Double.self) { Text("\(Int(d))%").font(.system(size: zoomed ? 11 : 9)) } }
+                        AxisValueLabel { if let d = v.as(Double.self) { Text(Fmt.tick(d)).font(.system(size: zoomed ? 11 : 9)) } }
                     }
                 }
                 .chartXAxis {
@@ -883,7 +878,7 @@ private struct RelatedRow: View {
                             .background(Capsule().fill(Tab.memory.color))
                             .tip("Memory it holds: in RAM plus compressed or in swap")
                     } else {
-                        Text(Fmt.pct(s.cpu)).font(.caption2.weight(.bold)).monospacedDigit().foregroundStyle(.white)
+                        Text(Fmt.cpu(s.cpu)).font(.caption2.weight(.bold)).monospacedDigit().foregroundStyle(.white)
                             .padding(.horizontal, 5).padding(.vertical, 1)
                             .background(Capsule().fill(Theme.heat(s.cpu)))
                             .tip("CPU now; 100% is one core")

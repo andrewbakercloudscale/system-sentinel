@@ -247,7 +247,7 @@ struct AboutView: View {
             ("App ID", Bundle.main.bundleIdentifier ?? "?"),
             ("Running since", since.formatted(date: .abbreviated, time: .shortened)
                 + " (" + RelativeDateTimeFormatter().localizedString(for: since, relativeTo: Date()) + ")"),
-            ("Its own CPU", SelfGuard.usage.map { String(format: "%.1f%% of one core over the last minute", $0) } ?? "Measuring"),
+            ("Its own CPU", SelfGuard.usage.map { "\(Fmt.cpu($0)) of the Mac over the last minute" } ?? "Measuring"),
             ("Mac", [Self.sysctl("hw.model"), Self.sysctl("machdep.cpu.brand_string")].compactMap { $0 }.joined(separator: ", ")),
             ("Cores and memory", "\(Int(model.cores)) cores, \(ReportDocument.bytes(ProcessInfo.processInfo.physicalMemory)) memory"),
             ("macOS", "\(v.majorVersion).\(v.minorVersion).\(v.patchVersion)"),

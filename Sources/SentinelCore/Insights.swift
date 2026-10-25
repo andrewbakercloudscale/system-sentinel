@@ -325,16 +325,16 @@ public enum Insights {
         // Busy right now, and is that unusual?
         if load >= 70 {
             out.append(Insight(id: "busy", tone: .critical, symbol: "flame.fill",
-                               title: "\(Int(load))% of all \(Int(cores)) cores are busy",
+                               title: "The Mac is \(Int(load))% busy, across all \(Int(cores)) cores",
                                detail: "Your Mac is close to flat out. Apps will feel slow until this drops."))
         } else if i.recordedMinutes >= 10, i.total60m > 0, i.total1m >= 2 * i.total60m, load >= 25 {
             out.append(Insight(id: "spike", tone: .warning, symbol: "chart.line.uptrend.xyaxis",
                                title: "Busier than usual",
-                               detail: "Using \(fmtCores(i.total1m)) right now, \(String(format: "%.1f", i.total1m / i.total60m))x your average over the last hour."))
+                               detail: "Using \(fmtCores(i.total1m, cores: cores)) right now, \(String(format: "%.1f", i.total1m / i.total60m))x your average over the last hour."))
         } else if load < 10 {
             out.append(Insight(id: "quiet", tone: .good, symbol: "checkmark.seal.fill",
                                title: "All quiet",
-                               detail: String(format: "Only %.1f of %d cores in use. Nothing needs attention.", i.total1m / 100, Int(cores))))
+                               detail: "Only \(fmtCores(i.total1m, cores: cores)) in use. Nothing needs attention."))
         }
 
         // Sustained hogs: hot for the whole last 15 minutes, not a passing spike.
@@ -349,7 +349,7 @@ public enum Insights {
                 let span = i.recordedMinutes >= 15 ? "15 minutes" : "\(Int(i.recordedMinutes)) minutes"
                 let why = ProcessGuide.note(for: s.name).map { " \($0.headline)." } ?? ""
                 out.append(Insight(id: "hog-\(s.pid)", tone: a >= 100 ? .critical : .warning, symbol: "tortoise.fill",
-                                   title: "\(s.displayName) has averaged \(Int(a))% for \(span)",
+                                   title: "\(s.displayName) has averaged \(CPUScale.text(a, cores: cores)) of the Mac for \(span)",
                                    detail: "That is sustained, not a spike.\(why)"))
             }
         }
@@ -360,7 +360,7 @@ public enum Insights {
             guard !explained.contains("hog-\(s.pid)"), s.name != "WindowServer", let n = ProcessGuide.note(for: s.name),
                   n.verdict != .yours else { continue }
             out.append(Insight(id: "why-\(s.name)", tone: .info, symbol: "questionmark.bubble.fill",
-                               title: "\(s.name) (\(Int(s.cpu))%): \(n.headline)",
+                               title: "\(s.name) (\(CPUScale.text(s.cpu, cores: cores))): \(n.headline)",
                                detail: n.detail))
             if out.filter({ $0.id.hasPrefix("why-") }).count >= 2 { break }
         }
@@ -372,11 +372,11 @@ public enum Insights {
             let active = Set(i.samples.filter { capturers.contains($0.name) && $0.cpu >= 0.5 }.map(\.name)).sorted()
             if !active.isEmpty {
                 out.append(Insight(id: "ws-capture", tone: .warning, symbol: "camera.viewfinder",
-                                   title: "WindowServer (\(Int(ws.cpu))%) is busy because the screen is being captured",
+                                   title: "WindowServer (\(CPUScale.text(ws.cpu, cores: cores))) is busy because the screen is being captured",
                                    detail: "\(active.joined(separator: ", ")) \(active.count == 1 ? "is" : "are") grabbing the screen, and every capture makes WindowServer render a fresh frame. Stop the recording, screen share or computer-use agent and it should drop."))
             } else {
                 out.append(Insight(id: "ws", tone: .info, symbol: "display.2",
-                                   title: "WindowServer is at \(Int(ws.cpu))%",
+                                   title: "WindowServer is at \(CPUScale.text(ws.cpu, cores: cores)) of the Mac",
                                    detail: "Usually displays: a scaled resolution on an external monitor, 120 Hz, many open windows, transparency or animated content. Optimise turns down what can be turned down, each with an undo.",
                                    fixes: [.optimiseScreen]))
             }
@@ -390,8 +390,8 @@ public enum Insights {
             let sum = group.reduce(0) { $0 + $1.cpu }
             if sum >= 15 {
                 out.append(Insight(id: "many-\(name)", tone: .info, symbol: "square.stack.3d.up.fill",
-                                   title: "\(group.count) \(name) processes use \(Int(sum))% together",
-                                   detail: "No single one stands out, but together they are \(fmtCores(sum)). Close the ones you no longer need."))
+                                   title: "\(group.count) \(name) processes use \(fmtCores(sum, cores: cores)) together",
+                                   detail: "No single one stands out, but together they add up. Close the ones you no longer need."))
             }
         }
 
@@ -401,7 +401,7 @@ public enum Insights {
             let share = top.coreSeconds / dayTotal * 100
             out.append(Insight(id: "top24", tone: share >= 40 ? .warning : .info, symbol: "crown.fill",
                                title: "\(top.name) used \(Int(share))% of all CPU time today",
-                               detail: "\(duration(top.coreSeconds)) of CPU time over the last \(duration(i.dailySampled)) recorded, averaging \(String(format: "%.0f", top.average))%."))
+                               detail: "\(duration(top.coreSeconds)) of CPU time over the last \(duration(i.dailySampled)) recorded, averaging \(CPUScale.text(top.average, cores: cores)) of the Mac."))
             let system = i.daily.filter { AppIdentity.isSystem($0.key) }.reduce(0) { $0 + $1.coreSeconds }
             let sysShare = system / dayTotal * 100
             out.append(Insight(id: "split", tone: .info, symbol: "applelogo",
@@ -415,8 +415,8 @@ public enum Insights {
             let start = i.hourStarts[idx]
             let label = start.formatted(date: .omitted, time: .shortened)
             out.append(Insight(id: "peakhour", tone: .info, symbol: "clock.fill",
-                               title: "Busiest hour: \(label), averaging \(fmtCores(peak))",
-                               detail: "\(Int(peak / cores))% of the whole machine across that hour."))
+                               title: "Busiest hour: \(label), averaging \(fmtCores(peak, cores: cores))",
+                               detail: "The most CPU of any hour recorded today."))
         }
 
         // Repeat offenders deserve a rule rather than another notification.
@@ -580,9 +580,9 @@ public enum Insights {
         }
     }
 
-    /// "2.3 cores" or "45% of a core".
-    public static func fmtCores(_ percent: Double) -> String {
-        percent >= 100 ? String(format: "%.1f cores", percent / 100) : "\(Int(percent))% of a core"
+    /// "23% of the Mac": CPU is measured per core but shown as a share of every core.
+    public static func fmtCores(_ percent: Double, cores: Double = CPUScale.cores) -> String {
+        CPUScale.text(percent, cores: cores) + " of the Mac"
     }
 
     public static func duration(_ d: TimeInterval) -> String {

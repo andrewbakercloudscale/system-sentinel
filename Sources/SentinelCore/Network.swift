@@ -765,7 +765,7 @@ public enum NetworkAnalysis {
             if w.txRate > 0, w.txRate < 50 {
                 out.append(Insight(id: "net-wifi-rate", tone: .info, symbol: "speedometer",
                                    title: "Wi-Fi link is slow: \(Int(w.txRate)) Mbit/s",
-                                   detail: "The radio link itself caps transfers at about \(max(1, Int(w.txRate / 10))) MB/s, whatever the internet plan."))
+                                   detail: "The radio link itself caps real transfers at about \(max(1, Int(w.txRate * 0.6))) Mbit/s, whatever the internet plan."))
             }
         }
         if let h = health {
@@ -855,7 +855,7 @@ public enum NetworkAnalysis {
         let apps = apps.filter { !$0.carriesOthers }
         if let up = apps.filter({ $0.up >= 1_000_000 }).max(by: { $0.up < $1.up }) {
             var x = Insight(id: "net-uploading", tone: link.isHotspot ? .warning : .info, symbol: "arrow.up.circle.fill",
-                            title: "\(up.name) is uploading \(IORow.rate(up.up))",
+                            title: "\(up.name) is uploading \(IORow.netRate(up.up))",
                             detail: link.isHotspot ? "You are on a phone hotspot: this uses mobile data." : "Uploads slow everything else on the connection, calls first.")
             x.fixes = [.quit(pids: up.pids, name: up.name)]
             out.append(x)

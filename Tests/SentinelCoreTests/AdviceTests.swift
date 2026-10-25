@@ -89,6 +89,9 @@ final class SystemReaderTests: XCTestCase {
         XCTAssertEqual(rows[0].disk, 50 + 10.0 / 30, accuracy: 0.001)
         XCTAssertEqual(IORow.rate(1_500_000), "1.5 MB/s")
         XCTAssertEqual(IORow.rate(0), "–")
+        XCTAssertEqual(IORow.netRate(612_500), "4.9 Mbit/s")
+        XCTAssertEqual(IORow.netRate(25_000_000), "200 Mbit/s")
+        XCTAssertEqual(IORow.netRate(1_000), "<0.1 Mbit/s")
         XCTAssertNotNil(IOSampler.disk(getpid()), "own process readable")
         XCTAssertFalse(IOSampler.network().isEmpty, "nettop sees something")
     }
@@ -390,7 +393,10 @@ final class UsageAdviceTests: XCTestCase {
         // 42 Wh: 3 h at 14 W, 7 h at 6 W.
         XCTAssertEqual(a.minutesGained!, 240, accuracy: 0.01)
         XCTAssertTrue(a.helped)
-        XCTAssertEqual(a.summary, "power 14.0 W → 6.0 W, CPU 3.0 cores → 80% of a core, about 4h 0m more battery")
+        XCTAssertEqual(a.summary, "power 14.0 W → 6.0 W, CPU \(Insights.fmtCores(300)) → \(Insights.fmtCores(80)), about 4h 0m more battery")
+        XCTAssertEqual(Insights.fmtCores(300, cores: 10), "30% of the Mac")
+        XCTAssertEqual(CPUScale.text(5, cores: 10), "0.5%")
+        XCTAssertEqual(CPUScale.text(0.5, cores: 10), "<0.1%")
         let b = Impact(name: "x", at: now, wattsBefore: nil, wattsAfter: nil, cpuBefore: 50, cpuAfter: 45, energyLeft: nil)
         XCTAssertFalse(b.helped)
         XCTAssertNil(b.minutesGained)

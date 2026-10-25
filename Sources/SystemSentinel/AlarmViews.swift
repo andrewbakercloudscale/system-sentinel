@@ -14,7 +14,7 @@ extension Model {
         let checks: [(ResourceAlarm, Bool, Bool, Double, String, String)] = [
             (.cpu, alarmCPU, load >= alarmCPUPercent, alarmCPUMinutes,
              "Your Mac has been \(Int(load))% busy for \(Int(alarmCPUMinutes)) minutes",
-             "Over your \(Int(alarmCPUPercent))% limit. Busiest now: \(top.first.map { "\($0.displayName) at \(Int($0.cpu))% CPU" } ?? "nothing stands out")."),
+             "Over your \(Int(alarmCPUPercent))% limit. Busiest now: \(top.first.map { "\($0.displayName) at \(Fmt.cpu($0.cpu))" } ?? "nothing stands out")."),
             (.swap, alarmSwap, swap >= alarmSwapGB, 0,
              "\(String(format: "%.1f", swap)) GB of memory is in swap",
              "Over your \(Int(alarmSwapGB)) GB limit. Largest app: \(memoryApps.first.map { "\($0.name), \(ReportDocument.bytes($0.bytes))" } ?? "unknown"). The Memory tab shows what to quit."),

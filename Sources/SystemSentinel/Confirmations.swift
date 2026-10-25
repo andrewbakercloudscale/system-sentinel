@@ -106,7 +106,7 @@ extension Model {
                       "The apps you are using stay quick; it finishes a little later."]
         if always { points.append("Every new \(s.name) process is lowered as soon as it starts, until you put it back.") }
         if let note = BackgroundCandidates.note(s.name) { points.append(note) }
-        Confirm.ask(always ? "Always lower \(s.name)?" : "Lower \(s.displayName)'s priority?", "pid \(s.pid), \(Fmt.pct(s.cpu)) CPU now.",
+        Confirm.ask(always ? "Always lower \(s.name)?" : "Lower \(s.displayName)'s priority?", "pid \(s.pid), \(Fmt.cpu(s.cpu)) of the Mac's CPU now.",
                     symbol: "tortoise.fill", tint: Theme.rules, points: points,
                     undo: "The tortoise button puts it back to normal priority at any time.", button: always ? "Always lower" : "Lower priority") {
             self.slowDown(s, always: always)

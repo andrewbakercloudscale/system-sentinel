@@ -204,7 +204,7 @@ private struct MemoryTimeline: View {
                 .chartYAxis {
                     AxisMarks(position: .leading, values: .automatic(desiredCount: 3)) { v in
                         AxisGridLine().foregroundStyle(Color.primary.opacity(0.08))
-                        AxisValueLabel { if let x = v.as(Double.self) { Text(String(format: abs(x) < 10 ? "%.1f MB/s" : "%.0f MB/s", abs(x))) } }.font(.system(size: 9))
+                        AxisValueLabel { if let x = v.as(Double.self) { Text(Fmt.tick(abs(x), " MB/s")) } }.font(.system(size: 9))
                     }
                 }
                 .chartXAxis(.hidden)

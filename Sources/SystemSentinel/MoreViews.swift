@@ -336,8 +336,8 @@ struct NetworkDiskCard: View {
             } else {
                 HStack {
                     Spacer()
-                    Text("DOWN").frame(width: 70, alignment: .trailing)
-                    Text("UP").frame(width: 70, alignment: .trailing)
+                    Text("DOWN").frame(width: 78, alignment: .trailing)
+                    Text("UP").frame(width: 78, alignment: .trailing)
                     Text("DISK").frame(width: 70, alignment: .trailing)
                 }
                 .font(.system(size: 9, weight: .bold)).foregroundStyle(.secondary)
@@ -348,8 +348,8 @@ struct NetworkDiskCard: View {
                     IconView(icon: IconCache.shared.icon(for: sample ?? ProcessSample(pid: 0, uid: 501, cpu: 0, path: r.key)), size: 20)
                     Text(r.name).font(.callout).lineLimit(1)
                     Spacer(minLength: 6)
-                    Text(IORow.rate(r.netIn)).frame(width: 70, alignment: .trailing)
-                    Text(IORow.rate(r.netOut)).frame(width: 70, alignment: .trailing)
+                    Text(IORow.netRate(r.netIn)).frame(width: 78, alignment: .trailing)
+                    Text(IORow.netRate(r.netOut)).frame(width: 78, alignment: .trailing)
                     Text(IORow.rate(r.disk)).frame(width: 70, alignment: .trailing)
                         .foregroundStyle(r.disk >= 20_000_000 ? Color(hex: "#d97706") : .primary)
                 }

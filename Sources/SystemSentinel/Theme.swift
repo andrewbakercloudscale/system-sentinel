@@ -1,4 +1,5 @@
 import AppKit
+import SentinelCore
 import SwiftUI
 
 /// Colours, cards and the tab bar shared by every screen.
@@ -317,6 +318,15 @@ struct TabBar: View {
 }
 
 enum Fmt {
+    /// A CPU figure measured per core, shown as a share of the whole Mac.
+    static func cpu(_ perCore: Double) -> String { CPUScale.text(perCore) }
+
+    /// An axis tick: whole numbers stay whole, fractional ticks keep their decimal so
+    /// 0.5% and 1% do not both print as "0%".
+    static func tick(_ v: Double, _ unit: String = "%") -> String {
+        v == v.rounded() ? "\(Int(v))\(unit)" : String(format: v < 1 ? "%.2g%@" : "%.1f%@", v, unit)
+    }
+
     static func pct(_ v: Double) -> String { v >= 10 || v == 0 ? "\(Int(v.rounded()))%" : String(format: "%.1f%%", v) }
 
     static func memory(_ kb: Int) -> String {

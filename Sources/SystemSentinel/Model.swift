@@ -560,7 +560,7 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
             UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "heat", content: content, trigger: nil))
             return
         }
-        notify(s, title: title, body: body + " Most likely: \(s.displayName), at \(Int(sentinel.cpuHistory.average(s.pid, over: 60, at: now)))% CPU.", actions: true)
+        notify(s, title: title, body: body + " Most likely: \(s.displayName), at \(Fmt.cpu(sentinel.cpuHistory.average(s.pid, over: 60, at: now))) of the Mac's CPU.", actions: true)
     }
 
     private func heatCulprit(_ now: Date) -> ProcessSample? {
@@ -736,7 +736,7 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
     /// ChatGPT about an insight: the finding, the processes involved, and this Mac.
     func explain(_ insight: Insight) {
         let procs = insight.related.map { r in
-            "- \(r.sample.name) (pid \(r.sample.pid)): \(Int(r.sample.cpu))% CPU now, 15 min average \(Int(average(r.sample, 900)))%\(r.parent.map { ", started by \($0)" } ?? ""), path \(r.sample.path)"
+            "- \(r.sample.name) (pid \(r.sample.pid)): \(Int(r.sample.cpu))% of one core now, 15 min average \(Int(average(r.sample, 900)))%\(r.parent.map { ", started by \($0)" } ?? ""), path \(r.sample.path)"
         }.joined(separator: "\n")
         let prompt = """
         My Mac's CPU monitor reports: "\(insight.title). \(insight.detail)"
@@ -793,7 +793,7 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
         Process: \(s.name)
         Path: \(s.path)
         Runs as: \(s.isRoot ? "root" : "my user")
-        CPU now: \(Int(s.cpu))% (100% = one core)
+        CPU now: \(Int(s.cpu))% of one core (\(Fmt.cpu(s.cpu)) of the Mac)
         Average CPU: 1 min \(Int(average(s, 60)))%, 15 min \(Int(average(s, 900)))%, 1 hour \(Int(average(s, 3600)))%
         Memory: \(Fmt.memory(s.rssKB))
         \(started(s) ?? "")\(note)
@@ -1432,16 +1432,16 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
         switch e {
         case .alert(let s):
             flagged.insert(s.pid)
-            notify(s, title: "\(s.displayName) is using \(Int(s.cpu))% CPU",
-                   body: "Over \(Int(threshold))% for \(Self.duration(windowSeconds)). \(s.isRoot ? "Runs as root: Kill asks for your password." : "")",
+            notify(s, title: "\(s.displayName) is using \(Fmt.cpu(s.cpu)) of the Mac",
+                   body: "Over \(Fmt.cpu(threshold)) for \(Self.duration(windowSeconds)). \(s.isRoot ? "Runs as root: Kill asks for your password." : "")",
                    actions: true)
         case .autoKillWithheld(let s, let reason):
             flagged.insert(s.pid)
-            notify(s, title: "\(s.displayName) is using \(Int(s.cpu))% CPU",
+            notify(s, title: "\(s.displayName) is using \(Fmt.cpu(s.cpu)) of the Mac",
                    body: "Not auto-killed: \(reason).", actions: true)
         case .autoKilled(let s, let outcome):
             notify(s, title: "Auto-killed \(s.displayName)",
-                   body: "It was using \(Int(s.cpu))% CPU. \(Self.describe(outcome)).", actions: false)
+                   body: "It was using \(Fmt.cpu(s.cpu)) of the Mac. \(Self.describe(outcome)).", actions: false)
         }
     }
 

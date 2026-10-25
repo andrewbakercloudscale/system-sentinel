@@ -795,10 +795,10 @@ struct BackgroundItemsCard: View {
                     }
                     Spacer()
                     VStack(alignment: .trailing, spacing: 1) {
-                        Text(live.map { "running · \(Fmt.pct($0.cpu))" } ?? (item.processPath == nil ? "script" : "not running"))
+                        Text(live.map { "running · \(Fmt.cpu($0.cpu))" } ?? (item.processPath == nil ? "script" : "not running"))
                             .font(.caption.weight(live == nil ? .regular : .semibold))
                             .foregroundStyle(live == nil ? .secondary : .primary)
-                        if let d = day { Text("24 h avg \(Fmt.pct(d.average))").font(.caption2).foregroundStyle(.secondary) }
+                        if let d = day { Text("24 h avg \(Fmt.cpu(d.average))").font(.caption2).foregroundStyle(.secondary) }
                     }
                     Button { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: item.plist)]) } label: {
                         Image(systemName: "folder")

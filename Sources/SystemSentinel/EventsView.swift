@@ -58,7 +58,7 @@ struct EventsView: View {
             }
             Card(title: "Log", symbol: "list.bullet.rectangle", tint: Tab.events.color) {
                 if all.isEmpty {
-                    Text("Nothing flagged or killed yet. A process is flagged when it stays over \(Int(model.threshold))% for \(Model.duration(model.windowSeconds)).")
+                    Text("Nothing flagged or killed yet. A process is flagged when it stays over \(Fmt.cpu(model.threshold)) of the Mac for \(Model.duration(model.windowSeconds)).")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 let byDay = Dictionary(grouping: all.suffix(60)) { cal.startOfDay(for: $0.date) }
@@ -134,7 +134,7 @@ private struct EventRow: View {
                 }
             }
             Spacer()
-            Text(Fmt.pct(e.cpu)).font(.caption.weight(.bold)).monospacedDigit()
+            Text(Fmt.cpu(e.cpu)).font(.caption.weight(.bold)).monospacedDigit()
                 .foregroundStyle(.white)
                 .padding(.horizontal, 7).padding(.vertical, 3)
                 .background(Capsule().fill(Theme.heat(e.cpu)))

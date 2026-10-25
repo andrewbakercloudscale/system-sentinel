@@ -375,6 +375,14 @@ public struct IORow: Equatable, Sendable, Identifiable {
         if b >= 1_000 { return String(format: "%.0f KB/s", b / 1_000) }
         return b > 0 ? "<1 KB/s" : "–"
     }
+
+    /// Network speed in bits, as speed tests and internet plans state it: "4.9 Mbit/s".
+    public static func netRate(_ bytesPerSecond: Double) -> String {
+        let m = bytesPerSecond * 8 / 1_000_000
+        if m >= 100 { return "\(Int(m.rounded())) Mbit/s" }
+        if m >= 0.1 { return String(format: "%.1f Mbit/s", m) }
+        return bytesPerSecond > 0 ? "<0.1 Mbit/s" : "–"
+    }
 }
 
 // MARK: Sleep log
