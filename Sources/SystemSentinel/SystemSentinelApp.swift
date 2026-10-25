@@ -272,7 +272,11 @@ struct MenuView: View {
                 NSWorkspace.shared.open(AboutView.guide)
             }
             .keyboardShortcut("?", modifiers: .command)
-            .tip("The user guide on cloudscale.consulting: every screen explained, with pictures (Cmd ?)")
+            .contextMenu {
+                Button("User guide") { NSWorkspace.shared.open(AboutView.guide) }
+                Button("Welcome tour") { WelcomeWindow.show(model) }
+            }
+            .tip("The user guide on cloudscale.consulting: every screen explained, with pictures (Cmd ?). Right-click for the welcome tour")
             FooterButton(title: "Share", symbol: "square.and.arrow.up", color: Tab.network.color) {
                 ShareApp.show()
             }
@@ -645,6 +649,23 @@ enum Snapshot {
             try? rep.representation(using: .png, properties: [:])?
                 .write(to: URL(fileURLWithPath: dir).appendingPathComponent("about-\(appearance == .aqua ? "light" : "dark").png"))
         }
+        // The welcome, each step.
+        for step in 0..<WelcomeView.steps {
+            let host = NSHostingView(rootView: WelcomeView(model: model, permissions: model.permissions, step: step)
+                .background(Color(nsColor: .windowBackgroundColor)))
+            host.appearance = NSAppearance(named: .aqua)
+            let win = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 560, height: 500), styleMask: [.borderless], backing: .buffered, defer: false)
+            win.appearance = NSAppearance(named: .aqua)
+            win.contentView = host
+            let size = host.fittingSize
+            win.setContentSize(size)
+            host.frame = NSRect(origin: .zero, size: size)
+            host.layoutSubtreeIfNeeded()
+            guard let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { continue }
+            host.cacheDisplay(in: host.bounds, to: rep)
+            try? rep.representation(using: .png, properties: [:])?
+                .write(to: URL(fileURLWithPath: dir).appendingPathComponent("0-welcome-\(step + 1)-light.png"))
+        }
         // The DNS map window, when `--dnsmap <name>` started one.
         if let r = DNSMapStore.shared.result {
             try? DNSMap.report(r).write(to: URL(fileURLWithPath: dir).appendingPathComponent("dnsmap.txt"), atomically: true, encoding: .utf8)
@@ -685,6 +706,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         if Model.snapshotDir == nil { IconWatch.start(); HotKey.start() }
         DispatchQueue.global(qos: .utility).async { IOSampler.killOrphanedNettop() }
+        // The welcome shows once, even on a launch at login, so people who installed before it existed see it too.
+        if Model.snapshotDir == nil, !WelcomeWindow.seen {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { if let m = Model.current { WelcomeWindow.showOnce(m) } }
+        }
         guard !atLogin, Model.snapshotDir == nil else { return }
         // The model is created with the menu bar scene; give it a moment.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { if let m = Model.current { PopOut.show(m) } }
