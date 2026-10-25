@@ -216,7 +216,9 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
                                    saveEvery: 300, readOnly: Model.snapshotDir != nil),
             // A larger file than the hourly one, so it is written every 5 minutes, not every minute.
             recentUsage: DailyUsage(fileURL: Model.supportDir.appendingPathComponent("usage-6h.json"),
-                                    retainHours: 6, bucket: 60, saveEvery: 300, readOnly: Model.snapshotDir != nil))
+                                    retainHours: 6, bucket: 60, saveEvery: 300, readOnly: Model.snapshotDir != nil),
+            // nettop, ps, ping and the other commands this app runs count as System Sentinel.
+            sampler: { try ProcessSampler.sample(foldingInto: getpid()) })
         powerHistory = PowerHistory(fileURL: Model.supportDir.appendingPathComponent("power-7d.json"), readOnly: Model.snapshotDir != nil)
         // Energy is read every 30 s, so a tick may stand for up to 45 s.
         energyUsage = DailyUsage(fileURL: Model.supportDir.appendingPathComponent("energy-7d.json"), maxStep: 45,
