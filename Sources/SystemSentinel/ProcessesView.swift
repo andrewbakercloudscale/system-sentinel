@@ -99,6 +99,7 @@ struct ProcessesView: View {
                 .frame(width: 170)
                 pauseButton
                 Spacer()
+                ExportMenu(model: model, only: [.processes], color: Tab.processes.color)
                 sortMenu(sort)
             }
             HStack(spacing: 8) {
