@@ -159,8 +159,10 @@ Every screen has its own dark design.
 
 ## Documentation
 
+- **[Online user guide](https://cloudscale.consulting/system-sentinel/):** every screen with
+  screenshots. **Help** (Cmd ?) in the app opens it.
 - **[User guide](docs/guide.md):** every screen, reading the charts, insights, killing
-  processes, rules, notifications, privacy and troubleshooting.
+  processes, rules, notifications, privacy, reset, uninstall and troubleshooting.
 - **[Process guide](docs/processes.md):** what the common macOS background processes are,
   why they get busy, and whether to kill them.
 - **[PLAN.md](PLAN.md):** why it was built, the design and what is next.
@@ -175,14 +177,31 @@ Every screen has its own dark design.
 
 ## Privacy
 
-Everything stays on your Mac. System Sentinel sends nothing anywhere. The only time data
-leaves is when you click **Explain**. That opens ChatGPT in your browser with a prompt
-describing the process and your Mac. [What's in it](docs/guide.md#explain-with-chatgpt).
+Nothing about you, your files or your apps is uploaded, and there is no tracking. History
+stays in `~/Library/Application Support/SystemSentinel/`. To test the connection the app itself
+pings 1.1.1.1 every 3 minutes, looks up www.apple.com and loads captive.apple.com every 10
+minutes, checks the certificates of github.com, npm and PyPI every 30 minutes, and asks GitHub
+for updates. The speed test, route test and DNS map contact Apple, Cloudflare, Google and
+Zscaler only when you run them. **Explain** opens ChatGPT with a prompt describing the process
+and your Mac, so OpenAI receives it. [Details](docs/guide.md#files-and-privacy).
+
+## Uninstall
+
+Quit it (Quit at the bottom of the panel), then in Terminal:
+
+```bash
+rm -rf "/Applications/System Sentinel.app" ~/Library/Application\ Support/SystemSentinel
+defaults delete consulting.cloudscale.systemsentinel
+```
+
+Then remove it from System Settings, General, Login Items, and from Privacy & Security if you
+gave it Full Disk Access or Automation. To start fresh without uninstalling, use **Settings,
+Diagnostics, Reset all settings…**.
 
 ## Development
 
 ```bash
-swift test                     # 91 tests, including a real CPU burner that must be flagged and killed
+swift test                     # 229 tests, including a real CPU burner that must be flagged and killed
 swift build                    # debug build
 bash scripts/build-app.sh      # test, build, bundle, install, launch
 bash scripts/release.sh        # zip for a GitHub release in dist/; signs and notarises

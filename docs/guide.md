@@ -1,6 +1,6 @@
 # System Sentinel user guide
 
-[Back to README](../README.md) · [Process guide](processes.md)
+[Back to README](../README.md) · [Process guide](processes.md) · **[Online guide with screenshots](https://cloudscale.consulting/system-sentinel/)** (Help, Cmd ?, in the app)
 
 - [The basics: what the percentages mean](#the-basics-what-the-percentages-mean)
 - [The menu bar icon](#the-menu-bar-icon)
@@ -9,16 +9,24 @@
 - [Insights](#insights)
 - [Processes](#processes)
 - [Trends](#trends)
+- [Memory](#memory)
+- [Storage](#storage)
+- [Network](#network)
 - [Energy](#energy)
+- [Optimise](#optimise)
 - [Events](#events)
 - [Rules](#rules)
 - [Settings](#settings)
+- [Resource alarms](#resource-alarms)
 - [Notifications](#notifications)
 - [Killing processes](#killing-processes)
 - [Explain with ChatGPT](#explain-with-chatgpt)
 - [Pop out window](#pop-out-window)
 - [Share with a friend](#share-with-a-friend)
 - [Files and privacy](#files-and-privacy)
+- [Getting help and reporting a problem](#getting-help-and-reporting-a-problem)
+- [Reset settings](#reset-settings)
+- [Uninstall](#uninstall)
 - [Troubleshooting](#troubleshooting)
 
 ---
@@ -40,16 +48,26 @@ those hours count as unknown, not idle, so an evening with the Mac closed doesn'
 average down.
 
 **Sampling.** System Sentinel reads the process table every 5 seconds with `ps`, the same
-source Activity Monitor uses. System Sentinel itself uses well under 1% of one core.
+source Activity Monitor uses. System Sentinel and the commands it runs for its checks (`ps`,
+`top`, `nettop`, `ping`) average a few percent of one core, well under 1% of a 10-core Mac.
+Those commands count as System Sentinel in every list and chart, so they are never flagged.
+**About, Details, Its own CPU** shows the figure for the last minute, and background checks
+wait while it is over its budget.
 
 ---
 
 ## The menu bar icon
 
+Click the icon to open the panel. Its colour is the Mac's health at a glance:
+
 | Icon | Meaning |
 |---|---|
-| ![normal](images/menubar-normal.png) | Running. Click to open the panel. |
-| ![alert](images/menubar-alert.png) | A process has stayed over your threshold and was flagged. Check Events or the notification. |
+| Green | All clear: under 40% of the Mac busy over the last minute. |
+| Amber | Busy (40 to 70%), or something worth a look. |
+| Red | Over 70%, a process was flagged, or a serious problem. |
+| A symbol in the chip | The worst risk right now: the chip, memory, disk, heat or battery. |
+| A flashing red plug | The battery is about to run out. |
+| A blue dot | An update is ready. Open About to install it. |
 
 **⌃⌥⌘S** (Control-Option-Command-S) opens System Sentinel's window from any app. Use it
 when the icon is out of sight: on a MacBook with a full menu bar, macOS hides icons behind
@@ -62,8 +80,8 @@ Top right, **CPU 22%** is the whole Mac's CPU load right now (100% means every c
 and **GPU 9%** is how busy the graphics chip is. Each dot turns from green to amber to red as
 the load rises.
 
-Beside them, the status chip reads **All clear** or names what is wrong (**Memory pressure
-high** or **critical**, CPU,
+Beside them, the status chip reads **All clear** or names what is wrong (**Memory under
+pressure** or **Memory pressure critical**, CPU,
 GPU, disk low, heat, battery). The menu bar icon takes the same colour, green, amber or red,
 and the symbol of the worst problem. The GPU counts once the graphics chip averages 60%
 over a minute (amber) or 90% (red), which a local AI model can do while the CPU sits idle. Click it to open the tab about the first problem: memory pressure
@@ -134,7 +152,7 @@ The answer to "is my Mac busy, and why?" in one screen:
   efficiency cores (E) come first and the performance cores (P) after. macOS runs
   background work on E cores; busy P cores mean heavy foreground work, and that is where
   most of the power goes.
-- **Memory.** Memory pressure as macOS judges it (Normal, Under pressure, Critical), memory
+- **Memory.** Memory pressure as macOS judges it (Normal, Under pressure or Critical), memory
   used, compressed and swapped to disk. Pressure matters, not how full memory looks.
 - **Graphics (GPU).** How busy the graphics chip is now and on average over the last hour,
   a chart of that hour, the graphics memory in use, and the apps using the chip right now
@@ -296,6 +314,65 @@ app can use more CPU time than the time that passed.
 
 ---
 
+## Memory
+
+Memory pressure is what matters, not how full memory looks: macOS fills spare memory with
+caches on purpose. The tab shows:
+
+- **Memory:** pressure (Normal, Under pressure or Critical), used, compressed and swap.
+- **Memory and swap over time:** the last hours to 7 days (14 and 28 with longer history).
+- **Memory by app:** each app's whole footprint, helpers included, with Quit and a **Rule**
+  menu to quit it by itself over 2, 4, 8 or 16 GB (see [Rules](#rules)).
+- **Free up memory:** what would free the most, with buttons.
+- **How Mac memory works:** compression, swap and why free memory is wasted memory.
+
+---
+
+## Storage
+
+How full the disk is, what is growing and what you can safely delete.
+
+- **The header:** free space, what macOS frees by itself when needed (purgeable), growth a
+  day over the last week, and when the disk would be full at that pace. Green says **Plenty
+  of space**, or **Enough space today, but filling up** when it would be full within 60 days.
+- **Disk use over time** and **What grew** (24 hours, 7 or 30 days): the folders that grew.
+- **Quick cleanups:** the Trash, Downloads, caches, old simulators and installers, each with
+  its size and a button. Things go to the Trash where they can, so you can put them back.
+- **Where the space is**, **Largest files**, **Packages you can delete**, **Videos**,
+  **Photo folders to archive** and **Known folders** (Xcode, Docker, npm, Cargo and others).
+
+Without **Full Disk Access** macOS hides Desktop, Documents, Downloads, the Trash, Mail,
+Messages and other apps' data, so those are left out. Grant it once in System Settings,
+Privacy & Security, Full Disk Access to measure everything and stop macOS asking about each
+folder.
+
+---
+
+## Network
+
+Is the connection healthy, and which app is using it.
+
+- **The header:** **Connection is healthy**, **Internet works: N things to look at**, or
+  **Connection problem**, with Wi-Fi signal and band, any VPN or zero trust client (Zscaler,
+  Netskope, GlobalProtect and others) and the speed now.
+- **Speed, last hour**, **Connection** (interface, router, address, DNS, VPN or proxy) and
+  **Quality:** delay, loss and jitter to the router and the internet, tested every 3 minutes,
+  resent packets and the largest packet that fits (MTU), inside a tunnel too.
+- **DNS doctor** (every 10 minutes): whether names resolve, how fast, a sign-in page in the
+  way (hotel and airport Wi-Fi), and the **Work name to check** from Settings, which only
+  resolves on the office network or VPN. **DNS map** shows where a name really goes.
+- **Route test (mtr):** for 1 minute up to an hour, loss, delay and jitter at every hop, a
+  chart of when it happened and a report to send your provider.
+- **Speed test:** macOS's own `networkQuality`, about 20 seconds, against Apple's servers.
+  It warns first on a phone hotspot or metered connection.
+- **HTTPS inspection:** whether a company proxy is re-signing secure connections, and the
+  lines that make developer tools (git, npm, pip, curl) trust its certificate.
+- **Top talkers**, **Where the data goes** and **Connections that failed** over the last
+  hour, by app. A tunnel such as Zscaler carries every other app's traffic, so it is shown
+  with a "carries all traffic" pill instead of being blamed for it.
+
+---
+
 ## Energy
 
 ![Energy tab](images/energy-light.png)
@@ -309,7 +386,7 @@ What the Mac draws and what is costing battery:
   On a Mac without a battery this is replaced by a note.
 - **Power draw.** Watts over the last hour, 6 or 24 hours, or 7 days, coloured by battery
   or mains power, with the average, peak, time on battery and how many percent an hour the
-  battery dropped. A MacBook idles at 2 to 5 W.
+  battery dropped. A MacBook idles at about 3 to 8 W with the screen on.
 - **Power by part.** Watts for the processor, the graphics chip, the Neural Engine and
   memory, measured by the chip itself every 5 seconds without a password, the display engine,
   and the rest of the Mac (screen backlight, Wi-Fi, SSD, charging). Apple silicon only.
@@ -339,6 +416,17 @@ What the Mac draws and what is costing battery:
   Chrome does not say which tab uses what, outside its own Task Manager.
 - **Today in brief.** The day in a few sentences: average load, heaviest apps, busiest
   hour, time on battery, average draw and drain, and sleep blockers.
+
+---
+
+## Optimise
+
+**Optimise** (from a WindowServer or graphics insight, or a process's Actions menu) lists
+what makes the Mac draw less: **Draw less** (reduce transparency and motion, Stage
+Manager, desktop widgets, window and Dock animations and more, each with Apply and Undo), **Displays**, **Windows on screen**, and **Menu bar
+icons hidden behind the notch**. Every change records what it was, so Undo puts it back.
+For one process, **Optimise…** lowers its priority (it then waits for the efficiency cores),
+restarts it, or applies a fix known for it.
 
 ---
 
@@ -411,7 +499,7 @@ Settings has two pages, picked at the top: **Settings** (below) and **[Rules](#r
   default is 80% (of one core) for 2 minutes. Builds and other short bursts never count;
   only a process that stays over the line the whole time does.
 - **Launch System Sentinel at login.**
-- **Weekly report notification** on Monday morning (on by default; applies at once).
+- **Weekly report notification** on Monday morning (on by default).
 - **Menu bar:** nothing, CPU load, power draw or battery beside the icon.
 - **History:** keep 7 (default), 14 or 28 days of CPU, memory, energy, power and DNS
   readings, about 11, 18 or 31 MB on disk. The longer settings add 14 and 28 day ranges to
@@ -428,10 +516,32 @@ Settings has two pages, picked at the top: **Settings** (below) and **[Rules](#r
   cannot keep up. Once each per drain; plugging in and charging starts over.
 - **Sleep blockers:** notify when something keeps the Mac awake longer than N hours
   (default 2). Once per hold; several at once arrive as one notification.
+- **Resource alarms:** see [below](#resource-alarms).
+- **Network:** the work name the DNS doctor checks, and phone hotspot alerts.
+- **Updates:** automatic checks (at launch and every 6 hours) and Reinstall.
+- **Permissions:** what System Sentinel may do, and what stops working without each one.
+- **Diagnostics:** background jobs, recent errors, **Copy diagnostics**, **Report a
+  problem** and **Reset all settings…**.
 
-The menu bar, alert and report settings apply at once.
+Changes apply when you click **Save**; **Revert** throws them away. Unsaved changes are kept
+if you go to another tab and come back, until you Save or Revert.
 
-Changes apply when you click **Save**. **Revert** throws them away.
+---
+
+## Resource alarms
+
+A notification when the whole Mac crosses a line you set, once, then not again until it is
+back under the line and at least an hour has passed. All on by default:
+
+| Alarm | Default |
+|---|---|
+| Whole Mac busy | over 85% of all cores for 10 minutes |
+| Swap used | over 8 GB |
+| Memory pressure | Under pressure or Critical for 5 minutes |
+| Disk space low | under 20 GB free |
+
+Per-app CPU alerts are set at the top of Settings; heat, power and sleep alerts in the cards
+above the alarms.
 
 ---
 
@@ -531,21 +641,75 @@ which downloads the latest version, puts it in Applications and opens it.
 
 ## Files and privacy
 
-Everything stays in `~/Library/Application Support/CPUSentinel/`:
+History and rules are kept in `~/Library/Application Support/SystemSentinel/` (About,
+**Open the data folder**):
 
 | File | Contents |
 |---|---|
-| `policies.json` | Your rules |
+| `policies.json` | Your CPU rules |
 | `memory-rules.json` | Your memory rules |
 | `history.jsonl` | Events (flagged, killed, and so on) |
-| `usage-24h.json` | Hourly CPU time per program for the last 7 days |
+| `usage-24h.json` | Hourly CPU time per program (7 to 28 days, per Settings, History) |
 | `usage-6h.json` | CPU time per program per minute for the last 6 hours |
-| `power-7d.json` | Power draw and battery level per minute for the last 7 days |
-| `energy-7d.json` | Hourly Energy Impact per program for the last 7 days |
-| `battery-health.json` | One battery reading a day (capacity, design capacity, cycles), kept indefinitely |
+| `power-7d.json` | Power draw and battery level per minute |
+| `energy-7d.json` | Hourly Energy Impact per program |
+| `memory-7d.json` | Memory, swap and pressure, and the largest apps |
+| `storage-90d.json`, `storage-scan.json`, `storage-tree.json` | Disk use over time and the last scan |
+| `dns-24h.json`, `speed-test.json` | Network checks and the last speed test |
+| `battery-health.json` | One battery reading a day, kept indefinitely |
+| `tweaks-backup.json` | What each Optimise change replaced, so Undo can put it back |
+| `errors.log` | Background failures, for Diagnostics |
 
-Nothing is sent anywhere, except a prompt you choose to send to ChatGPT with ✨ Explain.
-To reset everything, quit System Sentinel and delete that folder.
+Settings are kept by macOS in its preferences, under `consulting.cloudscale.systemsentinel`.
+
+**What leaves the Mac.** Nothing about you, your files or your apps is uploaded, and there is
+no tracking. The checks themselves have to reach the internet:
+
+- a ping (or a TCP handshake where pings are blocked) to 1.1.1.1 every 3 minutes;
+- a lookup of www.apple.com and a load of captive.apple.com every 10 minutes (DNS doctor);
+- the certificates of github.com, registry.npmjs.org and pypi.org every 30 minutes (HTTPS
+  inspection);
+- GitHub, for update checks at launch and every 6 hours (Settings, Updates turns them off);
+- only when you start them: the speed test (Apple's servers), the route test (1.1.1.1 or the
+  host you pick) and the DNS map (Cloudflare and Google DNS over HTTPS, and ip.zscaler.com);
+- ✨ Explain, which opens ChatGPT with its prompt in the page address, so OpenAI receives it.
+
+---
+
+## Getting help and reporting a problem
+
+- **Help** (Cmd ?) at the bottom of the panel opens the
+  [online guide](https://cloudscale.consulting/system-sentinel/).
+- **Report a problem**, in About and in Settings, Diagnostics, puts the diagnostics on the
+  clipboard and opens a new GitHub issue with your version and Mac filled in. Paste the
+  diagnostics into it and say what happened.
+- After a crash, a red banner says so the next time it opens, with **Show report**.
+
+---
+
+## Reset settings
+
+**Settings, Diagnostics, Reset all settings…** asks first, then:
+
+- **Reset settings** clears every setting, your CPU and memory rules, ignored findings and
+  lowered priorities, keeps your history, and reopens the app;
+- **Reset and delete history** also deletes the history, so every chart starts empty.
+
+Launch at login and the permissions you gave are left as they are.
+
+---
+
+## Uninstall
+
+1. Click **Quit** at the bottom of the panel.
+2. Delete the app: drag `/Applications/System Sentinel.app` to the Trash.
+3. Delete its data and settings in Terminal:
+   ```bash
+   rm -rf ~/Library/Application\ Support/SystemSentinel
+   defaults delete consulting.cloudscale.systemsentinel
+   ```
+4. In System Settings, remove it from General, Login Items, and from Privacy & Security
+   (Full Disk Access, Automation) if you allowed those.
 
 ---
 

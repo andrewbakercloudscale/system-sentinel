@@ -25,9 +25,9 @@ final class Permissions: ObservableObject {
     /// Apps System Sentinel scripts: Finder empties the Trash, Terminal opens a sudo shell,
     /// Chrome lists tabs.
     static let automated: [(id: String, name: String, why: String)] = [
-        ("com.apple.finder", "Finder", "Empty the Trash from the Storage tab."),
-        ("com.apple.Terminal", "Terminal", "Open a Terminal with the sudo command for protected processes."),
-        ("com.google.Chrome", "Google Chrome", "List Chrome's tabs by memory and close the ones you pick."),
+        ("com.apple.finder", "Finder", "Empty the Trash from the Storage tab. Without it, empty the Trash in Finder yourself."),
+        ("com.apple.Terminal", "Terminal", "Open a Terminal with the sudo command for protected processes. Without it, use Copy command and paste it yourself."),
+        ("com.google.Chrome", "Google Chrome", "List Chrome's tabs by memory and close the ones you pick. Without it, Chrome shows as one app with no tab list."),
     ]
 
     init() {
@@ -43,7 +43,7 @@ final class Permissions: ObservableObject {
     func refresh() {
         var list: [Item] = [
             Item(id: "fda", title: "Full Disk Access",
-                 why: "Measures the Trash, Mail, Messages and other apps' data, and stops macOS asking about Desktop, Documents and Downloads one folder at a time.",
+                 why: "Measures the Trash, Mail, Messages and other apps' data, and stops macOS asking about Desktop, Documents and Downloads one folder at a time. Without it, Storage leaves those folders out.",
                  symbol: "lock.open.fill", state: Self.hasFullDiskAccess() ? .granted : .notAsked),
         ]
         for a in Self.automated where a.id == "com.apple.finder" || NSWorkspace.shared.urlForApplication(withBundleIdentifier: a.id) != nil {
@@ -57,7 +57,7 @@ final class Permissions: ObservableObject {
             list.append(Item(id: a.id, title: "Control \(a.name)", why: a.why, symbol: "applescript.fill", state: s))
         }
         let current = items.first { $0.id == "notifications" }?.state ?? .unknown
-        list.insert(Item(id: "notifications", title: "Notifications", why: "Alarms, runaway processes, updates and the weekly report.",
+        list.insert(Item(id: "notifications", title: "Notifications", why: "Alarms, runaway processes, updates and the weekly report. Without it, you only see them when you open System Sentinel.",
                          symbol: "bell.badge.fill", state: current), at: 0)
         if list != items { items = list }
         UNUserNotificationCenter.current().getNotificationSettings { settings in
