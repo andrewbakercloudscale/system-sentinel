@@ -16,6 +16,7 @@ struct AboutView: View {
     static let repoPage = URL(string: "https://github.com/\(Updates.repo)")!
     static let issues = URL(string: "https://github.com/\(Updates.repo)/issues")!
     static let guide = URL(string: "https://cloudscale.consulting/system-sentinel/")!
+    static let processGuide = URL(string: "https://github.com/\(Updates.repo)/blob/main/docs/processes.md")!
     static let licence = URL(string: "https://github.com/\(Updates.repo)/blob/main/LICENSE")!
     static let post = URL(string: "https://andrewbaker.ninja/2026/10/19/system-sentinel-a-menu-bar-doctor-for-your-mac/")!
 
@@ -124,6 +125,7 @@ struct AboutView: View {
             VStack(spacing: 6) {
                 linkRow("Source code", "github.com/\(Updates.repo)", "curlybraces", Theme.trends, Self.repoPage)
                 linkRow("User guide", "Every screen and setting explained", "book.fill", Tab.memory.color, Self.guide)
+                linkRow("Process guide", "What common macOS background processes do, and whether to stop them", "list.bullet.rectangle.fill", Tab.processes.color, Self.processGuide)
                 Button { model.reportProblem() } label: {
                     linkLabel("Report a problem", "Copies the diagnostics and opens a GitHub issue with your Mac filled in", "exclamationmark.bubble.fill", Tab.events.color)
                 }
