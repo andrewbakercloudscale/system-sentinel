@@ -39,7 +39,7 @@ enum SelfGuard {
             return
         }
         if tries == 0 {
-            Diagnostics.report("self", String(format: "Held back %@: System Sentinel used %.0f%% CPU in the last minute (limit %.0f%%)", name, usage ?? 0, budget.limit))
+            Diagnostics.report("self", "Held back \(name): System Sentinel used \(CPUScale.text(usage ?? 0)) of the Mac in the last minute (limit \(CPUScale.text(budget.limit)))")
         }
         waiting[name] = tries + 1
         DispatchQueue.main.asyncAfter(deadline: .now() + 60) { when(name, job) }

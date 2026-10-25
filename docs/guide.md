@@ -695,7 +695,9 @@ no tracking. The checks themselves have to reach the internet:
 ## Getting help and reporting a problem
 
 - **Help** (Cmd ?) at the bottom of the panel opens the
-  [online guide](https://cloudscale.consulting/system-sentinel/).
+  [online guide](https://cloudscale.consulting/system-sentinel/). Right click it for the
+  **Welcome tour**: the three step welcome shown on first launch (what it watches, Notifications
+  and Full Disk Access, the ⌃⌥⌘S shortcut). It is also in About.
 - **Report a problem**, in About and in Settings, Diagnostics, puts the diagnostics on the
   clipboard and opens a new GitHub issue with your version and Mac filled in. Paste the
   diagnostics into it and say what happened.
