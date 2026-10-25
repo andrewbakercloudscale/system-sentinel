@@ -125,6 +125,10 @@ struct AboutView: View {
             VStack(spacing: 6) {
                 linkRow("Source code", "github.com/\(Updates.repo)", "curlybraces", Theme.trends, Self.repoPage)
                 linkRow("User guide", "Every screen and setting explained", "book.fill", Tab.memory.color, Self.guide)
+                Button { WelcomeWindow.show(model) } label: {
+                    linkLabel("Welcome tour", "The three-step introduction from the first launch", "hand.wave.fill", Tab.overview.color)
+                }
+                .buttonStyle(.plain)
                 linkRow("Process guide", "What common macOS background processes do, and whether to stop them", "list.bullet.rectangle.fill", Tab.processes.color, Self.processGuide)
                 Button { model.reportProblem() } label: {
                     linkLabel("Report a problem", "Copies the diagnostics and opens a GitHub issue with your Mac filled in", "exclamationmark.bubble.fill", Tab.events.color)
