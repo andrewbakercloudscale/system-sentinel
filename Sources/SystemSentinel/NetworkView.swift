@@ -56,6 +56,7 @@ private struct NetworkHero: View {
                 speed("arrow.down", now?.down)
                 speed("arrow.up", now?.up)
             }
+            .fixedSize()
         }
         .padding(16)
         .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(LinearGradient(colors: colors(tone), startPoint: .topLeading, endPoint: .bottomTrailing)))
@@ -87,7 +88,7 @@ private struct NetworkHero: View {
             // Checkup can say the internet is healthy (no loss, quick) while a warning here is about
             // something else, such as resent packets; say it works, and that there is something to see.
             let n = store.insights.filter { $0.tone >= .warning }.count
-            return "Internet works: \(n) thing\(n == 1 ? "" : "s") to look at"
+            return "Working, \(n) thing\(n == 1 ? "" : "s") to check"
         default: return "Connection is healthy"
         }
     }

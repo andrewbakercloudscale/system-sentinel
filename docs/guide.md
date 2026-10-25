@@ -352,7 +352,7 @@ folder.
 
 Is the connection healthy, and which app is using it.
 
-- **The header:** **Connection is healthy**, **Internet works: N things to look at**, or
+- **The header:** **Connection is healthy**, **Working, N things to check**, or
   **Connection problem**, with Wi-Fi signal and band, any VPN or zero trust client (Zscaler,
   Netskope, GlobalProtect and others) and the speed now.
 - **Speed, last hour**, **Connection** (interface, router, address, DNS, VPN or proxy) and
