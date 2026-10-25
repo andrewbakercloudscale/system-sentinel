@@ -419,6 +419,7 @@ struct SettingsDraft: Equatable {
     var alarmPressure: Bool, alarmPressureMinutes: Double
     var alarmDisk: Bool, alarmDiskGB: Double
     var dnsWorkHost: String, hotspotAlerts: Bool
+    var stopIdleScreenHelper: Bool
     var historyDays: Int
 
     @MainActor init(_ m: Model) {
@@ -431,6 +432,7 @@ struct SettingsDraft: Equatable {
         alarmPressure = m.alarmPressure; alarmPressureMinutes = m.alarmPressureMinutes
         alarmDisk = m.alarmDisk; alarmDiskGB = m.alarmDiskGB
         dnsWorkHost = m.dnsWorkHost; hotspotAlerts = m.hotspotAlerts
+        stopIdleScreenHelper = m.stopIdleScreenHelper
         historyDays = m.retentionDays
     }
 
@@ -447,6 +449,7 @@ struct SettingsDraft: Equatable {
         let hostChanged = m.dnsWorkHost != dnsWorkHost
         m.dnsWorkHost = dnsWorkHost.trimmingCharacters(in: .whitespaces); m.hotspotAlerts = hotspotAlerts
         if hostChanged { m.network.runDNSDoctor() }
+        m.stopIdleScreenHelper = stopIdleScreenHelper
         if historyDays != m.retentionDays { m.historyDays = historyDays }
     }
 }
@@ -491,6 +494,10 @@ struct SettingsView: View {
                     Text("Short bursts never count; only a process that stays over the line the whole time.")
                         .font(.caption2).foregroundStyle(.secondary)
                 }
+                Divider()
+                Toggle("Stop ChatGPT's screen helper when idle", isOn: draft.stopIdleScreenHelper).toggleStyle(.switch)
+                Text("Its computer-use helper keeps taking screenshots while ChatGPT sits unused, which keeps WindowServer busy. After 15 minutes without ChatGPT in front it is stopped; ChatGPT starts it again the next time you use it.")
+                    .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
             Card(title: "Startup", symbol: "power", tint: Tab.processes.color) {
                 Toggle("Launch System Sentinel at login", isOn: draft.login)

@@ -209,7 +209,7 @@ Events tab keeps the recent results.
 | **All quiet** | Under 10% of the Mac is in use | Nothing needs attention. |
 | **X has averaged N% for 15 minutes** | A process has stayed at 50% or more for the last 15 minutes | Sustained use, not a spike: a candidate for a rule. |
 | **X (N%): what it is** | A macOS service you may not recognise is at 20% or more | What it does and whether to wait or act. See the [process guide](processes.md). |
-| **WindowServer is busy because the screen is being captured** | WindowServer is at 20% or more while a capture service is active | Every screenshot, recording, screen share or AI agent screenshot makes WindowServer draw a full frame. The capture services are listed one by one. |
+| **Screen capture is costing N% of the Mac** | WindowServer plus the capture services use 10% of the Mac or more (under that it is an info row ending "fine", not in Checkup) | Every screenshot, recording, screen share or AI agent screenshot makes WindowServer draw a full frame. The capture services are listed one by one, with how to stop each. |
 | **WindowServer is at N%** | WindowServer is busy with no capture running | Usually displays: scaled resolutions, 120 Hz, many windows, transparency. |
 | **N copies of X use N% together** | Three or more processes of one app add up to 15% or more | Easy to miss in a list, such as Chrome tabs or idle terminal sessions. |
 | **X used N% of all CPU time today** | After 30 minutes of recording | The day's heaviest app. |
@@ -238,7 +238,10 @@ resolution every time, even when nothing moved. Something that captures several 
 second keeps WindowServer busy all the time:
 
 - **SkyComputerUseService, Codex Computer Use:** AI agents that screenshot your screen so
-  the AI can see it. They can keep capturing while idle.
+  the AI can see it. They can keep capturing while idle; a few percent of the Mac is normal.
+  Quit ChatGPT with Cmd-Q (closing the window is not enough) to stop it. Settings, **Stop
+  ChatGPT's screen helper when idle** (on by default) stops it after 15 minutes without ChatGPT
+  in front; ChatGPT starts it again when you use it.
 - **replayd:** macOS screen recording. Busy while any app records, streams or shares the screen.
 - **screencapture:** the screenshot command. If it keeps coming back, check **started by**
   to see which app runs it in a loop.

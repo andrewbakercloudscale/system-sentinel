@@ -184,6 +184,10 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
     @AppStorage("alarmDisk") var alarmDisk = true
     @AppStorage("dnsWorkHost") var dnsWorkHost = ""
     @AppStorage("hotspotAlerts") var hotspotAlerts = true
+    /// Stop ChatGPT's screen helper (SkyComputerUseService) after 15 minutes without ChatGPT in front.
+    @AppStorage("stopIdleScreenHelper") var stopIdleScreenHelper = true
+    private var chatGPTInFront = Date()
+    private var helperStopped: Date?
     @AppStorage("alarmDiskGB") var alarmDiskGB: Double = 20
     var alarmWatches: [ResourceAlarm: AlarmWatch] = [:]
     /// The alarms that went off, newest first.
@@ -291,6 +295,7 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
             taskHealth.ran(.sampling)
             for e in events { handle(e) }
             checkKills()
+            stopIdleScreenHelperIfNeeded(Date())
             readPower()
             thermal = ProcessInfo.processInfo.thermalState
             insights = (Insights.generate(insightInput())
@@ -1326,6 +1331,30 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
     }
 
     /// Each tick: Terminal kills that have now exited, and killed programs that came back.
+    /// ChatGPT's computer-use helper screenshots the screen even while ChatGPT sits unused.
+    /// After 15 minutes without ChatGPT in front, stop it once; ChatGPT starts it again when used.
+    private func stopIdleScreenHelperIfNeeded(_ now: Date) {
+        guard stopIdleScreenHelper, Model.snapshotDir == nil else { return }
+        if let front = NSWorkspace.shared.frontmostApplication,
+           front.bundleIdentifier?.hasPrefix("com.openai.") == true || front.localizedName == "ChatGPT" {
+            chatGPTInFront = now
+            return
+        }
+        guard now.timeIntervalSince(chatGPTInFront) >= 15 * 60,
+              helperStopped.map({ $0 < chatGPTInFront }) ?? true,
+              let s = sentinel.latest.first(where: { $0.name == "SkyComputerUseService" }) else { return }
+        helperStopped = now
+        Task.detached {
+            guard Killer.isSameProcess(s) else { return }
+            let outcome = Killer.kill(s)
+            guard outcome == .terminated || outcome == .forceKilled else { return }
+            await MainActor.run {
+                self.sentinel.history.record(.killed, s, detail: "ChatGPT unused for 15 minutes; it starts again when you use ChatGPT")
+                self.lastAction = "Stopped ChatGPT's screen helper: ChatGPT unused for 15 minutes"
+            }
+        }
+    }
+
     private func checkKills() {
         let now = Date()
         for (pid, w) in watching {
