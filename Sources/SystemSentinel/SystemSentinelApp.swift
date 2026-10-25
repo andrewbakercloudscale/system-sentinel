@@ -467,12 +467,12 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     HStack {
                         Text("Over")
-                        Text("\(Int(t))% CPU").font(.body.weight(.bold)).foregroundStyle(Theme.heat(t))
+                        Text("\(Fmt.cpu(t)) of the Mac").font(.body.weight(.bold)).foregroundStyle(Theme.heat(t))
                         Spacer()
-                        Text(Insights.fmtCores(t)).font(.caption).foregroundStyle(.secondary)
+                        Text(String(format: "%.1f cores flat out", t / 100)).font(.caption).foregroundStyle(.secondary)
                     }
                     Slider(value: draft.threshold, in: 30...400, step: 10).tint(Theme.heat(t))
-                    Text("100% is one full core; a process can use several.").font(.caption2).foregroundStyle(.secondary)
+                    Text("This Mac has \(Int(CPUScale.cores)) cores, so one core flat out is \(Fmt.cpu(100)) of the Mac.").font(.caption2).foregroundStyle(.secondary)
                 }
                 Divider()
                 VStack(alignment: .leading, spacing: 4) {

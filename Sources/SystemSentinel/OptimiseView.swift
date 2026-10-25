@@ -275,8 +275,8 @@ struct OptimiseView: View {
             Spacer()
             if let ws {
                 VStack(alignment: .trailing, spacing: 2) {
-                    Text(Fmt.pct(ws.cpu)).font(.title2.weight(.bold)).monospacedDigit().foregroundStyle(Theme.heat(ws.cpu))
-                    Text("now · \(Fmt.pct(avg ?? 0)) over 15 min").font(.caption).foregroundStyle(.secondary)
+                    Text(Fmt.cpu(ws.cpu)).font(.title2.weight(.bold)).monospacedDigit().foregroundStyle(Theme.heat(ws.cpu))
+                    Text("of the Mac now · \(Fmt.cpu(avg ?? 0)) over 15 min").font(.caption).foregroundStyle(.secondary)
                 }
             }
         }

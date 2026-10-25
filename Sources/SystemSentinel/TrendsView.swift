@@ -193,9 +193,9 @@ private struct UsageRow: View {
                 .frame(height: 5)
             }
             .frame(maxWidth: .infinity)
-            Text(Fmt.pct(row.average)).font(.caption).monospacedDigit().foregroundStyle(Theme.heat(row.average)).frame(width: 48, alignment: .trailing)
+            Text(Fmt.cpu(row.average)).font(.caption).monospacedDigit().foregroundStyle(Theme.heat(row.average)).frame(width: 48, alignment: .trailing)
             VStack(alignment: .trailing, spacing: 0) {
-                Text(Fmt.pct(row.peak)).font(.caption).monospacedDigit().foregroundStyle(Theme.heat(row.peak))
+                Text(Fmt.cpu(row.peak)).font(.caption).monospacedDigit().foregroundStyle(Theme.heat(row.peak))
                 if let h = row.peakHour {
                     Text(Calendar.current.isDateInToday(h) ? "at \(Fmt.time(h))" : h.formatted(.dateTime.weekday(.abbreviated).hour().minute()))
                         .font(.system(size: 9)).foregroundStyle(.secondary)
@@ -265,7 +265,7 @@ private struct TrendChart: View {
         let slots = max(d.end.timeIntervalSince(d.start) / d.barSeconds, 1)
         let width = max(2, 560 / slots * 0.78)
         return Chart(bars) { b in
-            BarMark(x: .value("Time", b.start.addingTimeInterval(d.barSeconds / 2)), y: .value("CPU", b.value), width: .fixed(width))
+            BarMark(x: .value("Time", b.start.addingTimeInterval(d.barSeconds / 2)), y: .value("CPU", b.value / CPUScale.cores), width: .fixed(width))
                 .foregroundStyle(by: .value("App", b.key))
                 .cornerRadius(2)
         }
@@ -276,7 +276,7 @@ private struct TrendChart: View {
         .chartYAxis {
             AxisMarks(position: .leading, values: .automatic(desiredCount: 4)) { v in
                 AxisGridLine().foregroundStyle(Color.primary.opacity(0.08))
-                AxisValueLabel { if let x = v.as(Double.self) { Text("\(Int(x))%").font(.system(size: 9)) } }
+                AxisValueLabel { if let x = v.as(Double.self) { Text(Fmt.tick(x)).font(.system(size: 9)) } }
             }
         }
         .chartXAxis {

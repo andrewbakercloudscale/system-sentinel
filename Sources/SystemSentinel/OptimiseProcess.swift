@@ -46,7 +46,7 @@ struct OptimisePopover: View {
                 IconView(icon: IconCache.shared.icon(for: s), size: 32)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Optimise \(s.displayName)").font(.headline)
-                    Text("\(Fmt.pct(s.cpu)) now  ·  \(Fmt.pct(model.average(s, 900))) over 15 min")
+                    Text("\(Fmt.cpu(s.cpu)) of the Mac now  ·  \(Fmt.cpu(model.average(s, 900))) over 15 min")
                         .font(.callout).foregroundStyle(.secondary).monospacedDigit()
                 }
             }

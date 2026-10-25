@@ -64,7 +64,7 @@ private struct NetworkHero: View {
 
     private func speed(_ symbol: String, _ v: Double?) -> some View {
         VStack(alignment: .trailing, spacing: 1) {
-            Label(v.map(IORow.rate) ?? "–", systemImage: symbol)
+            Label(v.map(IORow.netRate) ?? "–", systemImage: symbol)
                 .font(.system(size: 20, weight: .bold, design: .rounded)).foregroundStyle(.white).monospacedDigit()
             Text(symbol == "arrow.down" ? "download" : "upload").font(.caption).foregroundStyle(.white.opacity(0.85))
         }
@@ -112,24 +112,24 @@ private struct ThroughputChart: View {
         let since = Date().addingTimeInterval(-3600)
         let peak = store.throughput.peak(since: since)
         Card(title: "Speed, last hour", symbol: "chart.xyaxis.line", tint: netTint,
-             trailing: AnyView(Text(peak.map { "peak ↓ \(IORow.rate($0.down))  ↑ \(IORow.rate($0.up))" } ?? "").font(.caption).foregroundStyle(.secondary))) {
+             trailing: AnyView(Text(peak.map { "peak ↓ \(IORow.netRate($0.down))  ↑ \(IORow.netRate($0.up))" } ?? "").font(.caption).foregroundStyle(.secondary))) {
             if pts.count < 3 {
                 Text("Measuring. The chart fills in over the next minutes.").font(.caption).foregroundStyle(.secondary).frame(height: 110)
             } else {
                 Chart {
                     ForEach(pts, id: \.at) { p in
-                        AreaMark(x: .value("Time", p.at), y: .value("MB/s", p.down / 1_000_000), series: .value("Way", "Download"))
+                        AreaMark(x: .value("Time", p.at), y: .value("Mbit/s", p.down * 8 / 1_000_000), series: .value("Way", "Download"))
                             .foregroundStyle(netTint.opacity(0.35)).interpolationMethod(.monotone)
-                        LineMark(x: .value("Time", p.at), y: .value("MB/s", p.down / 1_000_000), series: .value("Way", "Download"))
+                        LineMark(x: .value("Time", p.at), y: .value("Mbit/s", p.down * 8 / 1_000_000), series: .value("Way", "Download"))
                             .foregroundStyle(netTint).interpolationMethod(.monotone)
-                        LineMark(x: .value("Time", p.at), y: .value("MB/s", p.up / 1_000_000), series: .value("Way", "Upload"))
+                        LineMark(x: .value("Time", p.at), y: .value("Mbit/s", p.up * 8 / 1_000_000), series: .value("Way", "Upload"))
                             .foregroundStyle(Color(hex: "#d97706")).interpolationMethod(.monotone)
                     }
                 }
                 .chartYAxis {
                     AxisMarks(position: .leading, values: .automatic(desiredCount: 3)) { v in
                         AxisGridLine().foregroundStyle(Color.primary.opacity(0.08))
-                        AxisValueLabel { if let d = v.as(Double.self) { Text(d < 1 ? String(format: "%.1f MB/s", d) : "\(Int(d)) MB/s").font(.system(size: 9)) } }
+                        AxisValueLabel { if let d = v.as(Double.self) { Text(Fmt.tick(d, " Mbit/s")).font(.system(size: 9)) } }
                     }
                 }
                 .chartXAxis { AxisMarks(values: .automatic(desiredCount: 4)) { _ in AxisValueLabel(format: .dateTime.hour().minute()).font(.system(size: 9)) } }
@@ -302,8 +302,8 @@ private struct TopApps: View {
             ChipPicker(options: Self.sorts, selection: $sort, color: netTint)
             HStack {
                 Text("APP").frame(maxWidth: .infinity, alignment: .leading)
-                Text("NOW ↓").frame(width: 70, alignment: .trailing)
-                Text("NOW ↑").frame(width: 70, alignment: .trailing)
+                Text("NOW ↓").frame(width: 78, alignment: .trailing)
+                Text("NOW ↑").frame(width: 78, alignment: .trailing)
                 Text("1 H ↓").frame(width: 76, alignment: .trailing)
                 Text("1 H ↑").frame(width: 70, alignment: .trailing)
                 Text("CONN.").frame(width: 46, alignment: .trailing)
@@ -337,8 +337,8 @@ private struct TopApps: View {
                 Image(systemName: open == r.key ? "chevron.up" : "chevron.down").font(.caption2).foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            Text(IORow.rate(r.down)).frame(width: 70, alignment: .trailing)
-            Text(IORow.rate(r.up)).frame(width: 70, alignment: .trailing)
+            Text(IORow.netRate(r.down)).frame(width: 78, alignment: .trailing)
+            Text(IORow.netRate(r.up)).frame(width: 78, alignment: .trailing)
                 .foregroundStyle(r.up >= 1_000_000 ? Color(hex: "#d97706") : .primary)
             Text(bytes(r.hourIn)).frame(width: 76, alignment: .trailing)
             Text(bytes(r.hourOut)).frame(width: 70, alignment: .trailing)

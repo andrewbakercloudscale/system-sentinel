@@ -202,7 +202,7 @@ extension Insights {
         if let usual = i.typicalTotal, usual > 0, i.recordedMinutes >= 30, i.total60m >= 50, i.total60m >= 2 * usual {
             out.append(Insight(id: "vsusual", tone: .info, symbol: "chart.bar.doc.horizontal",
                                title: "The Mac is \(Fmt0.times(i.total60m / usual)) busier than usual this hour",
-                               detail: "It has averaged \(fmtCores(i.total60m)) this hour. This week it normally averaged \(fmtCores(usual))."))
+                               detail: "It has averaged \(fmtCores(i.total60m, cores: i.cores)) this hour. This week it normally averaged \(fmtCores(usual, cores: i.cores))."))
         }
         out += more(i, at: now, rel: rel, byPID: byPID)
         return out
@@ -269,7 +269,7 @@ extension Insights {
         for u in i.unusual.prefix(2) {
             var x = Insight(id: "unusual-\(u.key)", tone: .warning, symbol: "exclamationmark.arrow.triangle.2.circlepath",
                             title: u.usual < 1 ? "\(u.name) is busy, and it is normally idle" : "\(u.name) is working \(Fmt0.times(u.ratio)) harder than usual",
-                            detail: "It used \(Fmt0.pct(u.now)) of a core over the last 15 minutes. This week it normally used \(u.usual < 1 ? "almost nothing" : Fmt0.pct(u.usual)).")
+                            detail: "It used \(Insights.fmtCores(u.now, cores: i.cores)) over the last 15 minutes. This week it normally used \(u.usual < 1 ? "almost nothing" : CPUScale.text(u.usual, cores: i.cores)).")
             x.why = "Compared with this app's own history rather than a fixed limit, so a normally light app working hard stands out even below the alert threshold. Often a stuck page, a sync loop or an update."
             x.related = rel(u.pids, nil)
             x.steps = ["Check what it is doing: a big sync, an export, a stuck window.", "Quit and reopen it if it should be idle."]
@@ -294,13 +294,13 @@ public enum DaySummary {
         var out: [String] = []
         let total = daily.reduce(0) { $0 + $1.coreSeconds }
         if sampled >= 600, total > 0 {
-            out.append("Watched for \(Insights.duration(sampled)); your Mac averaged \(Insights.fmtCores(total / sampled * 100)) of \(Int(cores)) cores.")
+            out.append("Watched for \(Insights.duration(sampled)); your Mac averaged \(Insights.fmtCores(total / sampled * 100, cores: cores)) busy (\(Int(cores)) cores).")
             let top = daily.prefix(3).map { "\($0.name) \(Int($0.coreSeconds / total * 100))%" }
             out.append("Most CPU time: \(top.joined(separator: ", ")).")
         }
         if let (i, peak) = totalHourly.enumerated().max(by: { $0.element < $1.element }), peak > 0, hourStarts.indices.contains(i) {
             let day = Calendar.current.isDate(hourStarts[i], inSameDayAs: now) ? "" : "yesterday "
-            out.append("Busiest hour: \(day)\(hourStarts[i].formatted(date: .omitted, time: .shortened)) at \(Insights.fmtCores(peak)).")
+            out.append("Busiest hour: \(day)\(hourStarts[i].formatted(date: .omitted, time: .shortened)) at \(Insights.fmtCores(peak, cores: cores)).")
         }
         if let p = power, p.minutes >= 10 {
             if p.batteryMinutes >= 10 {

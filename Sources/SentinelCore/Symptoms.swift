@@ -206,8 +206,8 @@ public enum Diagnose {
         if v.cpuBusy >= 60 {
             let top = v.busyApps.first
             out.append(check(.slow, "cpu", String(format: "The processor is %.0f%% busy", v.cpuBusy), v.cpuBusy >= 85 ? .problem : .warning,
-                             top.map { String(format: "%@ is the busiest, at %.0f%% of a core. Quitting it usually helps most.", $0.name, $0.amount) } ?? "Several apps add up to it.",
-                             actions: quits(v.busyApps), items: v.busyApps.prefix(5).map { String(format: "%@: %.0f%% of a core", $0.name, $0.amount) }))
+                             top.map { "\($0.name) is the busiest, at \(CPUScale.text($0.amount)) of the Mac. Quitting it usually helps most." } ?? "Several apps add up to it.",
+                             actions: quits(v.busyApps), items: v.busyApps.prefix(5).map { "\($0.name): \(CPUScale.text($0.amount)) of the Mac" }))
         }
         if v.pressure != .normal || v.swap >= 8 * gb {
             out.append(check(.slow, "memory", v.pressure == .critical ? "Memory is critically short" : "Memory is running short",
@@ -220,7 +220,7 @@ public enum Diagnose {
                              String(format: "The processor is %.0f%% busy, memory is %@ and the Mac is cool. If one app feels slow, it is that app.", v.cpuBusy, v.pressure.label.lowercased()),
                              steps: ["Quit and reopen the app that feels slow.", "Restart the Mac if it has been on for weeks."],
                              actions: [.goTo(tab: "Processes", card: nil, label: "See every process")],
-                             items: v.busyApps.prefix(3).map { String(format: "%@: %.0f%% of a core", $0.name, $0.amount) }))
+                             items: v.busyApps.prefix(3).map { "\($0.name): \(CPUScale.text($0.amount)) of the Mac" }))
         }
         return out
     }
@@ -404,7 +404,7 @@ public enum Diagnose {
                                     .settings(label: "Bluetooth settings", url: "x-apple.systempreferences:com.apple.BluetoothSettings")]
         var out: [Check] = []
         if v.bluetoothCPU >= 30 {
-            out.append(check(.bluetooth, "cpu", String(format: "Bluetooth is stuck: bluetoothd at %.0f%% of a core", v.bluetoothCPU), .warning,
+            out.append(check(.bluetooth, "cpu", "Bluetooth is stuck: bluetoothd at \(CPUScale.text(v.bluetoothCPU)) of the Mac", .warning,
                              "That usually means devices dropping and reconnecting. Restarting it clears it; keyboards and mice drop for a few seconds.",
                              fixes: restart))
         }
@@ -451,7 +451,7 @@ public enum Diagnose {
                              steps: ["Use one external display, or a DisplayLink dock with the DisplayLink Manager app."]))
         }
         if v.windowServerCPU >= 60 {
-            out.append(check(.display, "draw", String(format: "Drawing the screens is busy: WindowServer at %.0f%% of a core", v.windowServerCPU), .warning,
+            out.append(check(.display, "draw", "Drawing the screens is busy: WindowServer at \(CPUScale.text(v.windowServerCPU)) of the Mac", .warning,
                              "Large scaled resolutions, many displays and transparency all add to it, and it makes everything lag.",
                              steps: ["Pick Default resolution on big external displays.", "Turn on Reduce transparency in Accessibility > Display.", "Close windows you are not using."],
                              actions: [.optimiseScreen]))
@@ -475,7 +475,7 @@ public enum Diagnose {
     static func icloud(_ v: Vitals) -> [Check] {
         let restart: Check.Fix = .run(label: "Restart iCloud sync", path: "/usr/bin/killall", args: ["bird", "cloudd"])
         if v.syncCPU >= 30 {
-            return [check(.icloud, "busy", String(format: "iCloud sync is busy: %.0f%% of a core", v.syncCPU), .warning,
+            return [check(.icloud, "busy", "iCloud sync is busy: \(CPUScale.text(v.syncCPU)) of the Mac", .warning,
                           "Fine for a while after adding many files. If it stays busy and files sit on Waiting, restart it: it picks up where it left off.",
                           fixes: [restart])]
         }
