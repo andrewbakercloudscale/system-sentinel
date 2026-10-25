@@ -18,6 +18,67 @@ extension Model {
         }
     }
 
+    /// Report a problem: the diagnostics go on the clipboard and GitHub opens a new issue with
+    /// the version and Mac filled in, so the two support routes (About and Settings) are one.
+    func reportProblem() {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(diagnosticsText(), forType: .string)
+        let v = ProcessInfo.processInfo.operatingSystemVersion
+        let mac = [AboutView.sysctl("hw.model"), AboutView.sysctl("machdep.cpu.brand_string")].compactMap { $0 }.joined(separator: ", ")
+        let body = """
+            **What happened**
+
+
+            **What you expected**
+
+
+            **Details**
+            System Sentinel \(Model.appVersion) (build \(AboutView.build))
+            macOS \(v.majorVersion).\(v.minorVersion).\(v.patchVersion)
+            Mac: \(mac)
+
+            **Diagnostics** (System Sentinel put them on your clipboard: paste them below)
+
+            """
+        var c = URLComponents(string: "https://github.com/\(Updates.repo)/issues/new")!
+        c.queryItems = [URLQueryItem(name: "body", value: body)]
+        if let url = c.url { NSWorkspace.shared.open(url) }
+        lastAction = "Diagnostics copied: paste them into the issue"
+    }
+
+    /// Settings, Diagnostics, Reset all settings.
+    func confirmReset() {
+        Confirm.ask(ConfirmRequest(
+            symbol: "arrow.counterclockwise.circle.fill", tint: Theme.heat(100), title: "Reset all settings?",
+            message: "Puts System Sentinel back as it was when first installed, then reopens it.",
+            points: ["Clears every setting, your CPU and memory rules, ignored findings and lowered priorities.",
+                     "Reset settings keeps your history (CPU, memory, energy, power, storage and network charts and Events).",
+                     "Reset and delete history also deletes that, so every chart starts empty.",
+                     "Launch at login and the permissions you gave are left as they are."],
+            undo: "Cannot be undone.",
+            confirm: .init(title: "Reset settings", destructive: true) { self.resetAll(deleteHistory: false) },
+            others: [.init(title: "Reset and delete history", destructive: true) { self.resetAll(deleteHistory: true) }]))
+    }
+
+    func resetAll(deleteHistory: Bool) {
+        if let id = Bundle.main.bundleIdentifier { UserDefaults.standard.removePersistentDomain(forName: id) }
+        UserDefaults.standard.synchronize()
+        let fm = FileManager.default
+        // The backup of changed macOS settings stays, so Optimise can still put them back.
+        let keep: Set<String> = ["tweaks-backup.json"]
+        let files = deleteHistory
+            ? ((try? fm.contentsOfDirectory(at: Model.supportDir, includingPropertiesForKeys: nil)) ?? []).filter { !keep.contains($0.lastPathComponent) }
+            : ["policies.json", "memory-rules.json"].map { Model.supportDir.appendingPathComponent($0) }
+        for f in files { try? fm.removeItem(at: f) }
+        // A shell outlives this process and opens the app again; exiting at once means nothing
+        // in memory is written back over what was just cleared.
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/bin/sh")
+        p.arguments = ["-c", "sleep 1; /usr/bin/open \"$0\"", Bundle.main.bundlePath]
+        try? p.run()
+        exit(0)
+    }
+
     /// Everything someone fixing a problem would ask for, as plain text.
     func diagnosticsText(at now: Date = Date()) -> String {
         let os = ProcessInfo.processInfo.operatingSystemVersionString
@@ -60,7 +121,7 @@ struct CrashBanner: View {
                     .buttonStyle(.plain).font(.callout.weight(.semibold)).foregroundStyle(Theme.heat(100))
                     .padding(.horizontal, 12).padding(.vertical, 6).background(Capsule().fill(.white))
                 Button { model.lastCrash = nil } label: { Image(systemName: "xmark").foregroundStyle(.white) }
-                    .buttonStyle(.plain).tip("Dismiss")
+                    .buttonStyle(.plain).tip("Dismiss").accessibilityLabel("Dismiss")
             }
             .padding(12)
             .background(RoundedRectangle(cornerRadius: 12).fill(Theme.heat(100).gradient))
@@ -123,6 +184,15 @@ struct DiagnosticsCard: View {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 2) { copied = false }
                 }
                 .tip("Version, macOS, background jobs and recent errors, ready to paste into a bug report.")
+                RowButton(title: "Report a problem", symbol: "exclamationmark.bubble", color: Tab.events.color) { model.reportProblem() }
+                    .tip("Copies the diagnostics and opens a new GitHub issue with your version and Mac filled in. Paste the diagnostics into it.")
+            }
+            HStack {
+                Text("Reset puts every setting and rule back to how it was when installed. History is kept unless you choose to delete it.")
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 8)
+                RowButton(title: "Reset all settings…", symbol: "arrow.counterclockwise", color: Theme.heat(100)) { model.confirmReset() }
+                    .tip("Asks first. Choose whether to keep your history.")
             }
         }
     }
