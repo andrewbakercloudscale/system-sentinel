@@ -475,9 +475,16 @@ private struct CleanUp: View {
                 let t = model.ruleTarget(top)
                 let canQuit = t.sample.pid != getpid() && Safety.canKillManually(t.sample)
                 action(symbol: "xmark.app.fill", title: "Quit \(t.name)",
-                       text: "Frees about \(gb(model.ruleBytes(t))), including \(gb(top.outOfRAM)) compressed or in swap: the most of any app. Quitting apps is the only way to free swap while the Mac runs. The rest are under Memory by app.",
-                       button: canQuit ? AnyView(button("Quit", symbol: "xmark.circle.fill", color: Theme.heat(100)) {
-                           model.confirmAndPerform(.quit(pids: t.pids, name: t.name))
+                       text: "Frees about \(gb(model.ruleBytes(t))), including \(gb(top.outOfRAM)) compressed or in swap: the most of any app. Quitting apps is the only way to free swap while the Mac runs; Restart quits it and opens it again. The rest are under Memory by app.",
+                       button: canQuit ? AnyView(HStack(spacing: 6) {
+                           if model.canRestart(t.pids) {
+                               button("Restart", symbol: "arrow.clockwise", color: Tab.memory.color) {
+                                   model.confirmAndPerform(.restart(pids: t.pids, name: t.name))
+                               }
+                           }
+                           button("Quit", symbol: "xmark.circle.fill", color: Theme.heat(100)) {
+                               model.confirmAndPerform(.quit(pids: t.pids, name: t.name))
+                           }
                        }) : nil)
             } else {
                 action(symbol: "xmark.app.fill", title: "Quit what you are not using",

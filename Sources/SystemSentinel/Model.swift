@@ -456,7 +456,12 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
                                                      : String(found[i].id.dropFirst("mem-grow-".count))
             if let m = memoryApps.first(where: { $0.key == key }) {
                 let a = Model.isVM(m.key) ? (vmHost() ?? m) : m
-                if a.sample.pid != getpid(), Safety.canKillManually(a.sample) { found[i].fixes = [.quit(pids: a.pids, name: a.name)] }
+                if a.sample.pid != getpid(), Safety.canKillManually(a.sample) {
+                    // Out of RAM is mostly swap: a restart frees it and keeps the app.
+                    found[i].fixes = found[i].id == "mem-swapowner" && canRestart(a.pids)
+                        ? [.restart(pids: a.pids, name: a.name), .quit(pids: a.pids, name: a.name)]
+                        : [.quit(pids: a.pids, name: a.name)]
+                }
             }
         }
         for i in found.indices where ["mem-thrash", "mem-swapgrow", "mem-pressure24"].contains(found[i].id) {
@@ -636,6 +641,8 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
         switch fix {
         case .quit(let pids, let name):
             quit(pids: pids, name: name)
+        case .restart(let pids, let name):
+            restart(pids: pids, name: name)
         case .kill(let pids, let label):
             let targets = pids.compactMap(sample(pid:))
             startImpact(label, pids: pids)
@@ -731,6 +738,58 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
             return
         }
         showToast(Toast(ok: true, title: "Asked \(name) to quit", detail: "The result, in power and CPU, follows in a minute. If it is still here, use Force Quit."))
+    }
+
+    /// The running apps behind these pids, the way Quit finds them.
+    private func runningApps(_ pids: [Int32]) -> [NSRunningApplication] {
+        var out: [NSRunningApplication] = []
+        for pid in pids {
+            if let app = NSRunningApplication(processIdentifier: pid), app.bundleURL != nil, app.activationPolicy != .prohibited {
+                out.append(app)
+            } else if let s = sample(pid: pid), let bundle = AppIdentity.bundlePath(of: s.path),
+                      let app = NSWorkspace.shared.runningApplications.first(where: { $0.bundleURL?.path == bundle }) {
+                out.append(app)
+            }
+        }
+        var seen = Set<pid_t>()
+        return out.filter { seen.insert($0.processIdentifier).inserted }
+    }
+
+    /// Only a real app with a bundle can be opened again.
+    func canRestart(_ pids: [Int32]) -> Bool { runningApps(pids).contains { $0.bundleURL != nil } }
+
+    /// Quits the app the normal way, waits up to 30 s for it to go, opens it again and says
+    /// how much swap came back. The only way to free an app's swap short of a restart.
+    func restart(pids: [Int32], name: String) {
+        let apps = runningApps(pids)
+        guard let url = apps.first(where: { $0.activationPolicy == .regular })?.bundleURL ?? apps.first?.bundleURL else {
+            quit(pids: pids, name: name)
+            return
+        }
+        let before = MemoryStatus.read()?.swapUsed
+        for app in apps { app.terminate() }
+        showToast(Toast(ok: true, title: "Restarting \(name)…", detail: "Asked it to quit the normal way; it opens again once it has gone."))
+        Task { @MainActor in
+            for _ in 0..<60 where apps.contains(where: { !$0.isTerminated }) {
+                try? await Task.sleep(for: .milliseconds(500))
+            }
+            guard !apps.contains(where: { !$0.isTerminated }) else {
+                self.showToast(Toast(ok: false, title: "\(name) did not quit", detail: "It may be asking to save something. Answer it, or use Force Quit, then open it again."))
+                return
+            }
+            let config = NSWorkspace.OpenConfiguration()
+            config.activates = false
+            _ = try? await NSWorkspace.shared.openApplication(at: url, configuration: config)
+            try? await Task.sleep(for: .seconds(5))
+            let after = MemoryStatus.read()?.swapUsed
+            var detail = "Opened again."
+            if let b = before, let a = after {
+                detail = b > a ? "Swap went from \(ReportDocument.bytes(b)) to \(ReportDocument.bytes(a)): \(ReportDocument.bytes(b - a)) back."
+                               : "Swap is \(ReportDocument.bytes(a)). macOS can take a minute to hand it back."
+            }
+            self.showToast(Toast(ok: true, title: "Restarted \(name)", detail: detail))
+            self.tick()
+        }
     }
 
     /// Notes the draw and CPU now, and a minute later says what changed.

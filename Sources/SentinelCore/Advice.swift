@@ -6,6 +6,8 @@ import Foundation
 public enum FixAction: Equatable, Sendable, Identifiable {
     /// Quit the app properly (it can save), or stop the process if it is not an app.
     case quit(pids: [Int32], name: String)
+    /// Quit the app properly, wait for it to go, and open it again: frees its swap.
+    case restart(pids: [Int32], name: String)
     /// Stop these processes, e.g. every forgotten caffeinate.
     case kill(pids: [Int32], label: String)
     /// Turn Low Power Mode on (asks for the admin password).
@@ -67,6 +69,7 @@ public enum FixAction: Equatable, Sendable, Identifiable {
     public var title: String {
         switch self {
         case .quit(_, let name): return "Quit \(name)"
+        case .restart(_, let name): return "Restart \(name)"
         case .kill(_, let label): return label
         case .lowPowerMode: return "Turn on Low Power Mode"
         case .openSettings(let s): return s.title
@@ -89,6 +92,7 @@ public enum FixAction: Equatable, Sendable, Identifiable {
     public var symbol: String {
         switch self {
         case .quit: return "xmark.circle.fill"
+        case .restart: return "arrow.clockwise.circle.fill"
         case .kill: return "xmark.octagon.fill"
         case .lowPowerMode: return "leaf.fill"
         case .openSettings: return "gearshape.fill"
@@ -110,7 +114,7 @@ public enum FixAction: Equatable, Sendable, Identifiable {
     /// Changes something (red button) rather than only opening a window.
     public var acts: Bool {
         switch self {
-        case .quit, .kill, .lowPowerMode, .emptyTrash, .cleanPlaces, .trashFound, .leaveHotspot: return true
+        case .quit, .restart, .kill, .lowPowerMode, .emptyTrash, .cleanPlaces, .trashFound, .leaveHotspot: return true
         case .openSettings, .reveal, .archiveFound, .review, .openApp, .openURL, .optimiseScreen, .goTo, .copy: return false
         }
     }
