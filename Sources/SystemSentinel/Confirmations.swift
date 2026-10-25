@@ -183,6 +183,12 @@ extension Model {
             if let m = memoryText(pids) { points.append(m) }
             Confirm.ask("Quit \(name)?", "A minute later you see what it changed.", symbol: "xmark.circle.fill", points: points,
                         undo: "Open \(name) again to undo.", button: "Quit") { self.perform(f) }
+        case .restart(let pids, let name):
+            var points = ["\(name) is asked to quit the normal way, as ⌘Q would, so it can save first, then opened again.",
+                          "Its windows and chats come back as the app restores them; anything it would ask to save, it asks."]
+            if let m = memoryText(pids) { points.append(m) }
+            Confirm.ask("Restart \(name)?", "The only way to free an app's swap without restarting the Mac.", symbol: "arrow.clockwise.circle.fill",
+                        points: points, undo: nil, button: "Restart") { self.perform(f) }
         case .kill(let pids, let label):
             let names = Set(pids.compactMap { sample(pid: $0)?.displayName }).sorted()
             var points = ["Stops \(names.isEmpty ? "\(pids.count) processes" : names.joined(separator: ", ")): politely first, by force after 5 seconds.",

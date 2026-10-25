@@ -75,6 +75,7 @@ struct FixButtons: View {
     private func help(_ f: FixAction) -> String {
         switch f {
         case .quit(_, let name): return "Quit \(name) the normal way, so it can save. A minute later you see what it changed."
+        case .restart(_, let name): return "Quit \(name) the normal way and open it again, which frees its swap. Asks first."
         case .kill(let pids, _): return "Stop \(pids.count == 1 ? "this process" : "these \(pids.count) processes")."
         case .lowPowerMode: return "Turns Low Power Mode on now. macOS asks for your password."
         case .openSettings(let s): return "Opens System Settings at \(s.title)."

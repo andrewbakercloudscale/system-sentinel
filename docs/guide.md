@@ -335,7 +335,11 @@ caches on purpose. The tab shows:
 - **Memory and swap over time:** the last hours to 7 days (14 and 28 with longer history).
 - **Memory by app:** each app's whole footprint, helpers included, with Quit and a **Rule**
   menu to quit it by itself over 2, 4, 8 or 16 GB (see [Rules](#rules)).
-- **Free up memory:** what would free the most, with buttons.
+- **Free up memory:** what would free the most, with buttons. For the app holding the most
+  swap there is also **Restart**: it quits the app the normal way (as ⌘Q would), opens it
+  again and says how much swap came back. macOS has no way to flush swap, so this is the only
+  way to free it without restarting the Mac. The same button is on the "holds the most swap"
+  insight.
 - **How Mac memory works:** compression, swap and why free memory is wasted memory.
 
 ---
