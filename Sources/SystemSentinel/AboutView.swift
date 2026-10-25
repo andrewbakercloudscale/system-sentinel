@@ -15,7 +15,7 @@ struct AboutView: View {
     static let gitHubProfile = URL(string: "https://github.com/andrewbakercloudscale")!
     static let repoPage = URL(string: "https://github.com/\(Updates.repo)")!
     static let issues = URL(string: "https://github.com/\(Updates.repo)/issues")!
-    static let guide = URL(string: "https://github.com/\(Updates.repo)/blob/main/docs/guide.md")!
+    static let guide = URL(string: "https://cloudscale.consulting/system-sentinel/")!
     static let licence = URL(string: "https://github.com/\(Updates.repo)/blob/main/LICENSE")!
     static let post = URL(string: "https://andrewbaker.ninja/2026/10/19/system-sentinel-a-menu-bar-doctor-for-your-mac/")!
 

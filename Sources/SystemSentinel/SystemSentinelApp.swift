@@ -266,6 +266,11 @@ struct MenuView: View {
                 }
                 .tip("Version, updates, links and who made it")
             }
+            FooterButton(title: "Help", symbol: "questionmark.circle", color: Tab.memory.color) {
+                NSWorkspace.shared.open(AboutView.guide)
+            }
+            .keyboardShortcut("?", modifiers: .command)
+            .tip("The user guide on cloudscale.consulting: every screen explained, with pictures (Cmd ?)")
             FooterButton(title: "Share", symbol: "square.and.arrow.up", color: Tab.network.color) {
                 ShareApp.show()
             }
@@ -857,7 +862,12 @@ enum PopOut {
     static func show(_ model: Model) {
         if window == nil {
             let host = NSHostingController(rootView: MenuView(model: model, inWindow: true))
+            // The window keeps the size it opened at. Left to follow the content, a header or
+            // banner changing height mid-layout resized the window inside AppKit's layout pass,
+            // which aborts the app ("quit unexpectedly", 0.8.26 and 0.8.32).
+            host.sizingOptions = []
             let w = NSWindow(contentViewController: host)
+            w.setContentSize(host.view.fittingSize)
             w.title = "System Sentinel"
             w.styleMask = [.titled, .closable, .miniaturizable]
             w.isReleasedWhenClosed = false
