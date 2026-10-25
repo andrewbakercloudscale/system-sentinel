@@ -522,8 +522,9 @@ struct ExportCard: View {
                 Button { save(pdf: true) } label: { Label("PDF…", systemImage: "doc.richtext") }
                     .tip("Save the report as a PDF. You pick where")
                 Spacer()
+                ExportMenu(model: model, color: Tab.events.color)
             }
-            Text("The week, today, battery, sleep and memory in one page: for your records, IT support, or a repair shop.")
+            Text("The week, today, battery, sleep and memory in one page: for your records, IT support, or a repair shop. Export saves the readings themselves as CSV or JSON, for a spreadsheet or a script.")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
     }
