@@ -124,11 +124,17 @@ struct AboutView: View {
             VStack(spacing: 6) {
                 linkRow("Source code", "github.com/\(Updates.repo)", "curlybraces", Theme.trends, Self.repoPage)
                 linkRow("User guide", "Every screen and setting explained", "book.fill", Tab.memory.color, Self.guide)
-                linkRow("Report a problem or ask for a feature", "GitHub issues", "exclamationmark.bubble.fill", Tab.events.color, Self.issues)
+                Button { model.reportProblem() } label: {
+                    linkLabel("Report a problem", "Copies the diagnostics and opens a GitHub issue with your Mac filled in", "exclamationmark.bubble.fill", Tab.events.color)
+                }
+                .buttonStyle(.plain)
+                .tip("Paste the diagnostics into the issue. To ask for a feature, open a GitHub issue the same way.")
                 linkRow("The story behind it", "andrewbaker.ninja blog post", "newspaper.fill", Tab.checkup.color, Self.post)
                 linkRow("Licence", "MIT", "checkmark.seal.fill", Theme.rules, Self.licence)
             }
-            Text("Monitoring runs on this Mac and nothing is uploaded. The app is not notarised by Apple; the source is public so anyone can check what it does.")
+            Text("Open it from any app with Control Option Command S (⌃⌥⌘S).")
+                .font(.callout.weight(.semibold)).fixedSize(horizontal: false, vertical: true)
+            Text(Self.privacy)
                 .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
     }
@@ -162,15 +168,24 @@ struct AboutView: View {
                     Label("Open the data folder", systemImage: "externaldrive")
                 }
                 .buttonStyle(.bordered).tint(Tab.storage.color)
-                .tip("History and settings live here: " + Model.supportDir.path)
+                .tip("History and rules live here: " + Model.supportDir.path + ". Settings are kept by macOS under consulting.cloudscale.systemsentinel.")
             }
         }
     }
 
     // MARK: Pieces
 
+    /// What leaves the Mac, said plainly: nothing about you or your apps, but the checks
+    /// themselves have to reach the internet.
+    static let privacy = "Nothing about you, your files or your apps is uploaded. To test the connection, System Sentinel itself pings 1.1.1.1 every 3 minutes, looks up www.apple.com and loads captive.apple.com every 10 minutes, checks the certificates of github.com, registry.npmjs.org and pypi.org every 30 minutes, and asks GitHub for updates. The speed test (Apple), route test and DNS map (Cloudflare, Google and Zscaler) only run when you start them. Explain sends its prompt to ChatGPT. The app is not notarised by Apple; the source is public so anyone can check what it does."
+
     private func linkRow(_ title: String, _ detail: String, _ symbol: String, _ color: Color, _ url: URL) -> some View {
-        Button { NSWorkspace.shared.open(url) } label: {
+        Button { NSWorkspace.shared.open(url) } label: { linkLabel(title, detail, symbol, color) }
+        .buttonStyle(.plain)
+        .tip(url.absoluteString)
+    }
+
+    private func linkLabel(_ title: String, _ detail: String, _ symbol: String, _ color: Color) -> some View {
             HStack(spacing: 10) {
                 Image(systemName: symbol).font(.body.weight(.semibold)).foregroundStyle(color).frame(width: 22)
                 VStack(alignment: .leading, spacing: 1) {
@@ -183,9 +198,6 @@ struct AboutView: View {
             .padding(.horizontal, 10).padding(.vertical, 7)
             .background(RoundedRectangle(cornerRadius: 8).fill(color.opacity(0.08)))
             .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .tip(url.absoluteString)
     }
 
     private func pill(_ title: String, _ symbol: String, _ url: URL) -> some View {
