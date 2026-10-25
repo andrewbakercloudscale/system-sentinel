@@ -49,12 +49,21 @@ public struct ProcessSample: Equatable, Sendable {
 /// One `ps` run costs about 30 ms, so a 5 s interval is well under 1% of one core.
 public enum ProcessSampler {
     public static let arguments = ["-axww", "-o", "pid=,uid=,%cpu=,rss=,comm="]
+    /// The same with the parent pid, so the commands this app runs can be told apart.
+    public static let argumentsWithParent = ["-axww", "-o", "pid=,uid=,%cpu=,rss=,ppid=,comm="]
 
     public static func sample() throws -> [ProcessSample] {
+        try sample(foldingInto: nil)
+    }
+
+    /// With `me` set, every process `me` started (nettop, ps, ping and the rest, and what
+    /// they start) is counted as part of `me` and left out of the list. Before, the app's
+    /// own nettop showed up as a heavy user in Trends and was flagged and killed in Events.
+    public static func sample(foldingInto me: Int32?) throws -> [ProcessSample] {
         let task = Process()
         task.executableURL = URL(fileURLWithPath: "/bin/ps")
         task.qualityOfService = .utility
-        task.arguments = arguments
+        task.arguments = me == nil ? arguments : argumentsWithParent
         let pipe = Pipe()
         task.standardOutput = pipe
         task.standardError = FileHandle.nullDevice
@@ -64,7 +73,33 @@ public enum ProcessSampler {
         guard task.terminationStatus == 0 else {
             throw SamplerError.psFailed(task.terminationStatus)
         }
-        return resolve(parse(String(decoding: data, as: UTF8.self)))
+        let text = String(decoding: data, as: UTF8.self)
+        guard let me else { return resolve(parse(text)) }
+        return resolve(fold(parseWithParents(text), into: me))
+    }
+
+    /// Adds the CPU and memory of every descendant of `me` to `me`'s own row and drops them.
+    public static func fold(_ rows: [(sample: ProcessSample, ppid: Int32)], into me: Int32) -> [ProcessSample] {
+        var parent: [Int32: Int32] = [:]
+        for r in rows { parent[r.sample.pid] = r.ppid }
+        func isMine(_ pid: Int32) -> Bool {
+            var p = parent[pid]
+            var hops = 0
+            while let q = p, q > 1, hops < 32 {
+                if q == me { return true }
+                p = parent[q]; hops += 1
+            }
+            return false
+        }
+        var cpu = 0.0, rss = 0
+        var out: [ProcessSample] = []
+        for r in rows {
+            if isMine(r.sample.pid) { cpu += r.sample.cpu; rss += r.sample.rssKB } else { out.append(r.sample) }
+        }
+        guard cpu > 0 || rss > 0, let i = out.firstIndex(where: { $0.pid == me }) else { return out }
+        let s = out[i]
+        out[i] = ProcessSample(pid: s.pid, uid: s.uid, cpu: s.cpu + cpu, path: s.path, rssKB: s.rssKB + rss)
+        return out
     }
 
     /// `ps` prints the full path for most processes, but a bare name ("system_profiler")
@@ -94,26 +129,36 @@ public enum ProcessSampler {
     /// so a path with spaces ("Google Chrome Helper (Renderer).app/...") survives whole.
     /// `ps` prints decimals with a comma in some locales (the owner's Mac prints "94,0").
     public static func parse(_ output: String) -> [ProcessSample] {
-        var out: [ProcessSample] = []
+        rows(output, fields: 4).map(\.sample)
+    }
+
+    /// `pid uid %cpu rss ppid comm` lines.
+    public static func parseWithParents(_ output: String) -> [(sample: ProcessSample, ppid: Int32)] {
+        rows(output, fields: 5)
+    }
+
+    private static func rows(_ output: String, fields count: Int) -> [(sample: ProcessSample, ppid: Int32)] {
+        var out: [(sample: ProcessSample, ppid: Int32)] = []
         for raw in output.split(separator: "\n") {
             let line = raw.drop(while: { $0 == " " })
             var fields: [Substring] = []
             var rest = Substring(line)
-            for _ in 0..<4 {
+            for _ in 0..<count {
                 rest = rest.drop(while: { $0 == " " })
                 guard let space = rest.firstIndex(of: " ") else { break }
                 fields.append(rest[..<space])
                 rest = rest[space...]
             }
             let path = rest.drop(while: { $0 == " " })
-            guard fields.count == 4,
+            guard fields.count == count,
                   let pid = Int32(fields[0]),
                   let uid = UInt32(fields[1]),
                   let cpu = Double(fields[2].replacingOccurrences(of: ",", with: ".")),
                   let rss = Int(fields[3]),
                   !path.isEmpty
             else { continue }
-            out.append(ProcessSample(pid: pid, uid: uid, cpu: cpu, path: String(path), rssKB: rss))
+            let ppid = count > 4 ? Int32(fields[4]) ?? 0 : 0
+            out.append((ProcessSample(pid: pid, uid: uid, cpu: cpu, path: String(path), rssKB: rss), ppid))
         }
         return out
     }

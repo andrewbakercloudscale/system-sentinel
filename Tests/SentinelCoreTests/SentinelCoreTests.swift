@@ -23,6 +23,22 @@ final class ParserTests: XCTestCase {
         XCTAssertEqual(s[1].name, "Google Chrome Helper (Renderer)")
     }
 
+    func testOwnCommandsCountAsTheApp() {
+        let out = """
+            500   501   2.0  90000     1 /Applications/System Sentinel.app/Contents/MacOS/SystemSentinel
+            600   501  45.0   8000   500 /usr/bin/nettop
+            601   501   1.0   2000   500 /bin/sh
+            602   501   3.0   1000   601 /sbin/ping
+            700   501  30.0  50000     1 /usr/bin/nettop
+            701   501  10.0  50000   700 /usr/bin/yes
+        """
+        let s = ProcessSampler.fold(ProcessSampler.parseWithParents(out), into: 500)
+        XCTAssertEqual(s.map(\.pid), [500, 700, 701], "the app's commands and theirs fold in; others stay")
+        XCTAssertEqual(s[0].cpu, 51.0)
+        XCTAssertEqual(s[0].rssKB, 101_000)
+        XCTAssertEqual(s[1].cpu, 30.0)
+    }
+
     func testLiveSampleSeesThisProcessAndRootDaemons() throws {
         let all = try ProcessSampler.sample()
         XCTAssertTrue(all.contains { $0.pid == getpid() }, "own process missing")
