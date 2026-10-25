@@ -122,6 +122,13 @@ public struct BackgroundItem: Equatable, Sendable, Identifiable {
 
     public var name: String { (script ?? program).map { ($0 as NSString).lastPathComponent } ?? label }
 
+    /// Security, VPN and device management agents an employer installs. Removing one can cut
+    /// off the VPN or mark the Mac out of compliance, so the bin warns before it does.
+    public var managedBy: String? {
+        let text = (label + " " + (program ?? "")).lowercased()
+        return BackgroundItems.managed.first { text.contains($0.0) }?.1
+    }
+
     /// The executable path a running copy shows in ps, unless it runs through an
     /// interpreter, where every zsh or python would match.
     public var processPath: String? { script == nil && !BackgroundItems.isInterpreter(program) ? program : nil }
@@ -132,6 +139,18 @@ public enum BackgroundItems {
         (NSString(string: "~/Library/LaunchAgents").expandingTildeInPath, .user),
         ("/Library/LaunchAgents", .allUsers),
         ("/Library/LaunchDaemons", .system),
+    ]
+
+    static let managed: [(String, String)] = [
+        ("zscaler", "Zscaler"), ("com.microsoft.intune", "Microsoft Intune"), ("companyportal", "Microsoft Intune"),
+        ("wdav", "Microsoft Defender"), ("microsoft.dlp", "Microsoft Defender"), ("jamf", "Jamf"), ("crowdstrike", "CrowdStrike"),
+        ("falcon", "CrowdStrike"), ("forcepoint", "Forcepoint"), ("websense", "Forcepoint"), ("kandji", "Kandji"),
+        ("netskope", "Netskope"), ("sentinelone", "SentinelOne"), ("paloaltonetworks", "GlobalProtect"), ("globalprotect", "GlobalProtect"),
+        ("cisco.anyconnect", "Cisco Secure Client"), ("cisco.secureclient", "Cisco Secure Client"), ("mosyle", "Mosyle"),
+        ("addigy", "Addigy"), ("workspaceone", "Workspace ONE"), ("airwatch", "Workspace ONE"), ("tanium", "Tanium"),
+        ("carbonblack", "Carbon Black"), ("cylance", "Cylance"), ("sophos", "Sophos"), ("symantec", "Symantec"),
+        ("trendmicro", "Trend Micro"), ("fortinet", "FortiClient"), ("kolide", "Kolide"), ("santa", "Santa"),
+        ("beyondtrust", "BeyondTrust"), ("cyberark", "CyberArk"), ("absolute", "Absolute"), ("code42", "Code42"),
     ]
 
     static let interpreters: Set<String> = ["sh", "bash", "zsh", "env", "python", "python3", "node", "ruby", "perl", "osascript"]

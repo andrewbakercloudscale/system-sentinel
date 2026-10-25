@@ -26,9 +26,19 @@ extension Model {
 
     // MARK: Processes
 
+    /// The processes that install macOS and app updates. Busy usually means an update is
+    /// being downloaded or installed, and stopping one part way can leave it to start over.
+    static let installers: Set<String> = ["softwareupdated", "softwareupdate", "installd", "system_installd", "storedownloadd", "mobileassetd", "SoftwareUpdateNotificationManager"]
+
+    static func installWarning(_ s: ProcessSample) -> String? {
+        guard installers.contains(s.name) else { return nil }
+        return "\(s.name) installs updates. If an update is downloading or installing, killing it stops that part way and it starts again later. Check System Settings, General, Software Update first."
+    }
+
     func confirmKill(_ s: ProcessSample) {
         var points = ["Asks it to stop the normal way, so it can save and clean up.",
                       "If it is still running after 5 seconds, it is stopped by force."]
+        if let w = Self.installWarning(s) { points.insert(w, at: 0) }
         if s.isRoot { points.append("It runs as root, so macOS asks for your password.") }
         if let m = memoryText([s.pid]) { points.append(m) }
         Confirm.ask(ConfirmRequest(symbol: "xmark.octagon.fill", tint: Self.red, title: "Kill \(s.displayName)?",
@@ -41,6 +51,7 @@ extension Model {
     func confirmForceKill(_ s: ProcessSample) {
         let protected = !Safety.canKillManually(s)
         var points = ["Stops it at once (kill -9). It cannot refuse, and gets no chance to save or clean up."]
+        if let w = Self.installWarning(s) { points.insert(w, at: 0) }
         if protected { points.append(SudoButton.consequence(of: s.name)) }
         if s.uid != getuid() { points.append("It runs as \(s.isRoot ? "root" : "another user"), so macOS asks for your password.") }
         var others: [ConfirmRequest.Choice] = []
@@ -147,8 +158,12 @@ extension Model {
     }
 
     func confirmRemove(_ item: BackgroundItem) {
-        var points = ["Stops it now, and it no longer starts at login.",
-                      "Its file (\((item.plist as NSString).lastPathComponent)) goes to the Trash."]
+        var points: [String] = []
+        if let org = item.managedBy {
+            points.append("\(org) is usually installed and managed by your organisation's IT. Removing it can cut off the VPN or company network, or mark this Mac out of compliance. Ask IT first.")
+        }
+        points += ["Stops it now, and it no longer starts at login.",
+                   "Its file (\((item.plist as NSString).lastPathComponent)) goes to the Trash."]
         if item.scope != .user { points.append("It is installed for every user, so macOS asks for your password.") }
         points.append("If the app that installed it is still here, it may put it back next time it runs. Remove the app to stop that.")
         Confirm.ask("Remove \(item.name)?", "\(item.vendor), \(item.label).", symbol: "trash.fill", tint: Self.red,
