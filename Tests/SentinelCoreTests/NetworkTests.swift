@@ -149,6 +149,7 @@ final class NetworkTests: XCTestCase {
         XCTAssertEqual(NetworkLink(interface: "en5").kind, "Ethernet")
         XCTAssertEqual(NetworkLink.vpn(processNames: ["Finder", "ZscalerTunnel"]), "Zscaler")
         XCTAssertNil(NetworkLink.vpn(processNames: ["Finder"]))
+        XCTAssertEqual(NetworkLink.vpn(processNames: ["Finder", "FortiTray"]), "FortiClient", "found by part of its name")
         XCTAssertEqual(NetworkLink.vpn(processNames: ["nesessionmanager", "ZscalerTunnel"]), "Zscaler", "the named client, not the generic service")
     }
 

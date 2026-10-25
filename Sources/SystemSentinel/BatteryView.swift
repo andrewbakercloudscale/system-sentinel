@@ -171,7 +171,7 @@ struct PowerChart: View {
                 .chartLegend(position: .bottom, spacing: 4)
                 .frame(height: 120)
             }
-            Text("The whole Mac's draw, screen included. A MacBook idles at 2 to 5 W; video calls and builds reach 20 to 40 W.")
+            Text("The whole Mac's draw, screen included. A MacBook idles at about 3 to 8 W with the screen on; video calls and builds reach 20 to 40 W.")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             RightNowPower(model: model)
         }

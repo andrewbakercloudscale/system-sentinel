@@ -487,7 +487,12 @@ public enum StorageAnalysis {
         let mx = xs.reduce(0, +) / n, my = ys.reduce(0, +) / n
         var num = 0.0, den = 0.0
         for (x, y) in zip(xs, ys) { num += (x - mx) * (y - my); den += (x - mx) * (x - mx) }
-        return den == 0 ? nil : num / den
+        guard den != 0 else { return nil }
+        // A big cleanup late in the week can leave the fitted line rising while the disk ended
+        // the week emptier than it started; the screen then said both. The net change wins then.
+        let slope = num / den
+        let net = (Double(last.used) - Double(first.used)) / (Double(last.t - first.t) / 86_400)
+        return (slope > 0) == (net > 0) ? slope : net
     }
 
     /// Days until the free space runs out at this pace. nil when not filling up.

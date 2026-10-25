@@ -307,9 +307,9 @@ public enum MemoryAnalysis {
         if pressured >= 30 {
             var x = Insight(id: "mem-pressure24", tone: sDay.criticalMinutes >= 30 ? .critical : .warning, symbol: "gauge.with.dots.needle.67percent",
                             title: "Short of memory for \(Insights.duration(Double(pressured) * 60)) in the last day",
-                            detail: "Memory pressure was raised for \(pressured) of \(day.count) minutes recorded.")
+                            detail: "Memory was under pressure or critical for \(pressured) of \(day.count) minutes recorded.")
             if let who = usualSuspect(day) { x.detail += " \(who) was the largest app most of that time." }
-            x.why = "Memory pressure is macOS's own judgement of whether apps are getting the memory they ask for. Raised pressure means it is compressing and swapping to keep up."
+            x.why = "Memory pressure is macOS's own judgement of whether apps are getting the memory they ask for. Under pressure or critical means it is compressing and swapping to keep up."
             x.steps = ["Keep fewer large apps open at once, starting with the one named above.",
                        "Browsers: fewer tabs, or a tab-suspending extension."]
             out.append(x)

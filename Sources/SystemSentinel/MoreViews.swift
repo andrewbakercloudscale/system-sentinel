@@ -604,7 +604,7 @@ struct MenuBarSettingsCard: View {
     private var heatHelp: String {
         var s = "Also alerts at once when macOS reports the Mac is hot (it then slows the chip). The alert names the likely culprit, with Kill and Ignore buttons. At most one every 30 minutes."
         if let w = model.battery?.watts { s += String(format: " Right now: %.1f W.", w) }
-        s += " A MacBook idles at 3–8 W; 20–30 W is heavy work; over 40 W is flat out."
+        s += " A MacBook idles at about 3 to 8 W with the screen on; 20 to 30 W is heavy work; over 40 W is flat out."
         return s
     }
 
