@@ -717,6 +717,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if Model.snapshotDir == nil, !WelcomeWindow.seen {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) { if let m = Model.current { WelcomeWindow.showOnce(m) } }
         }
+        if ProcessInfo.processInfo.environment["SS_TABBENCH"] != nil { TabBench.start() }
         guard !atLogin, Model.snapshotDir == nil else { return }
         // The model is created with the menu bar scene; give it a moment.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { if let m = Model.current { PopOut.show(m) } }
