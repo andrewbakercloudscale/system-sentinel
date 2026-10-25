@@ -536,4 +536,37 @@ final class BatteryETATests: XCTestCase {
         let old = try! JSONDecoder().decode([PowerHistory.Point].self, from: Data(#"[{"t":0,"watts":5,"onBattery":false,"percent":50,"n":1}]"#.utf8))
         XCTAssertNil(old[0].draining)
     }
+
+    func testOutlookUsesTheHoursAverage() {
+        // 60 Wh left (5000 mAh at 12 V, 100%). The hour averaged 15 W; right now it reads 60 W.
+        let b = BatteryStatus(onBattery: false, fullyCharged: true, percent: 100, watts: 60, maxCapacity: 5000,
+                              powerIn: 60, batteryWatts: 0, voltage: 12)
+        let hour = (0..<60).map { PowerHistory.Point(t: $0 * 60, watts: $0 % 2 == 0 ? 5 : 25, onBattery: false, percent: 100, n: 1) }
+        let o = PowerOutlook.of(b, lastHour: hour, at: Date(timeIntervalSince1970: 3600))
+        XCTAssertEqual(o.averageWatts, 15)
+        XCTAssertEqual(o.minutesIfUnplugged, 240, "60 Wh at 15 W, not at the 60 W of this moment")
+        XCTAssertNil(o.minutesLeftOnPower, "the charge held, so a dip right now is not running out")
+    }
+
+    func testOutlookOnPowerNeedsARealDrop() {
+        let b = BatteryStatus(onBattery: false, percent: 50, watts: 30, maxCapacity: 5000, powerIn: 20, batteryWatts: -10, voltage: 12)
+        // 10% lost over 50 minutes on the charger: 12% an hour, so 50% lasts about 250 minutes.
+        let losing = (0...50).map { PowerHistory.Point(t: $0 * 60, watts: 30, onBattery: false, percent: 60 - $0 / 5, n: 1) }
+        XCTAssertEqual(PowerOutlook.of(b, lastHour: losing, at: Date()).minutesLeftOnPower, 250)
+        // Ten minutes is too little to say.
+        XCTAssertNil(PowerOutlook.of(b, lastHour: Array(losing.prefix(10)), at: Date()).minutesLeftOnPower)
+        // 1% over the hour is more than a day away: not worth a "running out" chip.
+        let slow = (0...60).map { PowerHistory.Point(t: $0 * 60, watts: 30, onBattery: false, percent: $0 < 30 ? 51 : 50, n: 1) }
+        XCTAssertNil(PowerOutlook.of(b, lastHour: slow, at: Date()).minutesLeftOnPower)
+    }
+
+    func testOutlookRefreshesEveryTenMinutesOrOnPlugChange() {
+        let b = BatteryStatus(onBattery: false, percent: 80, watts: 10, maxCapacity: 5000, voltage: 12)
+        let t = Date(timeIntervalSince1970: 0)
+        let o = PowerOutlook.of(b, lastHour: [], at: t)
+        XCTAssertFalse(o.stale(b, at: t.addingTimeInterval(599)))
+        XCTAssertTrue(o.stale(b, at: t.addingTimeInterval(600)))
+        var unplugged = b; unplugged.onBattery = true
+        XCTAssertTrue(o.stale(unplugged, at: t.addingTimeInterval(5)))
+    }
 }

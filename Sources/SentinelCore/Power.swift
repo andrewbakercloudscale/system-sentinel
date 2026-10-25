@@ -544,6 +544,51 @@ public struct BatterySummary: Equatable, Sendable {
     }
 }
 
+/// The time chips' figures, from the last hour rather than one reading. A single reading swings
+/// with every burst of work: a busy minute reads "If unplugged: 3 hrs", a quiet one "> 24 hrs",
+/// and a dip on the charger flips it to "running out". Worked out again every 10 minutes, or at
+/// once when the charger goes in or out.
+public struct PowerOutlook: Equatable, Sendable {
+    public static let refresh: TimeInterval = 600
+    public let at: Date
+    public let onBattery: Bool
+    /// The whole Mac's average draw over the hour, in watts.
+    public let averageWatts: Double?
+    /// How long the charge would last unplugged, at the hour's average draw.
+    public let minutesIfUnplugged: Int?
+    /// Plugged in, yet the charge went down over the hour: minutes until empty at that pace.
+    /// nil when it held or rose, with under 20 minutes on the charger, or past a day.
+    public let minutesLeftOnPower: Int?
+
+    public static func of(_ b: BatteryStatus, lastHour: [PowerHistory.Point], at now: Date) -> PowerOutlook {
+        let avg = lastHour.isEmpty ? b.watts : lastHour.reduce(0) { $0 + $1.watts } / Double(lastHour.count)
+        let unplugged: Int? = {
+            guard let e = b.energyLeft, let w = avg, w > 0.5 else { return nil }
+            return Int(e / w * 60)
+        }()
+        // The net change across the minutes on the charger, skipping gaps (asleep, unplugged).
+        var net = 0, span = 0
+        let plugged = lastHour.filter { !$0.onBattery }
+        for (x, y) in zip(plugged, plugged.dropFirst()) where y.t - x.t <= 300 {
+            net += y.percent - x.percent
+            span += y.t - x.t
+        }
+        let onPower: Int? = {
+            guard !b.onBattery, span >= 1200, net < 0, b.percent > 0 else { return nil }
+            let perHour: Double = Double(-net) / Double(span) * 3600
+            let m = Int(Double(b.percent) / perHour * 60)
+            return m <= 24 * 60 ? m : nil
+        }()
+        return PowerOutlook(at: now, onBattery: b.onBattery, averageWatts: avg,
+                            minutesIfUnplugged: unplugged, minutesLeftOnPower: onPower)
+    }
+
+    /// Due again: 10 minutes old, or the charger went in or out since.
+    public func stale(_ b: BatteryStatus, at now: Date) -> Bool {
+        b.onBattery != onBattery || now.timeIntervalSince(at) >= Self.refresh
+    }
+}
+
 /// Warns once at 20 minutes of battery left and once more at 5. Starts over once the battery
 /// is no longer going down, so the next run on battery warns again.
 public struct LowBatteryWarning: Sendable {

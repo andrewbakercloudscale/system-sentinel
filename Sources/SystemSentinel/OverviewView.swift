@@ -133,7 +133,7 @@ private struct Hero: View {
                     Text(b.onBattery ? "On battery" : "Power").font(.caption.weight(.semibold)).foregroundStyle(.white)
                         .padding(.vertical, 3)
                     PowerFlow(battery: b)
-                    BatteryTimeChip(battery: b, minutesLeft: model.minutesToEmpty()).fixedSize()
+                    BatteryTimeChip(battery: b, minutesLeft: model.minutesToEmpty(), ifUnplugged: model.powerOutlook?.minutesIfUnplugged).fixedSize()
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -254,13 +254,18 @@ struct PowerFlow: View {
 /// finishes, or, plugged in and holding, how long the charge would last if unplugged now.
 struct BatteryTimeChip: View {
     let battery: BatteryStatus
+    /// Until empty: on battery, or on a charger that has not kept up over the last hour.
     let minutesLeft: Int?
+    /// At the last hour's average draw, worked out every 10 minutes so it does not jump about.
+    let ifUnplugged: Int?
     var body: some View {
         let b = battery
-        if b.onBattery || b.losingOnPower {
+        if b.onBattery || minutesLeft != nil {
             if let m = minutesLeft {
                 HeroChip(text: "No power: \(Self.short(m))", symbol: "hourglass", fill: Self.fill(minutes: m))
-                    .tip("When the battery runs out at this pace: \(Self.when(m)). You get a notification at 20 minutes left and again at 5.")
+                    .tip(b.onBattery
+                         ? "When the battery runs out at this pace: \(Self.when(m)). You get a notification at 20 minutes left and again at 5."
+                         : "Plugged in, but the charge went down over the last hour: empty \(Self.when(m)) at that pace. The charger is too small for what the Mac is doing.")
             }
         } else if b.fullyCharged || b.percent >= 100 {
             HStack(spacing: 6) {
@@ -277,10 +282,10 @@ struct BatteryTimeChip: View {
     }
 
     @ViewBuilder private func unplugged(_ b: BatteryStatus) -> some View {
-        if let m = b.minutesIfUnplugged {
+        if let m = ifUnplugged {
             HeroChip(text: "If unplugged: \(Self.short(m))",
                      symbol: "hourglass", fill: Color(hex: "#2563eb"))
-                .tip("How long the \(b.percent)% charge would last if you unplugged now, at what the Mac is using: \(Insights.duration(Double(m) * 60))")
+                .tip("How long the \(b.percent)% charge would last if you unplugged now, at the Mac's average use over the last hour: \(Insights.duration(Double(m) * 60)). Updated every 10 minutes.")
         }
     }
 
