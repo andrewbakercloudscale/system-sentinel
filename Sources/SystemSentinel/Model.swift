@@ -651,6 +651,7 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
             // A service stopped from Checkup's network finding: check again once it has gone.
             DispatchQueue.main.asyncAfter(deadline: .now() + 7) { self.checkup.refreshExposure() }
         case .lowPowerMode:
+            let front = frontWindowNumber()
             Task.detached {
                 // osascript, so the admin prompt runs off the main thread.
                 let task = Process()
@@ -659,6 +660,7 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
                 task.standardError = FileHandle.nullDevice
                 let ok = (try? task.run()) != nil && { task.waitUntilExit(); return task.terminationStatus == 0 }()
                 await MainActor.run {
+                    comeBack(to: front)
                     self.showToast(Toast(ok: ok, title: ok ? "Low Power Mode is on" : "Low Power Mode was not changed",
                                          detail: ok ? nil : "The password prompt was cancelled or refused."))
                     self.tick()
@@ -1051,6 +1053,7 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
     /// Stops a launch agent or daemon and moves its plist to the Trash.
     func removeBackgroundItem(_ item: BackgroundItem) {
         let cmd = BackgroundItems.removeCommand(item, uid: getuid(), trash: NSString(string: "~/.Trash").expandingTildeInPath)
+        let front = frontWindowNumber()
         Task.detached {
             let task = Process()
             if item.scope == .user {
@@ -1065,6 +1068,7 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
             let ok = (try? task.run()) != nil && { task.waitUntilExit(); return task.terminationStatus == 0 }()
             let gone = !FileManager.default.fileExists(atPath: item.plist)
             await MainActor.run {
+                comeBack(to: front)
                 self.backgroundItems = BackgroundItems.scan()
                 if ok && gone {
                     self.showToast(Toast(ok: true, title: "Removed \(item.name)",
@@ -1083,6 +1087,7 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
         guard !purging else { return }
         purging = true
         let before = MemoryStatus.read()
+        let front = frontWindowNumber()
         Task.detached {
             let task = Process()
             task.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
@@ -1091,6 +1096,7 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
             let ok = (try? task.run()) != nil && { task.waitUntilExit(); return task.terminationStatus == 0 }()
             let after = MemoryStatus.read()
             await MainActor.run {
+                comeBack(to: front)
                 self.purging = false
                 if ok, let b = before, let a = after {
                     let freed = a.free > b.free ? a.free - b.free : 0
@@ -1295,7 +1301,11 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
         }
         let browsers = ["Google Chrome", "Chrome tabs", "Safari", "Firefox", "Microsoft Edge", "Brave Browser", "Arc", "Opera"]
         if browsers.contains(a.name) {
-            return "Your web browser. Every tab, extension and video is its own process, so memory grows with open tabs. Closing tabs you do not need frees memory without quitting; quitting closes every window."
+            let base = "Your web browser. Every tab, extension and video is its own process, so memory grows with open tabs. Closing tabs you do not need frees memory without quitting; quitting closes every window."
+            if ["Google Chrome", "Chrome tabs", "Microsoft Edge", "Brave Browser"].contains(a.name) {
+                return base + " To make it lighter: Settings, Performance, turn on Memory Saver and pick Maximum, so tabs you are not using give their memory back. In Settings, System, turn off \"Continue running background apps\" when it is closed. Remove extensions you do not use: each one runs all the time."
+            }
+            return base
         }
         if AppIdentity.bundlePath(of: a.sample.path) != nil, !a.sample.path.hasPrefix("/System/") {
             let helpers = a.pids.count > 1 ? " with \(a.pids.count - 1) helper processes" : ""
@@ -1752,4 +1762,14 @@ extension Model {
         guard let data = UserDefaults.standard.data(forKey: "hangs.v1") else { return [] }
         return (try? JSONDecoder().decode([Hang].self, from: data)) ?? []
     }
+}
+
+/// The window in front before an admin password prompt. The prompt belongs to osascript, and
+/// when it closes macOS hands the focus to whatever app was behind, not back to us.
+@MainActor func frontWindowNumber() -> Int? { (NSApp.keyWindow ?? NSApp.mainWindow)?.windowNumber }
+
+/// Brings System Sentinel and that window back to the front after the prompt.
+@MainActor func comeBack(to window: Int?) {
+    NSApp.activate(ignoringOtherApps: true)
+    if let n = window, let w = NSApp.window(withWindowNumber: n) { w.makeKeyAndOrderFront(nil) }
 }

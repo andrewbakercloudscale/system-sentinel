@@ -518,10 +518,12 @@ final class CheckupStore: ObservableObject {
             }
         case .admin(let label, let command):
             working.insert(key)
+            let front = frontWindowNumber()
             Task.detached {
                 // The command is a fixed string from AdminCommand: nothing read off the Mac goes in.
                 let ok = CheckupStore.status("/usr/bin/osascript", ["-e", "do shell script \"\(command.rawValue)\" with administrator privileges"]) == 0
                 await MainActor.run {
+                    comeBack(to: front)
                     self.working.remove(key)
                     self.toast(Model.Toast(ok: ok, title: ok ? "\(label): done" : "\(label) was not changed", detail: ok ? nil : "The password prompt was cancelled or refused."))
                     self.run()
