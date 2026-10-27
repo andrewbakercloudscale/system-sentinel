@@ -58,6 +58,10 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
     @Published var memory: MemoryStatus?
     /// Memory by app, largest first, refreshed every tick.
     @Published var memoryApps: [MemoryApp] = []
+    /// Apps by how fast memory is read back from disk for them, bytes a second, fastest first.
+    @Published var readingBack: [(name: String, rate: Double)] = []
+    private var pageinsBefore: [Int32: UInt64] = [:]
+    private var pageinsAt: Date?
     /// Findings from the memory timeline, for the Memory tab.
     @Published var memoryInsights: [Insight] = []
     let memoryHistory: MemoryHistory
@@ -420,7 +424,16 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
     private func readMemory(_ now: Date) {
         guard let m = memory else { return }
         var groups: [String: (bytes: UInt64, away: UInt64, pids: [Int32], top: ProcessSample, topBytes: UInt64)] = [:]
+        var pageins: [Int32: UInt64] = [:]
+        var back: [String: Double] = [:]
+        let seconds = pageinsAt.map { now.timeIntervalSince($0) } ?? 0
         for s in sentinel.latest {
+            if let n = MemoryStatus.pageins(s.pid) {
+                pageins[s.pid] = n
+                if seconds > 0, let b = pageinsBefore[s.pid], n > b {
+                    back[Model.memoryName(Model.appKey(s.path)), default: 0] += Double((n - b) * UInt64(vm_page_size)) / seconds
+                }
+            }
             let fp = MemoryStatus.footprint(s.pid)
             let b = fp ?? UInt64(s.rssKB) * 1024
             guard b >= 10 << 20 else { continue }
@@ -438,6 +451,9 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
                 groups[k] = (b, away, [s.pid], s, b)
             }
         }
+        pageinsBefore = pageins
+        pageinsAt = now
+        readingBack = back.map { (name: $0.key, rate: $0.value) }.sorted { $0.rate > $1.rate }
         memoryApps = groups.map { MemoryApp(key: $0.key, name: Model.memoryName($0.key), bytes: $0.value.bytes, outOfRAM: $0.value.away,
                                             pids: $0.value.pids, sample: $0.value.top) }
             .sorted { $0.bytes > $1.bytes }
@@ -755,6 +771,18 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
         }
         var seen = Set<pid_t>()
         return out.filter { seen.insert($0.processIdentifier).inserted }
+    }
+
+    /// What an app's processes are running, grouped by script and folder: "Python" or "node"
+    /// is often several unrelated things at once.
+    func jobs(_ pids: [Int32]) -> [ProcessDetail.Job] {
+        let readings = pids.map { pid -> ProcessDetail.Reading in
+            let b = MemoryStatus.footprint(pid) ?? UInt64(sample(pid: pid)?.rssKB ?? 0) * 1024
+            let inRAM = MemoryStatus.resident(pid) ?? b
+            return ProcessDetail.Reading(pid: pid, args: ProcessDetail.arguments(pid), folder: ProcessDetail.folder(pid),
+                                         bytes: b, outOfRAM: b > inRAM ? b - inRAM : 0)
+        }
+        return ProcessDetail.jobs(readings, parent: ProcessDetail.parent)
     }
 
     /// Only a real app with a bundle can be opened again.
@@ -1140,6 +1168,13 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
         let procs = a.pids.count > 1 ? " across \(a.pids.count) processes" : ""
         let running = started(a.pids).map { ", running \(MemoryLargestAge.age($0))" } ?? ""
         x.detail += " Quitting \(target.name) gives back about \(gb(a.bytes))\(procs): \(gb(inRAM)) of RAM and \(gb(a.outOfRAM)) that is compressed or in swap\(running)."
+        if x.id == "mem-thrash" {
+            let top = readingBack.prefix(4).filter { $0.rate >= 100_000 }
+            if !top.isEmpty {
+                let list = top.map { "\($0.name) \(String(format: "%.1f", $0.rate / 1_000_000)) MB/s" }.joined(separator: ", ")
+                x.detail += " Reading back from disk most right now: \(list). That count includes files the app opens, so it is a guide, not exact: macOS keeps no swap count per app."
+            }
+        }
         x.about = "Why \(a.name) is so big: " + memoryAbout(a)
         x.fixes = [.quit(pids: target.pids, name: target.name)]
         return x
