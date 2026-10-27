@@ -109,6 +109,16 @@ public struct MemoryStatus: Equatable, Sendable {
         return r == 0 ? info.ri_phys_footprint : nil
     }
 
+    /// Pages the process has had read back from disk since it started: swap coming back, plus
+    /// files it maps. macOS keeps no per-process swap count, so this is the closest there is.
+    public static func pageins(_ pid: Int32) -> UInt64? {
+        var info = rusage_info_v2()
+        let r = withUnsafeMutablePointer(to: &info) {
+            $0.withMemoryRebound(to: rusage_info_t?.self, capacity: 1) { proc_pid_rusage(pid, RUSAGE_INFO_V2, $0) }
+        }
+        return r == 0 ? info.ri_pageins : nil
+    }
+
     /// The part of a process's memory that is in RAM right now. Footprint minus this is what
     /// macOS has compressed or written to swap.
     public static func resident(_ pid: Int32) -> UInt64? {

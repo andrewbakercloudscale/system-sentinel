@@ -368,6 +368,7 @@ private struct LargestApps: View {
                 }
                 .font(.caption.weight(.medium))
                 Text(model.memoryAbout(a)).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                if a.pids.count > 1, !Model.isVM(a.key) { WhatIsRunning(model: model, app: a) }
             }
             quitButton(a, host: host)
         }
@@ -475,7 +476,8 @@ private struct CleanUp: View {
                 let t = model.ruleTarget(top)
                 let canQuit = t.sample.pid != getpid() && Safety.canKillManually(t.sample)
                 action(symbol: "xmark.app.fill", title: "Quit \(t.name)",
-                       text: "Frees about \(gb(model.ruleBytes(t))), including \(gb(top.outOfRAM)) compressed or in swap: the most of any app. Quitting apps is the only way to free swap while the Mac runs; Restart quits it and opens it again. The rest are under Memory by app.",
+                       text: "Frees about \(gb(model.ruleBytes(t))), including \(gb(top.outOfRAM)) compressed or in swap: the most of any app. Quitting apps is the only way to free swap while the Mac runs\(model.canRestart(t.pids) ? "; Restart quits it and opens it again" : ""). The rest are under Memory by app.",
+                       extra: top.pids.count > 1 && !Model.isVM(top.key) ? AnyView(WhatIsRunning(model: model, app: top)) : nil,
                        button: canQuit ? AnyView(HStack(spacing: 6) {
                            if model.canRestart(t.pids) {
                                button("Restart", symbol: "arrow.clockwise", color: Tab.memory.color) {
@@ -502,12 +504,13 @@ private struct CleanUp: View {
         }
     }
 
-    private func action(symbol: String, title: String, text: String, button: AnyView?) -> some View {
+    private func action(symbol: String, title: String, text: String, extra: AnyView? = nil, button: AnyView?) -> some View {
         HStack(alignment: .top, spacing: 10) {
             SymbolTile(symbol: symbol, color: Tab.memory.color, size: 24)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(.callout.weight(.semibold))
                 Text(text).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                if let extra { extra }
             }
             Spacer(minLength: 6)
             if let button { button }
@@ -524,6 +527,66 @@ private struct CleanUp: View {
         }
         .buttonStyle(.plain)
         .fixedSize()
+    }
+}
+
+// MARK: What is running
+
+/// Opens up an app's processes by what they run and where, each with its own Stop, so
+/// "Python, 29 processes" becomes the three scripts behind it.
+private struct WhatIsRunning: View {
+    @ObservedObject var model: Model
+    let app: Model.MemoryApp
+    @State private var jobs: [ProcessDetail.Job]?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Button {
+                withAnimation(.easeOut(duration: 0.15)) { jobs = jobs == nil ? model.jobs(app.pids) : nil }
+            } label: {
+                Label(jobs == nil ? "What is running?" : "Hide", systemImage: jobs == nil ? "chevron.down" : "chevron.up")
+                    .font(.caption.weight(.semibold)).foregroundStyle(Tab.memory.color)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            if let jobs {
+                ForEach(jobs.prefix(10)) { j in row(j) }
+                if jobs.count > 10 {
+                    Text("and \(jobs.count - 10) smaller ones").font(.caption).foregroundStyle(.secondary)
+                }
+            }
+        }
+        .padding(.top, 4)
+    }
+
+    private func row(_ j: ProcessDetail.Job) -> some View {
+        let stoppable = j.pids.filter { pid in pid != getpid() && (model.sample(pid: pid).map(Safety.canKillManually) ?? false) }
+        return HStack(alignment: .top, spacing: 8) {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(j.what).font(.caption.weight(.semibold)).lineLimit(1).truncationMode(.middle)
+                Text([j.folder.isEmpty ? nil : j.folder,
+                      j.pids.count > 1 ? "\(j.pids.count) processes" : "pid \(j.pids[0])",
+                      j.outOfRAM >= 1 << 20 ? "\(gb(j.outOfRAM)) compressed or in swap" : nil]
+                    .compactMap { $0 }.joined(separator: " · "))
+                    .font(.caption).foregroundStyle(.secondary).lineLimit(2).truncationMode(.middle)
+                    .textSelection(.enabled)
+            }
+            Spacer(minLength: 6)
+            Text(gb(j.bytes)).font(.caption.weight(.bold)).monospacedDigit()
+            if !stoppable.isEmpty {
+                Button { model.confirmAndPerform(.kill(pids: stoppable, label: "Stop \(j.what)")) } label: {
+                    Text("Stop").font(.caption.weight(.semibold)).foregroundStyle(Theme.heat(100))
+                        .padding(.horizontal, 8).padding(.vertical, 2)
+                        .overlay(Capsule().strokeBorder(Theme.heat(100), lineWidth: 1.2))
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .fixedSize()
+                .tip("Stop only this, not the rest of \(app.name). Asks first.")
+            }
+        }
+        .padding(6)
+        .background(RoundedRectangle(cornerRadius: 7).fill(Color.primary.opacity(0.04)))
     }
 }
 
