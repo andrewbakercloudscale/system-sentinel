@@ -45,6 +45,40 @@ final class StorageTests: XCTestCase {
         XCTAssertEqual(c[1].delta, Int64(4 * gb))
     }
 
+    func testChildChangesInsideAFolder() {
+        let mb: UInt64 = 1 << 20
+        let full = Dictionary(uniqueKeysWithValues: (0..<StorageHistory.childLimit).map { ("f\($0)", 100 * mb) })
+        let scans = [StorageHistory.Scan(t: 0, sizes: ["desktop": 10 * gb]),
+                     StorageHistory.Scan(t: 100, sizes: ["desktop": 10 * gb], children: ["desktop": ["Shots": 2 * gb, "Old": gb, "Tiny": 5 * mb]]),
+                     StorageHistory.Scan(t: 200, sizes: ["desktop": 18 * gb], children: ["desktop": ["Shots": 9 * gb, "New.mov": 2 * gb, "Tiny": 6 * mb],
+                                                                                         "caches": full])]
+        let since = Date(timeIntervalSince1970: 0)
+        let c = StorageAnalysis.childChanges(scans, key: "desktop", since: since)!
+        // Grew, appeared, and gone; a 1 MB wobble is under the floor.
+        XCTAssertEqual(c.map(\.name), ["Shots", "New.mov", "Old"])
+        XCTAssertEqual(c[0].delta, Int64(7 * gb))
+        XCTAssertEqual(c[2].to, 0)
+        // Only one scan measured inside caches, and none inside a folder never listed.
+        XCTAssertNil(StorageAnalysis.childChanges(scans, key: "caches", since: since))
+        XCTAssertNil(StorageAnalysis.childChanges(scans, key: "desktop", since: Date(timeIntervalSince1970: 150)))
+        // Missing from a full (capped) list is unknown, so it is left out rather than shown as gone.
+        let capped = [StorageHistory.Scan(t: 0, sizes: [:], children: ["caches": full.merging(["Big": 5 * gb]) { a, _ in a }]),
+                      StorageHistory.Scan(t: 100, sizes: [:], children: ["caches": full])]
+        XCTAssertEqual(StorageAnalysis.childChanges(capped, key: "caches", since: since)?.count, 0)
+    }
+
+    func testMeasureSplitsByChild() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("ss-measure-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("a/b"), withIntermediateDirectories: true)
+        try Data(count: 300_000).write(to: root.appendingPathComponent("a/b/x"))
+        try Data(count: 100_000).write(to: root.appendingPathComponent("top"))
+        defer { try? FileManager.default.removeItem(at: root) }
+        let m = try XCTUnwrap(DiskUsage.measure(root))
+        XCTAssertEqual(Set(m.children.keys), ["a", "top"])
+        XCTAssertGreaterThan(m.children["a"]!, m.children["top"]!)
+        XCTAssertEqual(m.children.values.reduce(0, +), m.bytes)
+    }
+
     func testCulpritsSkipWrappers() {
         let t = FolderTree(sizes: ["": 100 * gb, "Library": 60 * gb, "Library/Containers": 50 * gb,
                                    "Library/Containers/com.docker.docker": 48 * gb,

@@ -60,7 +60,12 @@ public final class StorageHistory {
         public var t: Int
         /// Known folder key (`StoragePlace.key`) to bytes.
         public var sizes: [String: UInt64]
-        public init(t: Int, sizes: [String: UInt64]) { self.t = t; self.sizes = sizes }
+        /// Known folder key to its biggest items (name to bytes), for what grew inside it.
+        /// Nil on scans from before this was kept and once older than `childRetain`.
+        public var children: [String: [String: UInt64]]?
+        public init(t: Int, sizes: [String: UInt64], children: [String: [String: UInt64]]? = nil) {
+            self.t = t; self.sizes = sizes; self.children = children
+        }
         public var date: Date { Date(timeIntervalSince1970: Double(t)) }
     }
 
@@ -72,6 +77,10 @@ public final class StorageHistory {
     private let readOnly: Bool
     public static let step = 600
     public static let retain = 90 * 86_400
+    /// Item sizes inside folders are kept for the longest "What grew" range, not all 90 days.
+    public static let childRetain = 31 * 86_400
+    /// Biggest items kept per folder. An item missing from a full list is unknown, not gone.
+    public static let childLimit = 30
 
     public init(fileURL: URL?, readOnly: Bool = false) {
         self.fileURL = fileURL
@@ -95,8 +104,8 @@ public final class StorageHistory {
         }
     }
 
-    public func record(scan sizes: [String: UInt64], at now: Date) {
-        scans.append(Scan(t: Int(now.timeIntervalSince1970), sizes: sizes))
+    public func record(scan sizes: [String: UInt64], children: [String: [String: UInt64]]? = nil, at now: Date) {
+        scans.append(Scan(t: Int(now.timeIntervalSince1970), sizes: sizes, children: children))
         trim(Int(now.timeIntervalSince1970))
         save()
     }
@@ -105,6 +114,7 @@ public final class StorageHistory {
         let cutoff = t - Self.retain
         points.removeAll { $0.t < cutoff }
         scans.removeAll { $0.t < cutoff }
+        for i in scans.indices where scans[i].children != nil && scans[i].t < t - Self.childRetain { scans[i].children = nil }
     }
 
     public func since(_ date: Date) -> [Point] {
@@ -193,35 +203,59 @@ public enum DiskUsage {
     /// Bytes on disk for a file, or everything under a folder. Stops at `deadline`, flagging the
     /// result as partial. Unreadable folders (privacy protected) count as nil.
     public static func size(of url: URL, deadline: Date = .distantFuture) -> (bytes: UInt64, partial: Bool)? {
+        measure(url, deadline: deadline, byChild: false).map { ($0.bytes, $0.partial) }
+    }
+
+    /// Like `size`, and also the bytes under each item directly inside the folder, from the
+    /// same walk.
+    public static func measure(_ url: URL, deadline: Date = .distantFuture, byChild: Bool = true)
+        -> (bytes: UInt64, partial: Bool, children: [String: UInt64])? {
         let keys: [URLResourceKey] = [.totalFileAllocatedSizeKey, .isDirectoryKey]
         guard let v = try? url.resourceValues(forKeys: Set(keys)) else { return nil }
-        guard v.isDirectory == true else { return (UInt64(v.totalFileAllocatedSize ?? 0), false) }
+        guard v.isDirectory == true else { return (UInt64(v.totalFileAllocatedSize ?? 0), false, [:]) }
         guard (try? FileManager.default.contentsOfDirectory(atPath: url.path)) != nil else { return nil }
         var total: UInt64 = 0
         var n = 0
+        var children: [String: UInt64] = [:]
+        var child = ""
         let e = FileManager.default.enumerator(at: url, includingPropertiesForKeys: keys, options: [], errorHandler: { _, _ in true })
         while let f = e?.nextObject() as? URL {
-            total += UInt64((try? f.resourceValues(forKeys: [.totalFileAllocatedSizeKey]))?.totalFileAllocatedSize ?? 0)
+            let b = UInt64((try? f.resourceValues(forKeys: [.totalFileAllocatedSizeKey]))?.totalFileAllocatedSize ?? 0)
+            total += b
+            // The walk is depth first: everything after a level-1 item is inside it until the next one.
+            if byChild {
+                if e?.level == 1 { child = f.lastPathComponent }
+                children[child, default: 0] += b
+            }
             n += 1
-            if n % 2000 == 0, Date() > deadline { return (total, true) }
+            if n % 2000 == 0, Date() > deadline { return (total, true, children) }
         }
-        return (total, false)
+        return (total, false, children)
     }
 
     /// Size of each known place that exists and can be read.
     public static func places(home: URL, deadline: TimeInterval = 45, skip: Set<String> = []) -> [String: UInt64] {
+        measurePlaces(home: home, deadline: deadline, skip: skip).sizes
+    }
+
+    /// Size of each known place, and its biggest items (at most `StorageHistory.childLimit`,
+    /// 1 MB and over) for "What grew".
+    public static func measurePlaces(home: URL, deadline: TimeInterval = 45, skip: Set<String> = [])
+        -> (sizes: [String: UInt64], children: [String: [String: UInt64]]) {
         var out: [String: UInt64] = [:]
-        let lock = NSLock()
+        var kids: [String: [String: UInt64]] = [:]
         let list = StoragePlace.all.filter { p in !skip.contains { p.path.hasPrefix($0) } }
         // One folder at a time: measuring them all at once took every core for several
         // seconds. Slower, and never in the way.
         let end = Date().addingTimeInterval(deadline)
         for p in list {
-            if let s = size(of: home.appendingPathComponent(p.path), deadline: end) {
-                lock.lock(); out[p.key] = s.bytes; lock.unlock()
+            if let s = measure(home.appendingPathComponent(p.path), deadline: end) {
+                out[p.key] = s.bytes
+                let top = s.children.filter { $0.value >= 1 << 20 }.sorted { $0.value > $1.value }.prefix(StorageHistory.childLimit)
+                kids[p.key] = Dictionary(uniqueKeysWithValues: top.map { ($0.key, $0.value) })
             }
         }
-        return out
+        return (out, kids)
     }
 }
 
@@ -543,6 +577,37 @@ public enum StorageAnalysis {
         return last.sizes.compactMap { k, v in
             let was = first.sizes[k] ?? 0
             let c = Change(key: k, from: was, to: v)
+            return c.delta.magnitude >= min ? c : nil
+        }
+        .sorted { $0.delta.magnitude > $1.delta.magnitude }
+    }
+
+    public struct ChildChange: Equatable, Sendable, Identifiable {
+        /// Name of the item inside the known folder.
+        public let name: String
+        public let from: UInt64
+        public let to: UInt64
+        public var delta: Int64 { Int64(to) - Int64(from) }
+        public var id: String { name }
+    }
+
+    /// Scans in range that measured what is inside `key`.
+    public static func childScans(_ scans: [StorageHistory.Scan], key: String, since: Date) -> [StorageHistory.Scan] {
+        let t = Int(since.timeIntervalSince1970)
+        return scans.filter { $0.t >= t && $0.children?[key] != nil }
+    }
+
+    /// What changed inside known folder `key` between the first and last scan in range that
+    /// measured its items, biggest change first. Nil until two such scans exist. An item absent
+    /// from a full (capped) list is unknown rather than zero, so it is left out.
+    public static func childChanges(_ scans: [StorageHistory.Scan], key: String, since: Date, min: UInt64 = 10 << 20) -> [ChildChange]? {
+        let have = childScans(scans, key: key, since: since)
+        guard let a = have.first?.children?[key], let b = have.last?.children?[key], have.count >= 2 else { return nil }
+        let cap = StorageHistory.childLimit
+        return Set(a.keys).union(b.keys).compactMap { name -> ChildChange? in
+            if a[name] == nil, a.count >= cap { return nil }
+            if b[name] == nil, b.count >= cap { return nil }
+            let c = ChildChange(name: name, from: a[name] ?? 0, to: b[name] ?? 0)
             return c.delta.magnitude >= min ? c : nil
         }
         .sorted { $0.delta.magnitude > $1.delta.magnitude }
