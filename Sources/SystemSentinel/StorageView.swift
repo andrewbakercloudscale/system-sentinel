@@ -182,10 +182,19 @@ private struct StorageHero: View {
             .scaleEffect(1.35)
             .frame(width: 74, height: 74)
             VStack(alignment: .leading, spacing: 4) {
-                Label(statusText, systemImage: status.symbol)
-                    .font(.caption.weight(.bold)).foregroundStyle(.white)
-                    .padding(.horizontal, 8).padding(.vertical, 3)
-                    .background(Capsule().fill(.white.opacity(0.22)))
+                if let days = daysLeft, days < 30 {
+                    // Under a month left: say it loudly, whatever the colour of the card.
+                    Label("Full in about \(max(1, Int(days.rounded()))) days at this pace", systemImage: "exclamationmark.triangle.fill")
+                        .font(.callout.weight(.heavy)).foregroundStyle(.white)
+                        .padding(.horizontal, 10).padding(.vertical, 4)
+                        .background(Capsule().fill(Color(hex: "#dc2626")))
+                        .overlay(Capsule().strokeBorder(.white, lineWidth: 1.5))
+                } else {
+                    Label(statusText, systemImage: status.symbol)
+                        .font(.caption.weight(.bold)).foregroundStyle(.white)
+                        .padding(.horizontal, 8).padding(.vertical, 3)
+                        .background(Capsule().fill(.white.opacity(0.22)))
+                }
                 Text("\(gb(disk.available)) free").font(.title3.weight(.bold)).foregroundStyle(.white)
                 Text("\(gb(disk.used)) of \(gb(disk.total)) used").font(.callout).foregroundStyle(.white.opacity(0.9))
                 if disk.purgeable >= 1 << 30 {
@@ -217,6 +226,8 @@ private struct StorageHero: View {
         case .critical: return [Color(hex: "#dc2626"), Color(hex: "#9f1239")]
         }
     }
+
+    private var daysLeft: Double? { StorageAnalysis.daysUntilFull(free: disk.available, perDay: perDay) }
 
     /// Space is fine today but the forecast says it will not be: say both in one line.
     private var statusText: String {
