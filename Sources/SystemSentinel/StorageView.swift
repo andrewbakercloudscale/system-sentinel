@@ -18,10 +18,10 @@ struct StorageView: View {
                 InsightList(model: model, only: store.insights, title: "Storage insights")
             }
             StorageTimeline(store: store)
-            WhatGrew(store: store).id("grew")
+            WhatGrew(model: model, store: store).id("grew")
             QuickCleanups(store: store).id("cleanups")
             DownloadsCard(store: store).id("downloads")
-            WhereIsTheSpace(store: store)
+            WhereIsTheSpace(store: store).id("space")
             LargeFiles(store: store)
             PackagesCard(model: model, store: store).id("packages")
             VideosCard(store: store).id("videos")
@@ -370,10 +370,13 @@ private struct StorageTimeline: View {
     }
 }
 
-/// Which known folders grew or shrank, from the 6-hourly scans.
+/// Which known folders grew or shrank, from the 6-hourly scans. A row opens to show which
+/// items inside it changed.
 private struct WhatGrew: View {
+    @ObservedObject var model: Model
     @ObservedObject var store: StorageStore
     @AppStorage("storageGrewRange") private var range = "7 days"
+    @State private var open: Set<String> = []
     static let ranges: [(String, TimeInterval)] = [("24 hours", 86_400), ("7 days", 7 * 86_400), ("30 days", 30 * 86_400)]
 
     var body: some View {
@@ -392,14 +395,25 @@ private struct WhatGrew: View {
                 let biggest = Double(changes.map(\.delta.magnitude).max() ?? 1)
                 ForEach(changes.prefix(8)) { c in
                     let p = StoragePlace.named(c.key)
-                    HStack(spacing: 8) {
-                        Image(systemName: p?.symbol ?? "folder.fill").foregroundStyle(storageTint).frame(width: 18)
-                        Text(p?.name ?? c.key).font(.callout).frame(width: 170, alignment: .leading).lineLimit(1)
-                        StorageBar(share: Double(c.delta.magnitude) / biggest, color: c.delta > 0 ? amber : Tab.battery.color)
-                        Text((c.delta > 0 ? "+" : "−") + gb(c.delta.magnitude)).font(.callout.weight(.semibold)).monospacedDigit()
-                            .foregroundStyle(c.delta > 0 ? amber : Tab.battery.color).frame(width: 80, alignment: .trailing)
-                        Text("now \(gb(c.to))").font(.caption).foregroundStyle(.secondary).frame(width: 80, alignment: .trailing)
+                    let isOpen = open.contains(c.key)
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) { if isOpen { open.remove(c.key) } else { open.insert(c.key) } }
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: isOpen ? "chevron.down" : "chevron.right").font(.caption2.weight(.bold))
+                                .foregroundStyle(.secondary).frame(width: 10)
+                            Image(systemName: p?.symbol ?? "folder.fill").foregroundStyle(storageTint).frame(width: 18)
+                            Text(p?.name ?? c.key).font(.callout).frame(width: 170, alignment: .leading).lineLimit(1)
+                            StorageBar(share: Double(c.delta.magnitude) / biggest, color: c.delta > 0 ? amber : Tab.battery.color)
+                            Text(signed(c.delta)).font(.callout.weight(.semibold)).monospacedDigit()
+                                .foregroundStyle(c.delta > 0 ? amber : Tab.battery.color).frame(width: 80, alignment: .trailing)
+                            Text("now \(gb(c.to))").font(.caption).foregroundStyle(.secondary).frame(width: 80, alignment: .trailing)
+                        }
+                        .contentShape(Rectangle())
                     }
+                    .buttonStyle(.plain)
+                    .tip(isOpen ? "Hide what changed inside" : "See what changed inside")
+                    if isOpen { inside(c.key, p, since: since) }
                 }
             }
             if scans.count >= 2 {
@@ -422,6 +436,65 @@ private struct WhatGrew: View {
                 .frame(height: 120)
             }
         }
+    }
+
+    private func signed(_ d: Int64) -> String { (d > 0 ? "+" : "−") + gb(d.magnitude) }
+
+    /// The items inside a known folder that changed most over the range.
+    private func inside(_ key: String, _ p: StoragePlace?, since: Date) -> some View {
+        let rel = p?.path ?? ""
+        let items = StorageAnalysis.childChanges(store.history.scans, key: key, since: since)
+        let biggest = Double(items?.map(\.delta.magnitude).max() ?? 1)
+        return VStack(alignment: .leading, spacing: 4) {
+            if let items {
+                if items.isEmpty {
+                    Text("No single item inside changed by more than 10 MB: many small changes.").font(.caption).foregroundStyle(.secondary)
+                }
+                ForEach(items.prefix(10)) { k in
+                    let sub = rel + "/" + k.name
+                    let abs = store.home.appendingPathComponent(sub).path
+                    HStack(spacing: 8) {
+                        FileIcon(path: abs, size: 16)
+                        Text(k.name).font(.caption).lineLimit(1).truncationMode(.middle).frame(width: 186, alignment: .leading)
+                        StorageBar(share: Double(k.delta.magnitude) / biggest, color: k.delta > 0 ? amber : Tab.battery.color)
+                        Text(signed(k.delta)).font(.caption.weight(.semibold)).monospacedDigit()
+                            .foregroundStyle(k.delta > 0 ? amber : Tab.battery.color).frame(width: 70, alignment: .trailing)
+                        Text(k.to == 0 ? "gone" : "now \(gb(k.to))").font(.caption).foregroundStyle(.secondary).frame(width: 70, alignment: .trailing)
+                        if k.to > 0 { RowButton(title: "Show", symbol: "magnifyingglass") { store.reveal(abs) } }
+                        if canBrowse(sub) { browseButton(sub) }
+                    }
+                }
+            } else {
+                Text(pending(key, since: since)).font(.caption).foregroundStyle(.secondary)
+            }
+            HStack(spacing: 6) {
+                Spacer()
+                RowButton(title: "Show", symbol: "magnifyingglass") { store.reveal(store.home.appendingPathComponent(rel).path) }
+                if canBrowse(rel) { browseButton(rel) }
+            }
+        }
+        .padding(.leading, 28)
+        .padding(.bottom, 4)
+    }
+
+    /// When the items inside will have been measured twice in range.
+    private func pending(_ key: String, since: Date) -> String {
+        let have = StorageAnalysis.childScans(store.history.scans, key: key, since: since).count
+        let next = max(Date(), (store.foundAt ?? Date()).addingTimeInterval(6 * 3600))
+        let when = next.addingTimeInterval(have == 0 ? 6 * 3600 : 0)
+        let at = when.formatted(.dateTime.weekday(.abbreviated).hour().minute())
+        return "Details inside fill in after the next \(have == 0 ? "two measurements" : "measurement"), about \(at)."
+    }
+
+    /// "Where the space is" can open a folder it measured with something inside.
+    private func canBrowse(_ rel: String) -> Bool { !(store.tree?.children(of: rel).isEmpty ?? true) }
+
+    private func browseButton(_ rel: String) -> some View {
+        RowButton(title: "Browse", symbol: "folder.badge.questionmark") {
+            store.browse = rel
+            model.focus = "space"
+        }
+        .tip("Open it in Where the space is")
     }
 }
 
@@ -554,7 +627,7 @@ private struct DownloadsCard: View {
 
 private struct WhereIsTheSpace: View {
     @ObservedObject var store: StorageStore
-    @State private var path = ""
+    private var path: String { store.browse }
 
     var body: some View {
         Card(title: "Where the space is", symbol: "folder.fill.badge.questionmark", tint: storageTint, trailing: AnyView(scanButton)) {
@@ -577,10 +650,10 @@ private struct WhereIsTheSpace: View {
                 Divider()
                 HStack(spacing: 4) {
                     Text("BROWSE").sectionLabel()
-                    Button("Home") { path = "" }.buttonStyle(.link).font(.caption)
+                    Button("Home") { store.browse = "" }.buttonStyle(.link).font(.caption)
                     ForEach(Array(crumbs.enumerated()), id: \.offset) { i, c in
                         Text("›").font(.caption).foregroundStyle(.secondary)
-                        Button(c) { path = crumbs.prefix(i + 1).joined(separator: "/") }.buttonStyle(.link).font(.caption)
+                        Button(c) { store.browse = crumbs.prefix(i + 1).joined(separator: "/") }.buttonStyle(.link).font(.caption)
                     }
                     Spacer()
                     Text("\(gb(t.sizes[path] ?? 0))").font(.caption.weight(.semibold))
@@ -618,7 +691,7 @@ private struct WhereIsTheSpace: View {
         return HStack(spacing: 8) {
             FileIcon(path: abs, size: 18)
             Button {
-                if canOpen { path = rel } else { store.reveal(abs) }
+                if canOpen { store.browse = rel } else { store.reveal(abs) }
             } label: {
                 Text(full ? "~/" + rel : (rel as NSString).lastPathComponent).font(.callout).lineLimit(1).truncationMode(.middle)
                     .frame(width: full ? 300 : 220, alignment: .leading)

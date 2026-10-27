@@ -18,6 +18,8 @@ final class StorageStore: ObservableObject {
     @Published var working: Set<String> = []
     /// False when macOS hides the Trash (and Mail, Messages…) without Full Disk Access.
     @Published var fullAccess = Permissions.hasFullDiskAccess()
+    /// The folder "Where the space is" is browsing, relative to home; set from "What grew" too.
+    @Published var browse = ""
 
     let history: StorageHistory
     private let treeURL: URL
@@ -103,20 +105,21 @@ final class StorageStore: ObservableObject {
                 if let d = try? JSONEncoder().encode(SavedScan(found: result.found, large: result.large, at: Date())) {
                     Diagnostics.write(d, to: self.scanURL, what: "storage scan")
                 }
-                self.history.record(scan: result.found.places, at: Date())
+                self.history.record(scan: result.found.places, children: result.children, at: Date())
                 self.refreshInsights()
                 self.ran(.storageScan)
             }
         }
     }
 
-    nonisolated static func findEverything(home: URL) -> (found: StorageAnalysis.Found, large: [FoundItem], fullAccess: Bool) {
+    nonisolated static func findEverything(home: URL) -> (found: StorageAnalysis.Found, large: [FoundItem], fullAccess: Bool, children: [String: [String: UInt64]]) {
         var f = StorageAnalysis.Found()
         let h = home.path
         let fm = FileManager.default
         let fullAccess = (try? fm.contentsOfDirectory(atPath: home.appendingPathComponent(".Trash").path)) != nil
         let guarded = FolderTree.guarded(fullAccess: fullAccess)
-        f.places = DiskUsage.places(home: home, skip: guarded)
+        let measured = DiskUsage.measurePlaces(home: home, skip: guarded)
+        f.places = measured.sizes
         // Spotlight answers without opening folders, but measuring what it found would.
         let open: (String) -> Bool = { !FolderTree.isInside($0, guarded, home: h) }
 
@@ -182,7 +185,7 @@ final class StorageStore: ObservableObject {
             .compactMap { Spotlight.item($0, folderDeadline: 0, lastUsed: true) }
             .filter { $0.bytes >= 500 << 20 }
             .sorted { $0.bytes > $1.bytes }
-        return (f, Array(large.prefix(30)), fullAccess)
+        return (f, Array(large.prefix(30)), fullAccess, measured.children)
     }
 
     /// Walks the whole home folder for the folder breakdown. Minutes on a big disk, in the background.
