@@ -117,7 +117,7 @@ System Sentinel answers each of those. It was built after a macOS energy logger
 | **Know when a process started** | Every process shows its uptime, so a renderer that has been busy for 13 days is easy to spot. |
 | **Kill anything, carefully** | One-click kill for your own processes, your password for root ones, a separate sudo button with a warning for core macOS processes, and Force kill (kill -9) for anything that ignores a kill. A banner says whether it worked and who relaunched it if it came back. |
 | **Rules that remember** | Per app: alert (the default), ignore, ignore during work hours or overnight, auto-kill, auto-kill on battery, or auto-kill only under 30% battery. Auto-kill is limited to 3 kills an hour per app. Rules (a page on Settings) also lists every launch agent and daemon that starts by itself, with its CPU. |
-| **Dark mode, and a window you can move** | Every screen is designed for light and dark. **Pop out** moves the panel into a normal window you can drag. The menu bar can show CPU load, watts or battery beside the icon. |
+| **Dark mode, and a window you can move** | Every screen is designed for light and dark. **Open in window** moves the panel into a normal window you can drag and resize. The menu bar can show CPU load, watts or battery beside the icon. |
 
 ## Screenshots
 
