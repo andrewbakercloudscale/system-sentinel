@@ -125,38 +125,28 @@ struct HealthChip: View {
         return .processes
     }
 
-    @State private var picking = false
-
     var body: some View {
         if let first = health.reasons.first, let open {
-            // One reason opens its tab; several offer a list, so the second is reachable too.
-            Button {
-                if health.reasons.count == 1 { open(Self.tab(for: first.symbol)) } else { picking = true }
-            } label: { chip }
-            .buttonStyle(.plain)
-            .popover(isPresented: $picking, arrowEdge: .bottom) {
-                VStack(alignment: .leading, spacing: 4) {
+            if health.reasons.count == 1 {
+                Button { open(Self.tab(for: first.symbol)) } label: { chip }
+                    .buttonStyle(.plain)
+            } else {
+                // Several reasons offer a menu, so the second is reachable too. A menu rather than
+                // a popover: popovers from the header did not open, a menu opens in panel and window.
+                Menu {
                     ForEach(health.reasons, id: \.text) { r in
                         Button {
-                            picking = false
                             open(Self.tab(for: r.symbol))
                         } label: {
-                            HStack(spacing: 8) {
-                                Image(systemName: r.symbol).frame(width: 18)
-                                    .foregroundStyle(r.rag == .red ? Theme.heat(100) : Color(hex: "#d97706"))
-                                Text(r.text.prefix(1).uppercased() + r.text.dropFirst()).font(.callout.weight(.semibold))
-                                Spacer(minLength: 12)
-                                Text("Open \(Self.tab(for: r.symbol).title)").font(.caption).foregroundStyle(.secondary)
-                                Image(systemName: "chevron.right").font(.caption.weight(.bold)).foregroundStyle(.secondary)
-                            }
-                            .padding(.horizontal, 10).padding(.vertical, 7)
-                            .contentShape(Rectangle())
+                            Label(r.text.prefix(1).uppercased() + r.text.dropFirst() + ": open \(Self.tab(for: r.symbol).title)",
+                                  systemImage: r.symbol)
                         }
-                        .buttonStyle(.plain)
                     }
-                }
-                .padding(6)
-                .frame(minWidth: 300)
+                } label: { chip }
+                .menuStyle(.button)
+                .buttonStyle(.plain)
+                .menuIndicator(.hidden)
+                .fixedSize()
             }
         } else {
             chip
