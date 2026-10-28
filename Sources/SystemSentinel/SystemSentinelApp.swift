@@ -226,9 +226,16 @@ struct MenuView: View {
                 }
             }
             SnoozeButton()
-            LoadPill(name: "CPU", load: model.machineLoad, tip: "CPU: share of all \(Int(model.cores)) cores in use right now")
+            LoadPill(name: "CPU", load: model.machineLoad, tip: "CPU: share of all \(Int(model.cores)) cores in use right now. Click to see which processes are using it.") {
+                // Processes, busiest right now at the top.
+                UserDefaults.standard.set("Now", forKey: "processSort")
+                model.goTab = Tab.processes.title
+            }
             if let gpu = model.gpu {
-                LoadPill(name: "GPU", load: gpu, tip: "GPU: how busy the graphics chip is right now")
+                LoadPill(name: "GPU", load: gpu, tip: "GPU: how busy the graphics chip is right now. Click to see which apps are drawing with it.") {
+                    model.goTab = "Now"
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { model.focus = "graphics" }
+                }
             }
         }
     }
@@ -1047,13 +1054,19 @@ private struct LoadPill: View {
     let name: String
     let load: Double
     let tip: String
+    /// Opens where the load is explained.
+    let open: () -> Void
     var body: some View {
-        HStack(spacing: 6) {
-            Circle().fill(Theme.machineHeat(load)).frame(width: 8, height: 8)
-            Text("\(name) \(Int(load))%").font(.callout.weight(.semibold)).monospacedDigit()
+        Button(action: open) {
+            HStack(spacing: 6) {
+                Circle().fill(Theme.machineHeat(load)).frame(width: 8, height: 8)
+                Text("\(name) \(Int(load))%").font(.callout.weight(.semibold)).monospacedDigit()
+            }
+            .padding(.horizontal, 10).padding(.vertical, 5)
+            .background(Capsule().fill(Theme.machineHeat(load).opacity(0.13)))
+            .contentShape(Capsule())
         }
-        .padding(.horizontal, 10).padding(.vertical, 5)
-        .background(Capsule().fill(Theme.machineHeat(load).opacity(0.13)))
+        .buttonStyle(.plain)
         .tip(tip)
     }
 }

@@ -22,7 +22,7 @@ struct OverviewView: View {
             .fixedSize(horizontal: false, vertical: true)
             CoresCard(model: model)
             MemoryCard(model: model)
-            GraphicsCard(model: model)
+            GraphicsCard(model: model).id("graphics")
         }
     }
 }
