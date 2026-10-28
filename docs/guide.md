@@ -21,7 +21,7 @@
 - [Notifications](#notifications)
 - [Killing processes](#killing-processes)
 - [Explain with ChatGPT](#explain-with-chatgpt)
-- [Pop out window](#pop-out-window)
+- [Open in window](#open-in-window)
 - [Share with a friend](#share-with-a-friend)
 - [Files and privacy](#files-and-privacy)
 - [Getting help and reporting a problem](#getting-help-and-reporting-a-problem)
@@ -658,11 +658,12 @@ opens.
 
 ---
 
-## Pop out window
+## Open in window
 
-The menu bar panel stays pinned under the icon and closes when you click elsewhere. Click
-**Pop out** at the bottom to open the same screens in a normal window. You can drag and
-minimise it, and it stays open while you work. It remembers its position. **⌃⌥⌘S** opens it from any
+The menu bar panel stays pinned under the icon, at a fixed size, and closes when you click
+elsewhere. Click **Open in window** at the bottom to open the same screens in a normal window.
+You can drag it, resize it to any size (the screens fill it) and minimise it, and it stays open
+while you work. It remembers its position and size. **⌃⌥⌘S** opens it from any
 app.
 
 ---

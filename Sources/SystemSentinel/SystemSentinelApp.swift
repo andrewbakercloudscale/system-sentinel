@@ -173,7 +173,8 @@ struct MenuView: View {
                                 VStack(spacing: 10) { banners; page }.padding(.trailing, 2)
                             }
                         }
-                            .frame(height: Self.contentHeight)
+                            // In the window the page takes whatever height the window is dragged to.
+                            .frame(minHeight: inWindow ? 300 : Self.contentHeight, maxHeight: inWindow ? .infinity : Self.contentHeight)
                             .onChange(of: model.focus) { _, card in
                                 guard let card else { return }
                                 let id = String(card.split(separator: ":").first ?? "")
@@ -191,7 +192,10 @@ struct MenuView: View {
             footer
         }
         .padding(14)
-        .frame(width: Self.width)
+        // The panel is fixed; the window fills whatever size it is dragged to. Never narrower than
+        // the panel: the Processes columns are laid out for at least that width.
+        .frame(minWidth: Self.width, maxWidth: inWindow ? .infinity : Self.width,
+               maxHeight: inWindow ? .infinity : nil, alignment: .top)
         .tipsAndConfirmations(tips, surface: "main")
     }
 
@@ -266,10 +270,10 @@ struct MenuView: View {
             }
             Spacer()
             if !inWindow {
-                FooterButton(title: "Pop out", symbol: "macwindow.on.rectangle", color: Theme.trends) {
+                FooterButton(title: "Open in window", symbol: "macwindow.on.rectangle", color: Theme.trends) {
                     PopOut.show(model)
                 }
-                .tip("Open in a window you can move around and keep open. From any app: Control Option Command S (⌃⌥⌘S)")
+                .tip("Open in a window you can move, resize to any size and keep open. From any app: Control Option Command S (⌃⌥⌘S)")
             }
             if let rel = model.update {
                 FooterButton(title: "About: v\(rel.version) is out", symbol: "arrow.down.circle.fill", color: Self.updateColor, attention: true) {
@@ -934,16 +938,19 @@ enum PopOut {
     static func show(_ model: Model) {
         if window == nil {
             let host = NSHostingController(rootView: MenuView(model: model, inWindow: true))
-            // The window keeps the size it opened at. Left to follow the content, a header or
-            // banner changing height mid-layout resized the window inside AppKit's layout pass,
-            // which aborts the app ("quit unexpectedly", 0.8.26 and 0.8.32).
+            // The window keeps the size it opened at, or was dragged to. Left to follow the content,
+            // a header or banner changing height mid-layout resized the window inside AppKit's
+            // layout pass, which aborts the app ("quit unexpectedly", 0.8.26 and 0.8.32).
             host.sizingOptions = []
             let w = NSWindow(contentViewController: host)
-            // A scrolling page can measure only a few points tall; never open as a bare title bar.
+            // The page's height is flexible here, so it measures only its minimum; open at the
+            // panel's size until the window has a saved frame of its own.
             let fit = host.view.fittingSize
-            w.setContentSize(NSSize(width: fit.width, height: fit.height < 400 ? 750 : fit.height))
+            w.setContentSize(NSSize(width: max(fit.width, MenuView.width), height: max(fit.height, 750)))
             w.title = "System Sentinel"
-            w.styleMask = [.titled, .closable, .miniaturizable]
+            w.styleMask = [.titled, .closable, .miniaturizable, .resizable]
+            // As narrow as the menu bar panel at the least; any size above that.
+            w.contentMinSize = NSSize(width: MenuView.width, height: 500)
             w.isReleasedWhenClosed = false
             w.setFrameAutosaveName("SystemSentinelWindow")
             if !w.setFrameUsingName("SystemSentinelWindow") { w.center() }
