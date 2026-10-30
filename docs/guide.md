@@ -98,7 +98,7 @@ tab you were last on.
 - **What's wrong?** at the top. **Found on its own** lists what System Sentinel noticed
   without being asked: the Mac running hot, the processor or memory short, the battery
   draining fast, the disk nearly full, an app keeping the Mac awake, an app that keeps
-  crashing, and the insights below. Each has **Show fixes**, which opens the details and fixes under it, and **Ignore** (or **Snooze a day**). **Worth knowing**
+  crashing, and the insights below. Each has **View it**, which opens the details under it, **Fix it** when there is a one-click fix (it asks first, and says what it will do), and **Ignore** (or **Snooze a day**). **Worth knowing**
   holds findings that are not problems.
 - **Or say what feels wrong:** eleven symptoms (Slow or hot, Battery drains, Disk full, Wi-Fi
   or internet, Won't sleep, Mic or camera, App crashes or won't open, Bluetooth, Display or

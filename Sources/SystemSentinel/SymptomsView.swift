@@ -228,9 +228,20 @@ struct SymptomsCard: View {
                             }
                             Spacer(minLength: 6)
                             IgnoreButton(subject: f.check.subject != nil) { withAnimation { store.ignore(f.check) } }
-                            Text(open == f.symptom ? "Less" : "Show fixes").font(.caption.weight(.semibold)).foregroundStyle(.white)
+                            Text(open == f.symptom ? "Less" : "View it").font(.caption.weight(.semibold)).foregroundStyle(color(f.check.status))
                                 .padding(.horizontal, 10).padding(.vertical, 4)
-                                .background(Capsule().fill(color(f.check.status)))
+                                .background(Capsule().strokeBorder(color(f.check.status).opacity(0.6)))
+                            // Fix it does the fix (after asking), so it is only offered when there is one.
+                            if let fix = f.check.actions.first(where: \.acts) {
+                                Button { model.confirmAndPerform(fix) } label: {
+                                    Text("Fix it").font(.caption.weight(.semibold)).foregroundStyle(.white)
+                                        .padding(.horizontal, 10).padding(.vertical, 4)
+                                        .background(Capsule().fill(color(f.check.status)))
+                                        .contentShape(Capsule())
+                                }
+                                .buttonStyle(.plain)
+                                .tip("\(fix.title). Asks first.")
+                            }
                         }
                         // Boxed like the insight cards under it, so the list reads as one set.
                         .padding(10)
@@ -241,7 +252,7 @@ struct SymptomsCard: View {
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .tip("Show what was found and how to fix it")
+                    .tip("Show what was found, the apps behind it and what to do")
                     // Opens under its row, not at the foot of the card where it was out of sight.
                     if open == f.symptom { panel(f.symptom, v) }
                 }
