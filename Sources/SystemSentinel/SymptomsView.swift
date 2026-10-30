@@ -228,7 +228,7 @@ struct SymptomsCard: View {
                             }
                             Spacer(minLength: 6)
                             IgnoreButton(subject: f.check.subject != nil) { withAnimation { store.ignore(f.check) } }
-                            Text(open == f.symptom ? "Less" : "Fix it").font(.caption.weight(.semibold)).foregroundStyle(.white)
+                            Text(open == f.symptom ? "Less" : "Show fixes").font(.caption.weight(.semibold)).foregroundStyle(.white)
                                 .padding(.horizontal, 10).padding(.vertical, 4)
                                 .background(Capsule().fill(color(f.check.status)))
                         }
@@ -242,6 +242,8 @@ struct SymptomsCard: View {
                     }
                     .buttonStyle(.plain)
                     .tip("Show what was found and how to fix it")
+                    // Opens under its row, not at the foot of the card where it was out of sight.
+                    if open == f.symptom { panel(f.symptom, v) }
                 }
             }
             ForEach(attention.insights) { i in insight(i) }
@@ -266,7 +268,7 @@ struct SymptomsCard: View {
             FlowLayout(spacing: 6) {
                 ForEach(Symptom.allCases) { s in chip(s, flagged[s]) }
             }
-            if let s = open { panel(s, v) }
+            if let s = open, !found.contains(where: { $0.symptom == s }) { panel(s, v) }
         }
     }
 
