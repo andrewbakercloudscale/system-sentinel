@@ -54,7 +54,7 @@ private struct LookAtBanner: View {
             }
             .buttonStyle(.plain)
             .onHover { hover = $0 }
-            .tip("Open Checkup: each one with what to do and a Fix it button")
+            .tip("Open Checkup: each one with what to do and how to fix it")
         }
     }
 }
