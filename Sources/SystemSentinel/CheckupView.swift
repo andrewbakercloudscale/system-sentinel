@@ -154,7 +154,11 @@ struct CheckupView: View {
                 .padding(.leading, 32)
             }
             if !c.actions.isEmpty {
-                FixButtons(model: model, fixes: c.actions).padding(.leading, 32)
+                FixButtons(model: model, fixes: c.actions.filter { fix in
+                    // Only apps can be opened again; a background process can only be stopped.
+                    if case .restart(let pids, _) = fix { return model.canRestart(pids) }
+                    return true
+                }).padding(.leading, 32)
             }
         }
         .padding(.vertical, 2)
