@@ -213,7 +213,9 @@ public enum Diagnose {
             out.append(check(.slow, "memory", v.pressure == .critical ? "Memory is critically short" : "Memory is running short",
                              v.pressure == .critical ? .problem : .warning,
                              "Apps no longer fit in memory, so macOS parks some on the disk (\(bytes(v.swap)) so far). Switching apps then stalls.",
-                             actions: quits(v.memoryApps), items: v.memoryApps.prefix(5).map { "\($0.name): \(bytes(UInt64($0.amount)))" }))
+                             // Restart frees an app's swap and keeps it open; quitting frees all of it.
+                             actions: v.memoryApps.prefix(3).flatMap { [FixAction.restart(pids: $0.pids, name: $0.name), .quit(pids: $0.pids, name: $0.name)] },
+                             items: v.memoryApps.prefix(5).map { "\($0.name): \(bytes(UInt64($0.amount)))" }))
         }
         if out.isEmpty {
             out.append(check(.slow, "ok", "No sign of it right now", .ok,

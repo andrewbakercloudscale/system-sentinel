@@ -232,15 +232,30 @@ struct SymptomsCard: View {
                                 .padding(.horizontal, 10).padding(.vertical, 4)
                                 .background(Capsule().strokeBorder(color(f.check.status).opacity(0.6)))
                             // Fix it does the fix (after asking), so it is only offered when there is one.
-                            if let fix = f.check.actions.first(where: \.acts) {
-                                Button { model.confirmAndPerform(fix) } label: {
-                                    Text("Fix it").font(.caption.weight(.semibold)).foregroundStyle(.white)
-                                        .padding(.horizontal, 10).padding(.vertical, 4)
-                                        .background(Capsule().fill(color(f.check.status)))
-                                        .contentShape(Capsule())
-                                }
+                            // Several fixes (quit this app, or that one) are a menu, never just the first.
+                            let fixes = f.check.actions.filter { fix in
+                                guard fix.acts else { return false }
+                                // Only apps can be opened again; a background process can only be stopped.
+                                if case .restart(let pids, _) = fix { return model.canRestart(pids) }
+                                return true
+                            }
+                            if fixes.count > 1 {
+                                Menu {
+                                    ForEach(fixes) { fix in
+                                        Button(fixLabel(fix, f.check)) { model.confirmAndPerform(fix) }
+                                    }
+                                    Divider()
+                                    Button("See the details first") { toggle(f.symptom) }
+                                } label: { fixItLabel(f.check.status) }
+                                .menuStyle(.button)
                                 .buttonStyle(.plain)
-                                .tip("\(fix.title). Asks first.")
+                                .menuIndicator(.hidden)
+                                .fixedSize()
+                                .tip("Choose what to do: \(fixes.map(\.title).joined(separator: ", ")). Each asks first.")
+                            } else if let fix = fixes.first {
+                                Button { model.confirmAndPerform(fix) } label: { fixItLabel(f.check.status) }
+                                    .buttonStyle(.plain)
+                                    .tip("\(fix.title). Asks first.")
                             }
                         }
                         // Boxed like the insight cards under it, so the list reads as one set.
@@ -330,6 +345,25 @@ struct SymptomsCard: View {
         .padding(12)
         .background(RoundedRectangle(cornerRadius: 10).fill(tint.opacity(0.07)))
         .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(tint.opacity(0.25)))
+    }
+
+    private func fixItLabel(_ status: Check.Status) -> some View {
+        Text("Fix it").font(.caption.weight(.semibold)).foregroundStyle(.white)
+            .padding(.horizontal, 10).padding(.vertical, 4)
+            .background(Capsule().fill(color(status)))
+            .contentShape(Capsule())
+    }
+
+    /// "Quit Claude (5.2 GB)": the fix, with what the finding lists for that app.
+    private func fixLabel(_ fix: FixAction, _ c: Check) -> String {
+        switch fix {
+        case .quit(_, let name), .restart(_, let name):
+            if let item = c.items.first(where: { $0.hasPrefix(name + ": ") }) {
+                return "\(fix.title) (\(item.dropFirst(name.count + 2)))"
+            }
+        default: break
+        }
+        return fix.title
     }
 
     private func color(_ s: Check.Status) -> Color {
