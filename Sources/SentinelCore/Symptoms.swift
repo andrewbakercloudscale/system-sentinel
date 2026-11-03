@@ -117,6 +117,8 @@ public struct Vitals: Sendable {
     /// Apps by energy impact now, highest first.
     public var energyApps: [AppLoad] = []
     public var disk: DiskSpace?
+    /// How fast the disk is filling, bytes a day over the last week, as the Storage tab shows it.
+    public var diskPerDay: Double?
     /// The checkup's network checks.
     public var networkChecks: [Check] = []
     public var sleep: SleepReport?
@@ -146,6 +148,8 @@ public struct Vitals: Sendable {
 
 public enum Diagnose {
     static let gb: UInt64 = 1 << 30
+    /// Checkup flags the disk once the forecast says it will be full within this many days.
+    public static let fullWithinDays = 30.0
 
     /// What the Mac shows without being asked: for each symptom with a warning or worse, the
     /// most serious finding. Worst first.
@@ -277,9 +281,18 @@ public enum Diagnose {
         let title = status == .ok ? "\(bytes(free)) free: plenty of room" : "Only \(bytes(free)) free"
         let detail = status == .ok ? String(format: "%.0f%% of the disk is free.", share)
             : "macOS needs about 20 GB free to update and to swap memory. Below 5 GB apps start failing to save."
-        return [check(.disk, "free", title, status, detail,
-                      steps: status == .ok ? [] : ["Empty the Trash and clear rebuildable caches.", "Look at what grew this week.", "Move videos and old downloads to a drive."],
-                      actions: [.goTo(tab: "Storage", card: status == .ok ? nil : "cleanups", label: status == .ok ? "Open Storage" : "Free up space")])]
+        var out = [check(.disk, "free", title, status, detail,
+                         steps: status == .ok ? [] : ["Empty the Trash and clear rebuildable caches.", "Look at what grew this week.", "Move videos and old downloads to a drive."],
+                         actions: [.goTo(tab: "Storage", card: status == .ok ? nil : "cleanups", label: status == .ok ? "Open Storage" : "Free up space")])]
+        // Room today but not for long: under a month at this week's pace is worth saying now.
+        if let days = StorageAnalysis.daysUntilFull(free: free, perDay: v.diskPerDay), days < Diagnose.fullWithinDays {
+            let n = max(1, Int(days.rounded()))
+            out.insert(check(.disk, "filling", "Storage full in ~\(n) day\(n == 1 ? "" : "s")", days < 7 ? .problem : .warning,
+                             "It is growing by \(bytes(UInt64(v.diskPerDay ?? 0))) a day over the last week, with \(bytes(free)) free.",
+                             steps: ["Look at what grew this week.", "Empty the Trash and clear rebuildable caches.", "Move videos and old downloads to a drive."],
+                             actions: [.goTo(tab: "Storage", card: "grew", label: "What grew")]), at: 0)
+        }
+        return out
     }
 
     // MARK: Network

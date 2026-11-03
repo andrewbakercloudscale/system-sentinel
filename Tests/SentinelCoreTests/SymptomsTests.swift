@@ -40,6 +40,27 @@ final class SymptomsTests: XCTestCase {
         XCTAssertEqual(Diagnose.checks(.disk, v).first?.actions, [.goTo(tab: "Storage", card: "cleanups", label: "Free up space")])
     }
 
+    func testDiskFullWithinAMonthShowsOnCheckup() {
+        var v = Vitals()
+        // 68.6 GB free, as in the user's screenshot.
+        v.disk = DiskSpace(total: 460 * gb, free: 70_246 * (gb / 1024), available: 70_246 * (gb / 1024))
+        let free = Double(v.disk!.available)
+        // 53 days at 1.3 GB a day: not flagged.
+        v.diskPerDay = 1.3 * Double(gb)
+        XCTAssertFalse(Diagnose.found(v).contains { $0.symptom == .disk })
+        // Just over the line: 30.5 days.
+        v.diskPerDay = free / 30.5
+        XCTAssertFalse(Diagnose.found(v).contains { $0.symptom == .disk })
+        // Just under it: 29.5 days, flagged with the days in the title.
+        v.diskPerDay = free / 29.5
+        let hit = Diagnose.found(v).first { $0.symptom == .disk }
+        XCTAssertEqual(hit?.check.title, "Storage full in ~30 days")
+        XCTAssertEqual(hit?.check.status, .warning)
+        // Under a week is a problem.
+        v.diskPerDay = free / 5
+        XCTAssertEqual(Diagnose.found(v).first { $0.symptom == .disk }?.check.status, .problem)
+    }
+
     func testBatteryWearAndFastDrain() {
         var v = Vitals()
         v.battery = BatteryStatus(onBattery: true, percent: 50, watts: 28, maxCapacity: 70, designCapacity: 100)

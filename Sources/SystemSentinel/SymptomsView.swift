@@ -100,6 +100,7 @@ extension Model {
         v.battery = battery
         v.energyApps = energy.filter { $0.power >= 5 }.prefix(5).map { AppLoad(name: $0.name, amount: $0.power, pids: $0.pids) }
         v.disk = storage.disk
+        v.diskPerDay = StorageAnalysis.growthPerDay(storage.history.since(Date().addingTimeInterval(-7 * 86_400)))
         v.networkChecks = checkup.checks.filter { $0.area == .network }
         v.sleep = sleepReport
         v.blockers = blockers
