@@ -81,3 +81,5 @@ else
     codesign --force --sign "$SENTINEL_SIGN_ID" "$DMG"
 fi
 echo "== $DMG ($(du -h "$DMG" | cut -f1))"
+# Same file without the version, for the website's releases/latest/download link.
+cp "$DMG" dist/System-Sentinel.dmg
