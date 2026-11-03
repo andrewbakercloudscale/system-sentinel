@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds a zip of System Sentinel.app for a GitHub release, in dist/.
+# Builds a zip and a .dmg of System Sentinel.app for a GitHub release, in dist/.
 #
 #   bash scripts/release.sh
 #
@@ -12,6 +12,8 @@
 # NOTARY_PROFILE is a keychain profile made once with
 #   xcrun notarytool store-credentials system-sentinel --apple-id you@example.com --team-id TEAMID
 #
+# A Developer ID certificate in the keychain is found on its own; DEVELOPER_ID picks one.
+#
 # Without them the app is ad-hoc signed: users must clear the quarantine flag, `xattr -dr com.apple.quarantine`, on it (see the README).
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -19,6 +21,8 @@ cd "$(dirname "$0")/.."
 VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" Resources/Info.plist)
 APP="build/System Sentinel.app"
 ZIP="dist/System-Sentinel-$VERSION.zip"
+DMG="dist/System-Sentinel-$VERSION.dmg"
+: "${DEVELOPER_ID:=$(security find-identity -v -p codesigning | sed -n 's/.*"\(Developer ID Application: .*\)"/\1/p' | head -1)}"
 
 echo "== tests"
 swift test >/dev/null 2>&1 || { echo "tests failed, not releasing"; exit 1; }
@@ -58,3 +62,22 @@ fi
 rm -f "$ZIP"
 ditto -c -k --keepParent "$APP" "$ZIP"
 echo "== $ZIP ($(du -h "$ZIP" | cut -f1))"
+
+# The .dmg: the app beside a link to Applications, to drag across.
+STAGE=$(mktemp -d)
+cp -R "$APP" "$STAGE/"
+ln -s /Applications "$STAGE/Applications"
+rm -f "$DMG"
+hdiutil create -quiet -volname "System Sentinel" -srcfolder "$STAGE" -fs HFS+ -format UDZO "$DMG"
+rm -rf "$STAGE"
+if [[ -n "${DEVELOPER_ID:-}" ]]; then
+    codesign --force --timestamp --sign "$DEVELOPER_ID" "$DMG"
+    if [[ -n "${NOTARY_PROFILE:-}" ]]; then
+        echo "== notarise dmg"
+        xcrun notarytool submit "$DMG" --keychain-profile "$NOTARY_PROFILE" --wait
+        xcrun stapler staple "$DMG"
+    fi
+else
+    codesign --force --sign "$SENTINEL_SIGN_ID" "$DMG"
+fi
+echo "== $DMG ($(du -h "$DMG" | cut -f1))"
