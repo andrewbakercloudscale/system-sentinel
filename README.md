@@ -204,8 +204,10 @@ Diagnostics, Reset all settings…**.
 swift test                     # 229 tests, including a real CPU burner that must be flagged and killed
 swift build                    # debug build
 bash scripts/build-app.sh      # test, build, bundle, install, launch
-bash scripts/release.sh        # zip for a GitHub release in dist/; signs and notarises
+bash scripts/release.sh        # zip and .dmg in dist/; signs and notarises
                                # when DEVELOPER_ID and NOTARY_PROFILE are set
+bash scripts/publish-release.sh NOTES.md  # release.sh, then tag, push and publish all
+                               # three files, and check the website's .dmg link serves it
 ```
 
 To render every tab, in light and dark, to PNG files without touching your data:
