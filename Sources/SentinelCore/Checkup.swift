@@ -31,12 +31,22 @@ public struct Check: Identifiable, Equatable, Sendable {
         case settings(label: String, url: String)
         case reveal(label: String, path: String)
         case web(label: String, url: String)
-        /// Stops a user launch agent and moves its plist to the Trash (reversible).
-        case removeAgent(label: String, plist: String, job: String)
+        /// Stops every listed launch item and moves its plist to the Trash. Items in /Library
+        /// go through one admin prompt, with the command built by `CheckParse.removeSystemItemsCommand`.
+        case removeAgents(label: String, plists: [String])
 
         public var label: String {
             switch self {
-            case .run(let l, _, _), .admin(let l, _), .settings(let l, _), .reveal(let l, _), .web(let l, _), .removeAgent(let l, _, _): return l
+            case .run(let l, _, _), .admin(let l, _), .settings(let l, _), .reveal(let l, _), .web(let l, _), .removeAgents(let l, _): return l
+            }
+        }
+
+        /// Asks for the admin password: shown with a lock on the button.
+        public var needsAdmin: Bool {
+            switch self {
+            case .admin: return true
+            case .removeAgents(_, let plists): return plists.contains { !$0.hasPrefix(FileManager.default.homeDirectoryForCurrentUser.path + "/") }
+            default: return false
             }
         }
     }
@@ -249,6 +259,34 @@ public enum CheckParse {
         let label = plist["Label"] as? String ?? "?"
         let program = plist["Program"] as? String ?? (plist["ProgramArguments"] as? [String])?.first
         return (label, program)
+    }
+
+    /// The folders a system launch item may be removed from, and the subfolder of the
+    /// staging folder each one is moved to (two, so the same file name in both cannot clash).
+    public static let systemLaunchDirs = ["/Library/LaunchAgents": "Agents", "/Library/LaunchDaemons": "Daemons"]
+
+    /// The admin shell command that stops launch items in /Library and moves their plists
+    /// into `staging` (a folder the user owns), handing them to `uid`, so the app can then put
+    /// them in the Trash as the user. Every path must pass a strict shape check (a plain file
+    /// name directly inside /Library/LaunchAgents or /Library/LaunchDaemons, a staging path of
+    /// plain characters), so nothing read off the Mac can break out of the quoting. nil when
+    /// any path fails the check, or there is nothing to do.
+    public static func removeSystemItemsCommand(plists: [String], staging: String, uid: UInt32) -> String? {
+        // \A and \z, not ^ and $: $ also matches before a trailing newline.
+        func plain(_ s: String, _ pattern: String) -> Bool { s.range(of: pattern, options: .regularExpression) != nil }
+        guard !plists.isEmpty, plain(staging, "\\A/[A-Za-z0-9._/-]+\\z"), !staging.contains("..") else { return nil }
+        var parts: [String] = []
+        for p in plists {
+            let url = URL(fileURLWithPath: p)
+            let dir = url.deletingLastPathComponent().path, name = url.lastPathComponent
+            guard let sub = systemLaunchDirs[dir], dir + "/" + name == p,
+                  plain(name, "\\A[A-Za-z0-9][A-Za-z0-9._-]*\\.plist\\z") else { return nil }
+            let domain = sub == "Daemons" ? "system" : "gui/\(uid)"
+            let dest = "\(staging)/\(sub)/\(name)"
+            parts.append("/bin/launchctl bootout \(domain) '\(p)' 2>/dev/null; /bin/mv -f '\(p)' '\(dest)' && /usr/sbin/chown \(uid) '\(dest)' || f=1")
+        }
+        // Every item is tried; the exit status says whether any of them failed.
+        return "f=0; " + parts.joined(separator: "; ") + "; exit $f"
     }
 
     /// `ping` summary: packet loss percent and average round trip in ms.

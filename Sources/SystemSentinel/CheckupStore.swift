@@ -391,15 +391,13 @@ final class CheckupStore: ObservableObject {
 
     // MARK: System
 
-    nonisolated static func systemChecks() -> [Check] {
-        var out: [Check] = []
+    /// Launch agents and daemons whose program no longer exists: leftovers of removed apps.
+    nonisolated static func brokenLaunchItems() -> [(plist: String, label: String, program: String, user: Bool)] {
         let fm = FileManager.default
-        let home = fm.homeDirectoryForCurrentUser
-        // Launch agents and daemons whose program no longer exists: leftovers of removed apps.
         var broken: [(plist: String, label: String, program: String, user: Bool)] = []
-        let dirs = [(home.appendingPathComponent("Library/LaunchAgents").path, true), ("/Library/LaunchAgents", false), ("/Library/LaunchDaemons", false)]
+        let dirs = [(fm.homeDirectoryForCurrentUser.appendingPathComponent("Library/LaunchAgents").path, true), ("/Library/LaunchAgents", false), ("/Library/LaunchDaemons", false)]
         for (dir, user) in dirs {
-            for f in (try? fm.contentsOfDirectory(atPath: dir)) ?? [] where f.hasSuffix(".plist") {
+            for f in ((try? fm.contentsOfDirectory(atPath: dir)) ?? []).sorted() where f.hasSuffix(".plist") {
                 let p = dir + "/" + f
                 guard let d = NSDictionary(contentsOfFile: p) as? [String: Any] else { continue }
                 let item = CheckParse.launchItem(d)
@@ -407,13 +405,63 @@ final class CheckupStore: ObservableObject {
                 broken.append((p, item.label, prog, user))
             }
         }
+        return broken
+    }
+
+    /// Stops the listed launch items and moves them to the Trash. It looks again first and
+    /// only touches plists that are still broken, so a stale checkup cannot remove a live item.
+    /// Your own go straight to the Trash; /Library ones go through one admin prompt into a
+    /// staging folder you own, then to the Trash from there.
+    nonisolated static func removeLaunchItems(_ plists: [String]) -> (removed: Int, failed: Int, cancelled: Bool) {
+        let fm = FileManager.default
+        let wanted = Set(plists)
+        let still = brokenLaunchItems().filter { wanted.contains($0.plist) }
+        let uid = getuid()
+        var removed = 0, failed = 0
+        for item in still where item.user {
+            _ = status("/bin/launchctl", ["bootout", "gui/\(uid)/\(item.label)"])
+            if (try? fm.trashItem(at: URL(fileURLWithPath: item.plist), resultingItemURL: nil)) != nil { removed += 1 } else { failed += 1 }
+        }
+        let system = still.filter { !$0.user }.map(\.plist)
+        guard !system.isEmpty else { return (removed, failed, false) }
+        let staging = fm.temporaryDirectory.appendingPathComponent("SystemSentinel-startup-items-\(UUID().uuidString)")
+        for sub in CheckParse.systemLaunchDirs.values {
+            try? fm.createDirectory(at: staging.appendingPathComponent(sub), withIntermediateDirectories: true)
+        }
+        guard let command = CheckParse.removeSystemItemsCommand(plists: system, staging: staging.path, uid: uid) else {
+            try? fm.removeItem(at: staging)
+            return (removed, failed + system.count, false)
+        }
+        // The command holds only paths that passed the shape check: no quotes or backslashes.
+        let ok = status("/usr/bin/osascript", ["-e", "do shell script \"\(command)\" with administrator privileges"]) == 0
+        var moved = 0, stuck = 0
+        for sub in CheckParse.systemLaunchDirs.values {
+            let dir = staging.appendingPathComponent(sub)
+            for f in (try? fm.contentsOfDirectory(atPath: dir.path)) ?? [] {
+                if (try? fm.trashItem(at: dir.appendingPathComponent(f), resultingItemURL: nil)) != nil { moved += 1 } else { stuck += 1 }
+            }
+        }
+        // Only an empty staging folder is deleted: a file the Trash refused stays there.
+        if stuck == 0 { try? fm.removeItem(at: staging) }
+        removed += moved
+        failed += stuck + system.filter { fm.fileExists(atPath: $0) }.count
+        let cancelled = !ok && moved == 0 && stuck == 0
+        return (removed, failed, cancelled)
+    }
+
+    nonisolated static func systemChecks() -> [Check] {
+        var out: [Check] = []
+        let fm = FileManager.default
+        let home = fm.homeDirectoryForCurrentUser
+        // Launch agents and daemons whose program no longer exists: leftovers of removed apps.
+        let broken = brokenLaunchItems()
         if !broken.isEmpty {
-            let uid = getuid()
+            let system = broken.filter { !$0.user }
             out.append(Check(id: "broken-agents", area: .system, title: "\(broken.count) startup item\(broken.count == 1 ? "" : "s") point at programs that are gone", status: .warning,
                              detail: "Left behind by apps that were removed. macOS keeps trying to start them, which wastes time at login and fills the log.",
-                             why: "Your own items can be removed here (moved to the Trash, so it can be undone). Items in /Library need an admin: Show them in Finder and drag them to the Trash, unless your IT team installed them.",
-                             fixes: broken.filter(\.user).prefix(4).map { .removeAgent(label: "Remove \($0.label)", plist: $0.plist, job: "gui/\(uid)/\($0.label)") }
-                                + broken.filter { !$0.user }.prefix(2).map { .reveal(label: "Show \($0.label)", path: $0.plist) },
+                             why: "Remove stops them and moves their files to the Trash. \(system.isEmpty ? "" : "Items in /Library ask for your admin password once. ")Only items whose program is missing are touched, so nothing that still runs is affected. If your IT team installed one, its management tool may put it back.",
+                             fixes: [.removeAgents(label: broken.count == 1 ? "Remove it" : "Remove all \(broken.count)", plists: broken.map(\.plist))]
+                                + system.prefix(2).map { .reveal(label: "Show \($0.label)", path: $0.plist) },
                              items: broken.map { "\($0.label) → \($0.program)" }))
         }
         // Apps that keep crashing, and kernel panics.
@@ -529,15 +577,24 @@ final class CheckupStore: ObservableObject {
                     self.run()
                 }
             }
-        case .removeAgent(_, let plist, let job):
-            _ = CheckupStore.status("/bin/launchctl", ["bootout", job])
-            do {
-                try FileManager.default.trashItem(at: URL(fileURLWithPath: plist), resultingItemURL: nil)
-                toast(Model.Toast(ok: true, title: "Removed \(URL(fileURLWithPath: plist).lastPathComponent)", detail: "Moved to the Trash: put it back from there to undo."))
-            } catch {
-                toast(Model.Toast(ok: false, title: "Could not remove it", detail: error.localizedDescription))
+        case .removeAgents(let label, let plists):
+            working.insert(key)
+            let front = frontWindowNumber()
+            Task.detached {
+                let r = CheckupStore.removeLaunchItems(plists)
+                await MainActor.run {
+                    comeBack(to: front)
+                    self.working.remove(key)
+                    if r.cancelled && r.removed == 0 {
+                        self.toast(Model.Toast(ok: false, title: "\(label): nothing was changed", detail: "The password prompt was cancelled or refused."))
+                    } else {
+                        self.toast(Model.Toast(ok: r.failed == 0 && !r.cancelled,
+                                               title: "Removed \(r.removed) startup item\(r.removed == 1 ? "" : "s")" + (r.failed > 0 ? ", \(r.failed) could not be" : ""),
+                                               detail: "Moved to the Trash. To undo, drag a file back to the LaunchAgents or LaunchDaemons folder it came from."))
+                    }
+                    self.run()
+                }
             }
-            run()
         }
     }
 
