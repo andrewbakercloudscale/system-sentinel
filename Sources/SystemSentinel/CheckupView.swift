@@ -166,7 +166,7 @@ struct CheckupView: View {
 
     private func fixButton(_ f: Check.Fix, _ c: Check) -> some View {
         let busy = store.working.contains(c.id + f.label)
-        let acts: Bool = { switch f { case .admin, .run, .removeAgent: return true; default: return false } }()
+        let acts: Bool = { switch f { case .admin, .run, .removeAgents: return true; default: return false } }()
         return Button {
             if acts {
                 Confirm.ask("\(f.label)?", c.title, symbol: "wrench.and.screwdriver.fill", tint: Tab.checkup.color,
@@ -177,7 +177,7 @@ struct CheckupView: View {
         } label: {
             HStack(spacing: 4) {
                 if busy { ProgressView().controlSize(.mini) }
-                if case .admin = f, !busy { Image(systemName: "lock.fill") }
+                if !busy, f.needsAdmin { Image(systemName: "lock.fill") }
                 Text(busy ? "Working…" : f.label)
             }
             .font(.caption.weight(.semibold))
@@ -193,7 +193,7 @@ struct CheckupView: View {
 
     private func undoText(_ f: Check.Fix) -> String? {
         switch f {
-        case .removeAgent: return "It goes to the Trash: put it back from there to undo."
+        case .removeAgents: return "They go to the Trash. To undo, drag a file back to the folder it came from."
         case .admin, .run: return "Most of these restart something that comes straight back by itself."
         default: return nil
         }
@@ -206,7 +206,9 @@ struct CheckupView: View {
         case .settings: return "Opens System Settings at the right place."
         case .reveal(_, let p): return "Shows \(p) in Finder."
         case .web(_, let u): return "Opens \(u)"
-        case .removeAgent(_, let plist, _): return "Stops it and moves \(plist) to the Trash. Put it back from the Trash to undo."
+        case .removeAgents(_, let plists):
+            let admin = plists.contains { $0.hasPrefix("/Library/") }
+            return "Stops \(plists.count == 1 ? "it" : "all \(plists.count)") and moves the files to the Trash\(admin ? ", asking for your admin password once for the ones in /Library" : ""). Only items whose program is still missing are touched."
         }
     }
 

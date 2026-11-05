@@ -69,6 +69,29 @@ final class CheckupTests: XCTestCase {
         XCTAssertEqual(CheckParse.launchItem(["Label": "x", "ProgramArguments": ["/bin/a", "-b"]]).program, "/bin/a")
     }
 
+    func testRemoveSystemItemsCommand() {
+        let cmd = CheckParse.removeSystemItemsCommand(plists: ["/Library/LaunchDaemons/com.microsoft.OneDriveStandaloneUpdater.plist",
+                                                               "/Library/LaunchAgents/com.microsoft.SyncReporter.plist"],
+                                                      staging: "/var/folders/ab/x_1/T/SystemSentinel-startup-items-1", uid: 501)
+        XCTAssertEqual(cmd, "f=0; /bin/launchctl bootout system '/Library/LaunchDaemons/com.microsoft.OneDriveStandaloneUpdater.plist' 2>/dev/null; "
+            + "/bin/mv -f '/Library/LaunchDaemons/com.microsoft.OneDriveStandaloneUpdater.plist' '/var/folders/ab/x_1/T/SystemSentinel-startup-items-1/Daemons/com.microsoft.OneDriveStandaloneUpdater.plist' "
+            + "&& /usr/sbin/chown 501 '/var/folders/ab/x_1/T/SystemSentinel-startup-items-1/Daemons/com.microsoft.OneDriveStandaloneUpdater.plist' || f=1; "
+            + "/bin/launchctl bootout gui/501 '/Library/LaunchAgents/com.microsoft.SyncReporter.plist' 2>/dev/null; "
+            + "/bin/mv -f '/Library/LaunchAgents/com.microsoft.SyncReporter.plist' '/var/folders/ab/x_1/T/SystemSentinel-startup-items-1/Agents/com.microsoft.SyncReporter.plist' "
+            + "&& /usr/sbin/chown 501 '/var/folders/ab/x_1/T/SystemSentinel-startup-items-1/Agents/com.microsoft.SyncReporter.plist' || f=1; exit $f")
+        // Anything that could break out of the quoting, or reach outside the two folders, refuses the lot.
+        let ok = "/Library/LaunchAgents/a.plist"
+        for bad in ["/Library/LaunchAgents/a'b.plist", "/Library/LaunchAgents/a\"b.plist", "/Library/LaunchAgents/a b.plist",
+                    "/Library/LaunchAgents/a.plist\n", "/Library/LaunchAgents/../LaunchDaemons/a.plist", "/Library/LaunchAgents/sub/a.plist",
+                    "/System/Library/LaunchDaemons/a.plist", "/Library/LaunchAgents/a.txt", "/Library/LaunchAgents/.plist", "/Library/LaunchAgents/$(x).plist"] {
+            XCTAssertNil(CheckParse.removeSystemItemsCommand(plists: [ok, bad], staging: "/tmp/s", uid: 501), bad)
+        }
+        for bad in ["/tmp/a b", "/tmp/'x", "/tmp/../etc", "tmp/s", "/tmp/s\n"] {
+            XCTAssertNil(CheckParse.removeSystemItemsCommand(plists: [ok], staging: bad, uid: 501), bad)
+        }
+        XCTAssertNil(CheckParse.removeSystemItemsCommand(plists: [], staging: "/tmp/s", uid: 501))
+    }
+
     func testNetworkAndSystemParsers() {
         let ping = """
         5 packets transmitted, 4 packets received, 20.0% packet loss
