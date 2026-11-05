@@ -206,7 +206,7 @@ swift build                    # debug build
 bash scripts/build-app.sh      # test, build, bundle, install, launch
 bash scripts/release.sh        # zip and .dmg in dist/; signs and notarises
                                # when DEVELOPER_ID and NOTARY_PROFILE are set
-bash scripts/publish-release.sh NOTES.md  # release.sh, then tag, push and publish all
+bash scripts/publish-release.sh NOTES.md  # release.sh, then tag, push and publish all, and the .dmg files to S3
                                # three files, and check the website's .dmg link serves it
 ```
 
