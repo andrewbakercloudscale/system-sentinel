@@ -119,7 +119,7 @@ private struct MemoryTimeline: View {
         Card(title: "Memory and swap over time", symbol: "chart.xyaxis.line", tint: Tab.memory.color,
              trailing: AnyView(ChipPicker(options: offered.map(\.0), selection: $range, color: Tab.memory.color))) {
             HStack(spacing: 8) {
-                StatTile(symbol: "externaldrive.fill", color: Color(hex: "#d97706"), value: gb(s.peakSwap),
+                StatTile(symbol: "externaldrive.fill", color: Theme.swap, value: gb(s.peakSwap),
                          label: s.peakSwapAt.map { "peak swap, \($0.formatted(.dateTime.weekday(.abbreviated).hour().minute()))" } ?? "peak swap")
                 StatTile(symbol: "memorychip", color: Tab.memory.color, value: gb(s.peakUsed), label: "peak in use")
                 StatTile(symbol: "gauge.with.dots.needle.67percent", color: s.warningMinutes + s.criticalMinutes > 0 ? Theme.heat(80) : Tab.battery.color,
@@ -137,13 +137,14 @@ private struct MemoryTimeline: View {
                     }
                     ForEach(buckets) { b in
                         AreaMark(x: .value("Time", b.start, unit: unit), y: .value("GB", b.used), series: .value("Series", "In use"), stacking: .unstacked)
-                            .foregroundStyle(Tab.memory.color.opacity(0.25))
+                            .foregroundStyle(Tab.memory.color.opacity(0.18))
                         LineMark(x: .value("Time", b.start, unit: unit), y: .value("GB", b.used), series: .value("Series", "In use"))
                             .foregroundStyle(Tab.memory.color)
                         AreaMark(x: .value("Time", b.start, unit: unit), y: .value("GB", b.swap), series: .value("Series", "Swap"), stacking: .unstacked)
-                            .foregroundStyle(Color(hex: "#d97706").opacity(0.3))
+                            .foregroundStyle(Theme.swap.opacity(0.4))
                         LineMark(x: .value("Time", b.start, unit: unit), y: .value("GB", b.swap), series: .value("Series", "Swap"))
-                            .foregroundStyle(Color(hex: "#d97706"))
+                            .foregroundStyle(Theme.swap)
+                            .lineStyle(StrokeStyle(lineWidth: 2.5))
                     }
                     if total > 0 {
                         RuleMark(y: .value("RAM", total)).foregroundStyle(Color.primary.opacity(0.35))
@@ -168,7 +169,7 @@ private struct MemoryTimeline: View {
                 .frame(height: 140)
                 HStack(spacing: 12) {
                     legend(Tab.memory.color, "In use")
-                    legend(Color(hex: "#d97706"), "Swap on disk")
+                    legend(Theme.swap, "Swap on disk")
                     legend(Color(hex: "#d97706").opacity(0.35), "Under pressure")
                 }
 
