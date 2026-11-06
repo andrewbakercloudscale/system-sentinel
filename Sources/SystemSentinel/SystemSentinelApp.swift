@@ -134,11 +134,28 @@ struct MenuView: View {
     /// Fixed, so switching tabs never resizes the window (a resize made the menu jump).
     static let contentHeight: CGFloat = 560
 
+    /// The header's amber and red reasons, on the tab that explains each one: the worst colour
+    /// wins, and the reasons are joined for the hover text.
+    static func tabWarnings(_ health: HealthRAG) -> [Tab: (rag: LoadRAG, why: String)] {
+        var out: [Tab: (rag: LoadRAG, why: String)] = [:]
+        for r in health.reasons {
+            let t = HealthChip.tab(for: r.symbol)
+            let text = r.text.prefix(1).uppercased() + r.text.dropFirst()
+            if let w = out[t] {
+                out[t] = (w.rag == .red || r.rag == .red ? .red : .amber, w.why + ", " + r.text)
+            } else {
+                out[t] = (r.rag, String(text))
+            }
+        }
+        return out
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             header
             TabBar(selection: $tab, badges: [.events: model.flagged.count, .checkup: model.attention().count],
-                   unsaved: model.settingsEdits.map { $0 != SettingsDraft(model) } == true ? [.settings] : [])
+                   unsaved: model.settingsEdits.map { $0 != SettingsDraft(model) } == true ? [.settings] : [],
+                   warnings: Self.tabWarnings(model.health))
                 .onChange(of: tab) { _, t in
                     guard !fullLength else { return }
                     UserDefaults.standard.set(t.title, forKey: "lastTab")

@@ -280,6 +280,9 @@ struct TabBar: View {
     var badges: [Tab: Int] = [:]
     /// Tabs holding unsaved changes: a pencil dot instead of a count.
     var unsaved: Set<Tab> = []
+    /// Tabs explaining something amber or red in the header (memory under pressure, disk
+    /// low): a warning triangle in that colour, so the tab to click stands out.
+    var warnings: [Tab: (rag: LoadRAG, why: String)] = [:]
     @State private var hover: Tab?
 
     var body: some View {
@@ -312,13 +315,21 @@ struct TabBar: View {
                                 .frame(width: 15, height: 15).background(Circle().fill(Tab.events.color))
                                 .offset(x: -6, y: 3)
                                 .accessibilityLabel("Unsaved changes")
+                        } else if let w = warnings[tab] {
+                            Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 9, weight: .bold)).foregroundStyle(.white)
+                                .frame(width: 17, height: 17)
+                                .background(Circle().fill(w.rag == .red ? Theme.heat(100) : Color(hex: "#d97706")))
+                                .overlay(Circle().stroke(Color.white, lineWidth: 1.5))
+                                .offset(x: -6, y: 3)
+                                .accessibilityLabel("Needs attention: \(w.why)")
                         }
                     }
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .onHover { hover = $0 ? tab : (hover == tab ? nil : hover) }
-                .tip(unsaved.contains(tab) ? "\(tab.title): unsaved changes" : tab.title)
+                .tip(unsaved.contains(tab) ? "\(tab.title): unsaved changes"
+                     : warnings[tab].map { "\(tab.title): \($0.why)" } ?? tab.title)
             }
         }
     }
