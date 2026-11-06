@@ -17,6 +17,9 @@ enum Theme {
     /// Trends (on Overview) and Rules (on Settings) kept their colours when they stopped being tabs.
     static let trends = Color(light: "#9333ea", dark: "#c084fc")
     static let rules = Color(light: "#0d9488", dark: "#2dd4bf")
+    /// Swap in the memory timeline: pink, so it stands apart from the blue in use and the
+    /// amber pressure bands it is drawn over.
+    static let swap = Color(light: "#db2777", dark: "#f472b6")
 
     static let heroGradient = LinearGradient(
         colors: [Color(light: "#4f46e5", dark: "#3b33b8"), Color(light: "#9333ea", dark: "#6d28b0")],
