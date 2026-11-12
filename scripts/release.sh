@@ -54,6 +54,12 @@ if [[ -n "${DEVELOPER_ID:-}" ]]; then
     fi
 else
     source "$(dirname "$0")/sign-id.sh"
+    # A release signed ad-hoc is refused by every installed copy's updater: never ship one by accident.
+    if [[ "$SENTINEL_SIGN_ID" == "-" && -z "${ALLOW_ADHOC:-}" ]]; then
+        echo "!! no code signing identity found: the release would be ad-hoc signed and the in-app updater would refuse it." >&2
+        echo "   Restore the signing certificate, or set ALLOW_ADHOC=1 to ship it anyway." >&2
+        exit 1
+    fi
     echo "== sign: $SENTINEL_SIGN_ID (no DEVELOPER_ID: users need xattr -dr com.apple.quarantine)"
     codesign --force --sign "$SENTINEL_SIGN_ID" "$APP"
     codesign --verify "$APP"
