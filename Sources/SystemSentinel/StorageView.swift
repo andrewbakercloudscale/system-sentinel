@@ -20,6 +20,7 @@ struct StorageView: View {
             StorageTimeline(store: store)
             WhatGrew(model: model, store: store).id("grew")
             QuickCleanups(store: store).id("cleanups")
+            CachesCard(store: store).id("caches")
             DownloadsCard(store: store).id("downloads")
             WhereIsTheSpace(store: store).id("space")
             LargeFiles(store: store)

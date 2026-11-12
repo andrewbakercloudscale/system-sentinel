@@ -601,6 +601,8 @@ final class CheckupStore: ObservableObject {
     /// The everyday restarts, always available.
     static let toolbox: [(title: String, about: String, symbol: String, fix: Check.Fix)] = [
         ("Flush DNS cache", "Websites not loading or going to the wrong place after a network change.", "network", .admin(label: "Flush DNS cache", command: .flushDNS)),
+        ("Reset network", "Pages half load, or the Mac keeps an old address after moving network. Flushes DNS and the address table and asks the router for a fresh address. Connections drop for a few seconds.", "arrow.triangle.2.circlepath",
+         .admin(label: "Reset network", command: .resetNetwork)),
         ("Restart sound", "No sound, crackling, or the wrong output device stuck.", "speaker.wave.2.fill", .admin(label: "Restart sound", command: .restartAudio)),
         ("Restart Bluetooth", "Devices that will not connect or keep dropping. Bluetooth keyboards and mice drop for a few seconds.", "dot.radiowaves.left.and.right", .admin(label: "Restart Bluetooth", command: .restartBluetooth)),
         ("Restart Finder", "Finder windows frozen or not updating.", "folder.fill", .run(label: "Restart Finder", path: "/usr/bin/killall", args: ["Finder"])),
@@ -621,6 +623,8 @@ final class CheckupStore: ObservableObject {
         ("Fix Open With", "The Open With menu lists apps twice, or files open in the wrong app. Takes a minute.", "arrow.up.forward.app.fill",
          .run(label: "Fix Open With", path: "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister",
               args: ["-kill", "-r", "-domain", "local", "-domain", "system", "-domain", "user"])),
+        ("Clear font cache", "Text drawn in the wrong font, garbled characters, or a font that will not show. Takes effect after logging out and in.", "textformat",
+         .run(label: "Clear font cache", path: "/usr/bin/atsutil", args: ["databases", "-removeUser"])),
         ("Clear print queue", "A stuck print job blocks everything after it.", "printer.fill", .admin(label: "Clear print queue", command: .cancelPrintJobs)),
         ("Restart Software Update", "Software Update stuck on Checking or a download that never finishes.", "arrow.down.circle.fill",
          .admin(label: "Restart Software Update", command: .restartSoftwareUpdate)),
