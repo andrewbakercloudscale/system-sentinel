@@ -66,3 +66,13 @@ final class ToolboxScriptTests: XCTestCase {
         XCTAssertTrue(q.contains("&& exit 1"))
     }
 }
+
+final class ZeroTrustTests: XCTestCase {
+    func testBothClientsNamed() {
+        XCTAssertEqual(NetworkLink.zeroTrust(processNames: ["ZscalerTunnel", "com.netskope.client.Netskope-Client.NetskopeClientMacAppProxy", "Finder"]),
+                       ["Netskope", "Zscaler"])
+        XCTAssertEqual(NetworkLink.zeroTrust(processNames: ["stAgentSvc"]), ["Netskope"])
+        XCTAssertEqual(NetworkLink.zeroTrust(processNames: ["Netskope Client"]), ["Netskope"])
+        XCTAssertEqual(NetworkLink.zeroTrust(processNames: ["tailscaled", "Finder"]), [])
+    }
+}

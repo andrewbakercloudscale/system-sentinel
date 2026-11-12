@@ -13,6 +13,8 @@ struct CheckupView: View {
     /// What the page shows, held still while it is read: taken when the page opens, on Check
     /// again, and when the person acts (ignore, a symptom, a fix), never from the live samples.
     @State private var shown: Shown?
+    /// Filters every check and quick fix on the page by what it says.
+    @State private var query = ""
 
     struct Shown {
         var attention: Attention
@@ -29,17 +31,22 @@ struct CheckupView: View {
         let s = shown ?? Shown(attention: model.attention(), vitals: model.vitals(), checks: store.checks, at: Date())
         VStack(spacing: 10) {
             hero(s)
-            SymptomsCard(model: model, store: store, attention: s.attention, vitals: s.vitals, open: $symptom) { AnyView(row($0)) }
-            ForEach(Check.Area.allCases, id: \.self) { area in
-                let list = s.checks.filter { $0.area == area }
-                if !list.isEmpty {
-                    Card(title: area.rawValue, symbol: area.symbol, tint: Tab.checkup.color,
-                         trailing: AnyView(summary(list))) {
-                        ForEach(list) { c in row(c) }
+            searchField
+            if query.trimmingCharacters(in: .whitespaces).isEmpty {
+                SymptomsCard(model: model, store: store, attention: s.attention, vitals: s.vitals, open: $symptom) { AnyView(row($0)) }
+                ForEach(Check.Area.allCases, id: \.self) { area in
+                    let list = s.checks.filter { $0.area == area }
+                    if !list.isEmpty {
+                        Card(title: area.rawValue, symbol: area.symbol, tint: Tab.checkup.color,
+                             trailing: AnyView(summary(list))) {
+                            ForEach(list) { c in row(c) }
+                        }
                     }
                 }
+                toolbox
+            } else {
+                results(s)
             }
-            toolbox
         }
         .onAppear(perform: capture)
         .onChange(of: store.ranAt) { _, _ in capture() }
@@ -89,6 +96,56 @@ struct CheckupView: View {
         .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing)))
     }
 
+    private var searchField: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+            TextField("Search checks and fixes: wifi, firewall, Outlook, printer…", text: $query)
+                .textFieldStyle(.plain).font(.callout)
+            if !query.isEmpty {
+                Button { query = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }
+                    .buttonStyle(.plain).tip("Clear the search")
+            }
+        }
+        .padding(.horizontal, 12).padding(.vertical, 8)
+        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Theme.cardFill))
+        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(Theme.cardStroke.opacity(0.5)))
+    }
+
+    /// Every word must appear somewhere in what the check or fix says.
+    private func matches(_ text: [String]) -> Bool {
+        let hay = text.joined(separator: " ")
+        return query.split(separator: " ").allSatisfy { hay.localizedCaseInsensitiveContains($0) }
+    }
+
+    private func results(_ s: Shown) -> some View {
+        let checks = s.checks.filter { c in
+            matches([c.title, c.detail, c.why ?? "", c.area.rawValue] + c.steps + c.items + c.fixes.map(\.label))
+        }
+        let tools = CheckupStore.toolbox.filter { matches([$0.title, $0.about]) }
+        let pseudo = Check(id: "toolbox", area: .system, title: "", status: .info, detail: "")
+        return Card(title: "\(checks.count + tools.count) match\(checks.count + tools.count == 1 ? "" : "es") for “\(query)”", symbol: "magnifyingglass", tint: Tab.checkup.color) {
+            ForEach(checks) { c in row(c) }
+            if !tools.isEmpty {
+                Text("QUICK FIXES").sectionLabel().padding(.top, checks.isEmpty ? 0 : 6)
+                ForEach(tools, id: \.title) { t in
+                    HStack(spacing: 10) {
+                        SymbolTile(symbol: t.symbol, color: Tab.checkup.color, size: 26)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(t.title).font(.callout.weight(.semibold))
+                            Text(t.about).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                        }
+                        Spacer(minLength: 8)
+                        fixButton(t.fix, pseudo)
+                    }
+                }
+            }
+            if checks.isEmpty && tools.isEmpty {
+                Text("Nothing on this page mentions that. The symptoms list (clear the search) covers problems in plain words.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+    }
+
     private func summary(_ list: [Check]) -> some View {
         let bad = list.filter { $0.status >= .warning }.count
         return Text(bad == 0 ? "all good" : "\(bad) to look at").font(.caption.weight(.semibold))
@@ -115,7 +172,8 @@ struct CheckupView: View {
 
     private func row(_ c: Check) -> some View {
         let expandable = c.why != nil || !c.steps.isEmpty || !c.items.isEmpty
-        let isOpen = open.contains(c.id) || (Model.snapshotDir != nil && c.status >= .warning)
+        // Search results open, so the line that matched (often in the details) is in view.
+        let isOpen = open.contains(c.id) || (Model.snapshotDir != nil && c.status >= .warning) || !query.trimmingCharacters(in: .whitespaces).isEmpty
         return VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .top, spacing: 10) {
                 Image(systemName: symbol(c.status)).font(.title3).foregroundStyle(color(c.status)).frame(width: 22)

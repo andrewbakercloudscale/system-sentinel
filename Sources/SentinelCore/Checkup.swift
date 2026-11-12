@@ -197,6 +197,13 @@ public enum CheckParse {
     /// `netstat -anv -p tcp`, ESTABLISHED lines to ports that carry data in the clear.
     public static let clearTextPorts: [Int: String] = [21: "FTP", 23: "Telnet", 25: "SMTP", 80: "HTTP", 110: "POP3", 143: "IMAP"]
 
+    /// macOS processes that use plain HTTP by design, and why that is safe.
+    public static let clearTextExpected: [String: String] = [
+        "trustd": "checking a website's certificate has not been revoked (OCSP and CRL). These answers are signed by the certificate authority, so they cannot be faked, and they carry nothing private",
+        "ocspd": "checking a certificate has not been revoked (OCSP). The answers are signed and carry nothing private",
+        "nsurlsessiond": "a background download macOS or an app asked for; downloads it installs are checked against their signature",
+    ]
+
     public static func clearText(_ s: String) -> [Connection] {
         var out: [Connection] = []
         for line in s.split(separator: "\n") where line.contains("ESTABLISHED") {
