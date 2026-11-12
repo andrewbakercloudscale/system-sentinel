@@ -20,6 +20,9 @@ final class StorageStore: ObservableObject {
     @Published var fullAccess = Permissions.hasFullDiskAccess()
     /// The folder "Where the space is" is browsing, relative to home; set from "What grew" too.
     @Published var browse = ""
+    /// Each app's cache, biggest first; nil until measured. See CachesCard.swift.
+    @Published var caches: [AppCache]?
+    @Published var cachesMeasuring = false
 
     let history: StorageHistory
     private let treeURL: URL

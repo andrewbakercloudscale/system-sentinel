@@ -56,6 +56,9 @@ public struct Check: Identifiable, Equatable, Sendable {
         case firewallOn = "/usr/libexec/ApplicationFirewall/socketfilterfw --setglobalstate on"
         case stealthOn = "/usr/libexec/ApplicationFirewall/socketfilterfw --setstealthmode on"
         case flushDNS = "/usr/bin/dscacheutil -flushcache; /usr/bin/killall -HUP mDNSResponder"
+        /// Flushes DNS and the ARP table and asks for a fresh DHCP lease on every interface
+        /// that has one (an interface without a lease, set by hand, is left alone).
+        case resetNetwork = "/usr/bin/dscacheutil -flushcache; /usr/bin/killall -HUP mDNSResponder; /usr/sbin/arp -a -d >/dev/null 2>&1; for i in $(/sbin/ifconfig -l); do /usr/sbin/ipconfig getpacket $i >/dev/null 2>&1 && /usr/sbin/ipconfig set $i DHCP; done; true"
         case restartAudio = "/usr/bin/killall coreaudiod"
         case restartBluetooth = "/usr/bin/pkill bluetoothd"
         case spotlightReindex = "/usr/bin/mdutil -E /"
