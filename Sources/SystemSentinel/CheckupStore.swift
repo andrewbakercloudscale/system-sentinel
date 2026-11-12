@@ -250,10 +250,32 @@ final class CheckupStore: ObservableObject {
         }
         let clear = CheckParse.clearText(ns)
         if !clear.isEmpty {
-            out.append(Check(id: "cleartext", area: .security, title: "\(clear.count) unencrypted connection\(clear.count == 1 ? "" : "s") open", status: .warning,
-                             detail: "Data on these goes over the network in plain text: anyone on the same Wi-Fi can read it.",
-                             why: "HTTP, FTP, Telnet, POP3 and IMAP without TLS send content (and sometimes passwords) unencrypted. Modern apps use TLS on port 443; an app still using these ports is worth updating or replacing.",
-                             items: clear.map { "\($0.process) → \($0.remote) (\(CheckParse.clearTextPorts[$0.port] ?? "port \($0.port)"))" }))
+            // Who each address belongs to, from its reverse DNS name (an Akamai or Cloudflare
+            // edge, say), so a line says more than a bare number.
+            func owner(_ ip: String) -> String {
+                let name = sh("/usr/bin/dig", ["-x", ip, "+short", "+time=1", "+tries=1"], timeout: 3)
+                    .split(separator: "\n").first.map { String($0).trimmingCharacters(in: CharacterSet(charactersIn: ". ")) } ?? ""
+                return name.isEmpty || name.hasPrefix(";") ? ip : "\(name) (\(ip))"
+            }
+            let lines = clear.map { c in
+                "\(c.process) → \(owner(c.remote)), \(CheckParse.clearTextPorts[c.port] ?? "port \(c.port)")"
+                    + (CheckParse.clearTextExpected[c.process].map { ": \($0.components(separatedBy: ". ").first ?? $0)" } ?? "")
+            }
+            let unexpected = clear.filter { CheckParse.clearTextExpected[$0.process] == nil }
+            let apps = Array(Set(unexpected.map(\.process))).sorted()
+            if unexpected.isEmpty {
+                let who = Array(Set(clear.map(\.process))).sorted()
+                out.append(Check(id: "cleartext", area: .security, title: "\(clear.count) plain HTTP connection\(clear.count == 1 ? "" : "s") from macOS, as expected", status: .ok,
+                                 detail: who.compactMap { p in CheckParse.clearTextExpected[p].map { "\(p) is \($0)." } }.joined(separator: " "),
+                                 items: lines))
+            } else {
+                out.append(Check(id: "cleartext", area: .security, title: "\(unexpected.count) unencrypted connection\(unexpected.count == 1 ? "" : "s") open, from \(apps.prefix(3).joined(separator: ", "))", status: .warning,
+                                 detail: "Data on these goes over the network in plain text: anyone on the same Wi-Fi can read it.",
+                                 why: "HTTP, FTP, Telnet, POP3 and IMAP without TLS send content (and sometimes passwords) unencrypted. Modern apps use TLS on port 443; an app still using these ports is worth updating or replacing."
+                                    + (unexpected.count < clear.count ? " Lines from trustd and other macOS services are expected and safe: they say why." : ""),
+                                 steps: ["Look up the app below: if it is an old version, update it.", "On public Wi-Fi, avoid signing in to anything through these apps until they use TLS."],
+                                 items: lines))
+            }
         }
         return out
     }
@@ -305,7 +327,8 @@ final class CheckupStore: ObservableObject {
     /// The zero trust client running (Zscaler, Netskope, Cloudflare WARP), if any.
     nonisolated static func zeroTrustClient() -> String? {
         let names = sh("/bin/ps", ["-axco", "comm"], timeout: 5).split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }
-        return NetworkLink.vpn(processNames: names).flatMap { NetworkLink.zeroTrustClients.contains($0) ? $0 : nil }
+        let all = NetworkLink.zeroTrust(processNames: names)
+        return all.isEmpty ? nil : ListFormatter.localizedString(byJoining: all)
     }
 
     nonisolated static func isSigned(_ path: String) -> Bool {

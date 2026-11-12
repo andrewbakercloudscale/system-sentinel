@@ -541,6 +541,16 @@ public struct NetworkLink: Equatable, Sendable {
 
     /// A zero trust client wins, then a named client over macOS's generic VPN service, which runs
     /// alongside most of them.
+    /// Every zero trust client running, in a fixed order: some companies run two (Zscaler
+    /// for web traffic, Netskope for data loss prevention), and both should be named. Matched
+    /// by exact process name and by name contained (Netskope's app proxy runs as
+    /// com.netskope.client.Netskope-Client.NetskopeClientMacAppProxy).
+    public static func zeroTrust(processNames: [String]) -> [String] {
+        var found = Set(processNames.compactMap { vpnClients[$0] })
+        for n in processNames { if let v = DNSMap.tunnelApps.first(where: { n.localizedCaseInsensitiveContains($0.0) })?.1 { found.insert(v) } }
+        return zeroTrustClients.sorted().filter(found.contains)
+    }
+
     public static func vpn(processNames: [String]) -> String? {
         var found = processNames.compactMap { vpnClients[$0] }
         // A client whose process has another name ("Zscaler", "FortiTray"): the tunnel apps list.
