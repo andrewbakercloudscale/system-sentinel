@@ -64,6 +64,8 @@ public struct Check: Identifiable, Equatable, Sendable {
         case spotlightReindex = "/usr/bin/mdutil -E /"
         case spotlightOn = "/usr/bin/mdutil -i on /"
         case syncClock = "/usr/bin/sntp -sS time.apple.com"
+        /// macOS 15 and later: fetch the newest XProtect definitions now.
+        case xprotectUpdate = "/usr/bin/xprotect update"
         case guestOff = "/usr/bin/defaults write /Library/Preferences/com.apple.loginwindow GuestEnabled -bool false"
         case cancelPrintJobs = "/usr/bin/cancel -a -"
         /// macOS's own Reset printing system: every printer, queue and job is removed.
@@ -257,6 +259,32 @@ public enum CheckParse {
             if !old.isEmpty { why.append("accepts TLS 1.0/1.1 for \(old.sorted().prefix(3).joined(separator: ", "))") }
         }
         return why.isEmpty ? nil : why.joined(separator: "; ")
+    }
+
+    /// `brew outdated --json=v2`: each outdated formula with the version installed now, and
+    /// the outdated casks. nil when it is not that JSON.
+    public static func brewOutdated(_ json: String) -> (formulae: [(name: String, installed: String?)], casks: [String])? {
+        guard let d = try? JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any] else { return nil }
+        let formulae = (d["formulae"] as? [[String: Any]] ?? []).compactMap { f -> (name: String, installed: String?)? in
+            guard let n = f["name"] as? String else { return nil }
+            return (n, (f["installed_versions"] as? [String])?.last)
+        }
+        let casks = (d["casks"] as? [[String: Any]] ?? []).compactMap { $0["name"] as? String }
+        return (formulae, casks)
+    }
+
+    /// `brew info --cask --json=v2`: where each cask put what it installs (apps, fonts…), so
+    /// their size can be measured. Uninstall and zap steps are not things it installed.
+    public static func caskTargets(_ json: String) -> [String] {
+        guard let d = try? JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any] else { return [] }
+        var out: [String] = []
+        for c in d["casks"] as? [[String: Any]] ?? [] {
+            for a in c["artifacts"] as? [[String: Any]] ?? [] where a["uninstall"] == nil && a["zap"] == nil {
+                if let t = a["target"] as? String { out.append(t) }
+                else if let apps = a["app"] as? [String] { out += apps.compactMap { $0.hasSuffix(".app") ? "/Applications/" + $0 : nil } }
+            }
+        }
+        return out
     }
 
     /// A launch agent or daemon plist: its label and the program it starts.

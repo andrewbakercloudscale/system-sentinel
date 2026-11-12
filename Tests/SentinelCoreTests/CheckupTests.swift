@@ -69,6 +69,16 @@ final class CheckupTests: XCTestCase {
         XCTAssertEqual(CheckParse.launchItem(["Label": "x", "ProgramArguments": ["/bin/a", "-b"]]).program, "/bin/a")
     }
 
+    func testBrewOutdatedAndCaskTargets() {
+        let o = CheckParse.brewOutdated(#"{"formulae":[{"name":"abseil","installed_versions":["1","2"],"current_version":"3"}],"casks":[{"name":"alt-tab"}]}"#)!
+        XCTAssertEqual(o.formulae.map(\.name), ["abseil"])
+        XCTAssertEqual(o.formulae.first?.installed, "2")
+        XCTAssertEqual(o.casks, ["alt-tab"])
+        XCTAssertNil(CheckParse.brewOutdated("Error: no network"))
+        let info = #"{"casks":[{"artifacts":[{"uninstall":[{"quit":"x"}]},{"app":["AltTab.app"],"target":"/Applications/AltTab.app"},{"zap":[{"trash":["~/x"]}]}]},{"artifacts":[{"app":["Foo.app"]},{"font":["a.ttf"],"target":"/Users/a/Library/Fonts/a.ttf"}]}]}"#
+        XCTAssertEqual(CheckParse.caskTargets(info), ["/Applications/AltTab.app", "/Applications/Foo.app", "/Users/a/Library/Fonts/a.ttf"])
+    }
+
     func testRemoveSystemItemsCommand() {
         let cmd = CheckParse.removeSystemItemsCommand(plists: ["/Library/LaunchDaemons/com.microsoft.OneDriveStandaloneUpdater.plist",
                                                                "/Library/LaunchAgents/com.microsoft.SyncReporter.plist"],
