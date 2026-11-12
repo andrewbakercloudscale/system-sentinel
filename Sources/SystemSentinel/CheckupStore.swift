@@ -186,6 +186,9 @@ final class CheckupStore: ObservableObject {
             f.locale = Locale(identifier: "en_US_POSIX")
             f.dateFormat = "yyyy-MM-dd HH:mm:ss Z"
             xpDate = parts.count > 1 ? f.date(from: parts[1].trimmingCharacters(in: .whitespacesAndNewlines)) : nil
+            // macOS 26 can report "Installed: 0001-01-01", a placeholder, not a date: it made
+            // the check say the definitions were 739,933 days old. Fall back to the bundle.
+            if let d = xpDate, d < Date(timeIntervalSince1970: 946_684_800) { xpDate = nil }
         }
         if xpDate == nil {
             let bundles = ["/private/var/protected/xprotect/XProtect.bundle", "/Library/Apple/System/Library/CoreServices/XProtect.bundle"]
@@ -195,7 +198,9 @@ final class CheckupStore: ObservableObject {
         if let mod = xpDate {
             let days = Int(Date().timeIntervalSince(mod) / 86_400)
             out.append(Check(id: "xprotect", area: .security, title: "XProtect malware definitions \(xpVersion ?? "?"), \(days) day\(days == 1 ? "" : "s") old", status: days > 60 ? .warning : .ok,
-                             detail: days > 60 ? "Apple usually ships new definitions every few weeks: updates may be blocked." : "Up to date."))
+                             detail: days > 60 ? "Apple usually ships new definitions every few weeks: updates may be blocked." : "Up to date.",
+                             steps: days > 60 ? ["Check now with the button. If they stay old, a management profile or a firewall may be blocking Apple's update servers: ask IT."] : [],
+                             fixes: days > 60 ? [.admin(label: "Check for new definitions", command: .xprotectUpdate)] : []))
         }
         let login = UserDefaults(suiteName: "/Library/Preferences/com.apple.loginwindow")
         if login?.bool(forKey: "GuestEnabled") == true {
@@ -333,7 +338,10 @@ final class CheckupStore: ObservableObject {
                                  steps: gateway.map { $0.loss < 100 ? [ztn.map { "The router answers, so check \($0) is connected and signed in." } ?? "The router answers, so the problem is the internet connection or the ISP: restart the router or call the provider."] : ["The router does not answer either: reconnect Wi-Fi or check the cable."] } ?? []))
             } else if i.loss >= 10 || (i.avg ?? 0) >= 150 {
                 let local = (gateway?.loss ?? 0) >= 10 || (gateway?.avg ?? 0) >= 50
-                out.append(Check(id: "net-internet", area: .network, title: "Connection is unreliable: \(Int(i.loss))% loss, \(Int(i.avg ?? 0)) ms", status: .warning,
+                // Loss makes a connection unreliable; delay alone only makes it slow.
+                let title = i.loss >= 10 ? "Connection is unreliable: \(Int(i.loss))% loss, \(Int(i.avg ?? 0)) ms"
+                                         : "Connection is slow: \(Int(i.avg ?? 0)) ms to the internet, no loss"
+                out.append(Check(id: "net-internet", area: .network, title: title, status: .warning,
                                  detail: (local ? "The router link itself is poor: Wi-Fi signal or interference." : "The router link is fine, so the slowness is beyond it: ISP or VPN.") + gw + how,
                                  steps: local ? ["Move closer to the router or use 5 GHz.", "Turn Wi-Fi off and on."] : ["Check the VPN, or restart the router."],
                                  // The interface name goes into a shell line, so only plain names like en0 pass.
@@ -519,13 +527,32 @@ final class CheckupStore: ObservableObject {
         }
         // Homebrew packages with newer versions.
         if let brew = ["/opt/homebrew/bin/brew", "/usr/local/bin/brew"].first(where: { fm.isExecutableFile(atPath: $0) }) {
-            let outdated = sh(brew, ["outdated", "--quiet"], timeout: 60).split(separator: "\n").map(String.init)
-            if outdated.count >= 5 {
-                out.append(Check(id: "brew", area: .apps, title: "\(outdated.count) Homebrew packages are out of date", status: .info,
-                                 detail: "Older tools miss security fixes.", fixes: [.run(label: "Upgrade all (takes a while)", path: brew, args: ["upgrade"])], items: outdated))
+            if let o = CheckParse.brewOutdated(sh(brew, ["outdated", "--json=v2"], timeout: 60)), o.formulae.count + o.casks.count >= 5 {
+                let names = o.formulae.map(\.name) + o.casks
+                let size = brewUpgradeSize(brew: brew, o)
+                out.append(Check(id: "brew", area: .apps, title: "\(names.count) Homebrew packages are out of date" + (size > 0 ? ", about \(ReportDocument.bytes(size))" : ""), status: .info,
+                                 detail: "Older tools miss security fixes."
+                                    + (size > 0 ? " The versions installed now take about \(ReportDocument.bytes(size)); the new ones are usually similar, so that is roughly what the upgrade downloads and installs, with old versions removed afterwards." : ""),
+                                 fixes: [.run(label: "Upgrade all (takes a while)", path: brew, args: ["upgrade"])], items: names))
             }
         }
         return out
+    }
+
+    /// Rough size of a Homebrew upgrade: what the outdated packages take now (each formula's
+    /// installed version in the Cellar, each cask's folder and the apps or fonts it put in
+    /// place). Bounded to 20 seconds; 0 when nothing could be measured.
+    nonisolated static func brewUpgradeSize(brew: String, _ o: (formulae: [(name: String, installed: String?)], casks: [String])) -> UInt64 {
+        let prefix = URL(fileURLWithPath: brew).deletingLastPathComponent().deletingLastPathComponent()
+        let end = Date().addingTimeInterval(20)
+        var paths = o.formulae.compactMap { f in f.installed.map { prefix.appendingPathComponent("Cellar/\(f.name)/\($0)").path } }
+        if !o.casks.isEmpty {
+            paths += o.casks.map { prefix.appendingPathComponent("Caskroom/\($0)").path }
+            paths += CheckParse.caskTargets(sh(brew, ["info", "--cask", "--json=v2"] + o.casks, timeout: 30))
+        }
+        return paths.reduce(UInt64(0)) { sum, p in
+            sum + (Date() < end ? (DiskUsage.size(of: URL(fileURLWithPath: p), deadline: end)?.bytes ?? 0) : 0)
+        }
     }
 
     nonisolated static func updatesCheck(_ pending: [String]?, checking: Bool) -> Check {
