@@ -38,3 +38,31 @@ final class AppCachesTests: XCTestCase {
         }
     }
 }
+
+final class ToolboxScriptTests: XCTestCase {
+    /// Every script parses as shell, so a quoting slip fails here rather than on a click.
+    func testScriptsParse() throws {
+        for s in [ToolboxScript.rebuildMailIndex, ToolboxScript.clearRecentItems, ToolboxScript.resetMicrosoftSignIn,
+                  Check.AdminCommand.resetNetwork.rawValue, Check.AdminCommand.resetPrinting.rawValue] {
+            let p = Process()
+            p.executableURL = URL(fileURLWithPath: "/bin/sh")
+            p.arguments = ["-n", "-c", s]
+            try p.run()
+            p.waitUntilExit()
+            XCTAssertEqual(p.terminationStatus, 0, s)
+        }
+    }
+
+    /// Admin commands go inside an AppleScript string: a double quote or backslash would end it.
+    func testAdminCommandsHaveNoQuotes() {
+        for c in Check.AdminCommand.allCases {
+            XCTAssertFalse(c.rawValue.contains("\"") || c.rawValue.contains("\\"), c.rawValue)
+        }
+    }
+
+    func testQuitOnlyTouchesOpenApps() {
+        let q = ToolboxScript.quit([("MSTeams", "Microsoft Teams")])
+        XCTAssertTrue(q.hasPrefix("/usr/bin/pgrep -x 'MSTeams' >/dev/null && /usr/bin/osascript -e 'quit app \"Microsoft Teams\"'"))
+        XCTAssertTrue(q.contains("&& exit 1"))
+    }
+}

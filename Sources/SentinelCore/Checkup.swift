@@ -66,6 +66,8 @@ public struct Check: Identifiable, Equatable, Sendable {
         case syncClock = "/usr/bin/sntp -sS time.apple.com"
         case guestOff = "/usr/bin/defaults write /Library/Preferences/com.apple.loginwindow GuestEnabled -bool false"
         case cancelPrintJobs = "/usr/bin/cancel -a -"
+        /// macOS's own Reset printing system: every printer, queue and job is removed.
+        case resetPrinting = "/System/Library/Frameworks/ApplicationServices.framework/Frameworks/PrintCore.framework/Versions/A/printtool --reset -f"
         case restartSoftwareUpdate = "/usr/bin/killall softwareupdated"
         case autoSecurityUpdatesOn = "/usr/bin/defaults write /Library/Preferences/com.apple.SoftwareUpdate CriticalUpdateInstall -bool true; /usr/bin/defaults write /Library/Preferences/com.apple.SoftwareUpdate ConfigDataInstall -bool true"
     }
