@@ -76,7 +76,9 @@ extension CheckupStore {
                 return (u, d)
             }
         guard let newest = dated.max(by: { $0.1 < $1.1 }), let text = try? String(contentsOf: newest.0, encoding: .utf8) else { return nil }
-        return SymptomParse.panic(text)
+        // Name the agents that inspect files: the most common outside cause on a work Mac.
+        guard let p = SymptomParse.panic(text) else { return nil }
+        return p + (SecurityAgents.suspectNote(CheckupStore.securityAgents()).map { " " + $0 } ?? "")
     }
 }
 
