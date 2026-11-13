@@ -480,6 +480,16 @@ final class CheckupStore: ObservableObject {
         return (removed, failed, cancelled)
     }
 
+    /// Security, DLP and network agents: from the system extensions and running processes.
+    nonisolated static func securityAgents() -> [SecurityAgent] {
+        let procs = sh("/bin/ps", ["-axo", "pcpu=,comm="], timeout: 5).split(separator: "\n").compactMap { line -> (name: String, cpu: Double)? in
+            let t = line.trimmingCharacters(in: .whitespaces)
+            guard let sp = t.firstIndex(of: " "), let cpu = Double(t[..<sp].replacingOccurrences(of: ",", with: ".")) else { return nil }
+            return (String(t[sp...]).trimmingCharacters(in: .whitespaces), cpu)
+        }
+        return SecurityAgents.find(extensions: sh("/usr/bin/systemextensionsctl", ["list"], timeout: 5), processes: procs)
+    }
+
     nonisolated static func systemChecks() -> [Check] {
         var out: [Check] = []
         let fm = FileManager.default
@@ -516,12 +526,30 @@ final class CheckupStore: ObservableObject {
                                       bundleID: header.flatMap { CheckParse.crashBundleID(String(decoding: $0, as: UTF8.self)) })
         }
         if let crash = CheckParse.crashCheck(crashes, reports: userDir) { out.append(crash) }
+        let agents = securityAgents()
+        let note = SecurityAgents.suspectNote(agents)
         let panics = sysReports.filter { $0.name.hasPrefix("panic") && $0.date >= Date().addingTimeInterval(-30 * 86_400) }
         if !panics.isEmpty {
             out.append(Check(id: "panics", area: .system, title: "\(panics.count) unexpected restart\(panics.count == 1 ? "" : "s") (kernel panic) in 30 days", status: panics.count >= 2 ? .problem : .warning,
-                             detail: "The Mac crashed and restarted itself. Repeated panics usually point at a peripheral, a driver or failing hardware.",
-                             steps: ["Unplug hubs and docks to see if they stop.", "Update macOS.", "If they continue, run Apple Diagnostics (hold the power button at startup, then Command-D)."],
-                             fixes: [.reveal(label: "Show panic reports", path: "/Library/Logs/DiagnosticReports")]))
+                             detail: "The Mac crashed and restarted itself. Repeated panics usually point at a peripheral, a driver, security software or failing hardware.",
+                             why: note.map { $0 + " Note what you were doing at each panic: if it is always heavy file work, tell IT which agent and the times." },
+                             steps: (note == nil ? [] : ["If the panics come during heavy file work (exporting many files, unzipping, builds), report it to IT with the times: the security agent is the likely cause."])
+                                + ["Unplug hubs and docks to see if they stop.", "Update macOS.", "If they continue, run Apple Diagnostics (hold the power button at startup, then Command-D)."],
+                             fixes: [.reveal(label: "Show panic reports", path: "/Library/Logs/DiagnosticReports")],
+                             items: panics.sorted { $0.date > $1.date }.prefix(5).map { $0.date.formatted(date: .abbreviated, time: .shortened) }))
+        }
+        if !agents.isEmpty {
+            let busy = agents.filter { $0.cpu >= 50 }
+            let watching = agents.filter(\.suspect)
+            out.append(Check(id: "security-agents", area: .system,
+                             title: busy.isEmpty ? "\(agents.count) security or network agent\(agents.count == 1 ? "" : "s") on this Mac: \(agents.prefix(3).map(\.name).joined(separator: ", "))\(agents.count > 3 ? "…" : "")"
+                                                 : "\(busy.map(\.name).joined(separator: ", ")) \(busy.count == 1 ? "is" : "are") busy: \(Int(busy.reduce(0) { $0 + $1.cpu }))% CPU",
+                             status: busy.isEmpty ? .info : .warning,
+                             detail: watching.isEmpty ? "Tunnels that carry your traffic. They rarely slow the Mac itself."
+                                : "They inspect what the Mac does as it happens. Normally unnoticed, but when one falls behind it can make the whole Mac slow, freeze, or restart itself.",
+                             why: note,
+                             steps: busy.isEmpty ? [] : ["This is company software: do not remove it. Tell IT what you were doing and when it was busy."],
+                             items: agents.map(\.line)))
         }
         if let on = CheckParse.spotlightOn(sh("/usr/bin/mdutil", ["-s", "/"])), !on {
             out.append(Check(id: "spotlight", area: .system, title: "Spotlight indexing is off", status: .info,

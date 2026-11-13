@@ -71,8 +71,10 @@ final class StorageStore: ObservableObject {
         let now = Date()
         // Full Disk Access just granted: measure the folders that were left out.
         if !fullAccess, !scanning, Permissions.hasFullDiskAccess() { fullAccess = true; scan() }
-        if !scanning, foundAt.map({ now.timeIntervalSince($0) >= 6 * 3600 }) ?? true { SelfGuard.when("storage scan") { [weak self] in self?.scan() } }
-        if treeProgress == nil, tree.map({ now.timeIntervalSince($0.at) >= 86_400 }) ?? true, foundAt != nil { SelfGuard.when("folder sizes") { [weak self] in self?.scanTree() } }
+        // One disk walk at a time: the 6-hourly scan and the daily folder walk used to overlap
+        // and take one and a half cores for minutes.
+        if !scanning, treeProgress == nil, foundAt.map({ now.timeIntervalSince($0) >= 6 * 3600 }) ?? true { SelfGuard.when("storage scan") { [weak self] in if self?.treeProgress == nil { self?.scan() } } }
+        if !scanning, treeProgress == nil, tree.map({ now.timeIntervalSince($0.at) >= 86_400 }) ?? true, foundAt != nil { SelfGuard.when("folder sizes") { [weak self] in if self?.scanning == false { self?.scanTree() } } }
     }
 
     func readDisk() {
