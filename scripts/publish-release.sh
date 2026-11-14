@@ -36,8 +36,13 @@ gh release create "$TAG" "$ZIP" "$DMG" "$LATEST" --title "$TAG" --notes-file "$N
 
 # The latest/download link is what people click; check it serves this build.
 URL="https://github.com/andrewbakercloudscale/system-sentinel/releases/latest/download/System-Sentinel.dmg"
-served=$(curl -fsIL "$URL" | awk 'tolower($1)=="content-length:" {n=$2} END {print n+0}')
+# GitHub can serve the previous release's file for up to a minute or two after creating this one.
 want=$(stat -f%z "$LATEST")
+for _ in $(seq 1 18); do
+  served=$(curl -fsIL "$URL" | awk 'tolower($1)=="content-length:" {n=$2} END {print n+0}')
+  [[ "$served" == "$want" ]] && break
+  sleep 10
+done
 [[ "$served" == "$want" ]] || { echo "!! $URL serves $served bytes, expected $want" >&2; exit 1; }
 echo "== $TAG published; $URL serves it"
 
