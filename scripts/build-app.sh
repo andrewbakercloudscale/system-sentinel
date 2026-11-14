@@ -22,6 +22,9 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/SystemSentinel"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
+# The login agent (LoginItem.swift): starts the app at login and again after a crash.
+mkdir -p "$APP/Contents/Library/LaunchAgents"
+cp Resources/LaunchAgent.plist "$APP/Contents/Library/LaunchAgents/consulting.cloudscale.systemsentinel.agent.plist"
 source "$(dirname "$0")/sign-id.sh"
 echo "== sign: $SENTINEL_SIGN_ID"
 codesign --force --sign "$SENTINEL_SIGN_ID" "$APP"
@@ -50,9 +53,11 @@ cp -R "$APP" "$DEST"
 echo "== installed: $DEST"
 
 if [[ "${1:-}" != "--no-open" ]]; then
+    # Through the login agent when it is on (so a crash is restarted), then open shows the window.
+    launchctl kickstart "gui/$(id -u)/consulting.cloudscale.systemsentinel.agent" 2>/dev/null && sleep 2
     open "$DEST"
     echo "== launched; look for the red chip icon in the menu bar"
 elif [[ $WAS_RUNNING == 1 ]]; then
-    open -g "$DEST"
+    launchctl kickstart "gui/$(id -u)/consulting.cloudscale.systemsentinel.agent" 2>/dev/null || open -g "$DEST"
     echo "== relaunched in the background (it was running)"
 fi

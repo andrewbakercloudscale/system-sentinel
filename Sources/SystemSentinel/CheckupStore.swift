@@ -538,6 +538,7 @@ final class CheckupStore: ObservableObject {
                              fixes: [.reveal(label: "Show panic reports", path: "/Library/Logs/DiagnosticReports")],
                              items: panics.sorted { $0.date > $1.date }.prefix(5).map { $0.date.formatted(date: .abbreviated, time: .shortened) }))
         }
+        out.append(CheckupStore.loginCheck())
         if !agents.isEmpty {
             let busy = agents.filter { $0.cpu >= 50 }
             let watching = agents.filter(\.suspect)
@@ -623,6 +624,27 @@ final class CheckupStore: ObservableObject {
                      items: pending)
     }
 
+    /// System Sentinel's own start at login: without it nothing is watched after a restart.
+    nonisolated static func loginCheck() -> Check {
+        switch LoginItem.state {
+        case .on:
+            return Check(id: "login-item", area: .system, title: "System Sentinel starts at login", status: .ok,
+                         detail: "And starts again by itself if it ever crashes, so monitoring has no gaps.")
+        case .plainLoginItem:
+            return Check(id: "login-item", area: .system, title: "System Sentinel starts at login", status: .ok,
+                         detail: "Quit and reopen it once so it also restarts by itself after a crash.")
+        case .needsApproval:
+            return Check(id: "login-item", area: .system, title: "System Sentinel is not allowed to start at login", status: .warning,
+                         detail: "It is switched off in Login Items, so after a restart nothing is watched or recorded until you open it.",
+                         steps: ["In Login Items, under Allow in the Background, turn System Sentinel on."],
+                         fixes: [.settings(label: "Open Login Items", url: "x-apple.systempreferences:com.apple.LoginItems-Settings.extension")])
+        case .off:
+            return Check(id: "login-item", area: .system, title: "System Sentinel does not start at login", status: .warning,
+                         detail: "After a restart nothing is watched or recorded until you open it, so a slow or crashing startup is missed.",
+                         fixes: [.startAtLogin(label: "Start at login")])
+        }
+    }
+
     // MARK: Fixes
 
     func perform(_ fix: Check.Fix, in check: Check) {
@@ -655,6 +677,12 @@ final class CheckupStore: ObservableObject {
                     self.run()
                 }
             }
+        case .startAtLogin(let label):
+            Model.current?.launchAtLogin = true
+            let ok = LoginItem.state == .on
+            toast(Model.Toast(ok: ok, title: ok ? "\(label): done" : "\(label) did not work",
+                              detail: ok ? "It starts at every login and again if it ever crashes." : Model.current?.lastError))
+            run()
         case .removeAgents(let label, let plists):
             working.insert(key)
             let front = frontWindowNumber()

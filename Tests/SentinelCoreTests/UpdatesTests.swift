@@ -66,6 +66,7 @@ final class UpdatesTests: XCTestCase {
         XCTAssertTrue(s.contains("kill -0 42"))
         XCTAssertTrue(s.contains("set -euo pipefail"))
         XCTAssertFalse(s.contains("xattr"))
+        XCTAssertTrue(s.contains("launchctl kickstart \"gui/$(id -u)/consulting.cloudscale.systemsentinel.agent\" 2>/dev/null || /usr/bin/open "))
         XCTAssertTrue(s.contains("'/tmp/a b/System Sentinel.app'"))
         XCTAssertTrue(s.contains("'/Applications/O'\\''Brien.app'"))
     }
