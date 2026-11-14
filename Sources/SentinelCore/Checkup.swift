@@ -34,10 +34,12 @@ public struct Check: Identifiable, Equatable, Sendable {
         /// Stops every listed launch item and moves its plist to the Trash. Items in /Library
         /// go through one admin prompt, with the command built by `CheckParse.removeSystemItemsCommand`.
         case removeAgents(label: String, plists: [String])
+        /// Turns on System Sentinel's own start at login.
+        case startAtLogin(label: String)
 
         public var label: String {
             switch self {
-            case .run(let l, _, _), .admin(let l, _), .settings(let l, _), .reveal(let l, _), .web(let l, _), .removeAgents(let l, _): return l
+            case .run(let l, _, _), .admin(let l, _), .settings(let l, _), .reveal(let l, _), .web(let l, _), .removeAgents(let l, _), .startAtLogin(let l): return l
             }
         }
 

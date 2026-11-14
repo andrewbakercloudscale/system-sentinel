@@ -15,6 +15,8 @@ struct SystemSentinelApp: App {
     init() {
         // macOS's own tooltips (left in menus and popovers) wait about a second and a half.
         UserDefaults.standard.set(200, forKey: "NSInitialToolTipDelay")
+        // Before anything else: a second copy leaves straight away.
+        SingleInstance.claim()
         SelfGuard.start()
         MenuBarState.placeRight()
         // Before Model reads any settings.
@@ -551,7 +553,7 @@ struct SettingsView: View {
             Card(title: "Startup", symbol: "power", tint: Tab.processes.color) {
                 Toggle("Launch System Sentinel at login", isOn: draft.login)
                     .toggleStyle(.switch)
-                Text("Trends and insights only cover the time System Sentinel is running.")
+                Text("Trends and insights only cover the time System Sentinel is running. When on, it is also started again if it ever crashes; quitting it from the menu keeps it quit.")
                     .font(.caption2).foregroundStyle(.secondary)
             }
             MenuBarSettingsCard(model: model, draft: draft)
@@ -757,11 +759,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
            e.paramDescriptor(forKeyword: keyAEPropData)?.enumCodeValue == keyAELaunchedAsLogInItem {
             atLogin = true
         }
+        if LoginItem.launchedByAgent { atLogin = true }
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         if Model.snapshotDir == nil { IconWatch.start(); HotKey.start(); HangWatch.start() }
         DispatchQueue.global(qos: .utility).async { IOSampler.killOrphanedNettop() }
+        if Model.snapshotDir == nil {
+            SingleInstance.listen()
+            LoginItem.settle(newInstall: !WelcomeWindow.seen)
+        }
         // The welcome shows once, even on a launch at login, so people who installed before it existed see it too.
         if Model.snapshotDir == nil, !WelcomeWindow.seen {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) { if let m = Model.current { WelcomeWindow.showOnce(m) } }
@@ -1060,8 +1067,8 @@ enum Migration {
         }
         // macOS ties the login item to the app, so the old one cannot carry over: re-add it
         // for anyone who used CPU Sentinel. Settings turns it off.
-        if !old.isEmpty, SMAppService.mainApp.status != .enabled {
-            try? SMAppService.mainApp.register()
+        if !old.isEmpty, !LoginItem.enabled {
+            try? LoginItem.set(true)
         }
     }
 }

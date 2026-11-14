@@ -1667,14 +1667,18 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
     var launchAtLogin: Bool {
         get {
             if let s = loginStatus { return s }
-            let s = SMAppService.mainApp.status == .enabled
+            let s = LoginItem.enabled
             loginStatus = s
             return s
         }
         set {
             defer { loginStatus = nil }
             do {
-                if newValue { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
+                try LoginItem.set(newValue)
+                if newValue, LoginItem.state == .needsApproval {
+                    lastError = "Launch at login is switched off for System Sentinel in System Settings > General > Login Items: turn it on there."
+                    SMAppService.openSystemSettingsLoginItems()
+                }
             } catch {
                 lastError = "Launch at login: \(error.localizedDescription)"
             }

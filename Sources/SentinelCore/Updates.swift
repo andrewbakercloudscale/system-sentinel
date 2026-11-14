@@ -212,7 +212,8 @@ public enum Updates {
         /usr/bin/ditto \(q(newApp)) \(q(staged))
         mv \(q(installedAt)) \(q(old))
         if mv \(q(staged)) \(q(installedAt)); then rm -rf \(q(old)); else mv \(q(old)) \(q(installedAt)); fi
-        /usr/bin/open \(q(installedAt))
+        # Through the login agent when it is on, so a crash is restarted; otherwise as usual.
+        /bin/launchctl kickstart "gui/$(id -u)/consulting.cloudscale.systemsentinel.agent" 2>/dev/null || /usr/bin/open \(q(installedAt))
         """
     }
 

@@ -96,7 +96,7 @@ struct WelcomeView: View {
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Open at login").font(.headline)
-                    Text("So it is watching from the moment the Mac starts. Change it later in Settings.")
+                    Text("So it is watching from the moment the Mac starts, and starts again if it ever crashes. Change it later in Settings.")
                         .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 8)
