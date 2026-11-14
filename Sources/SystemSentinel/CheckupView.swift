@@ -264,7 +264,7 @@ struct CheckupView: View {
         case .settings: return "Opens System Settings at the right place."
         case .reveal(_, let p): return "Shows \(p) in Finder."
         case .web(_, let u): return "Opens \(u)"
-        case .startAtLogin: return "Starts System Sentinel at every login, and again if it ever crashes. Settings turns it off."
+        case .startAtLogin: return "Starts System Sentinel at every login. Settings turns it off."
         case .removeAgents(_, let plists):
             let admin = plists.contains { $0.hasPrefix("/Library/") }
             return "Stops \(plists.count == 1 ? "it" : "all \(plists.count)") and moves the files to the Trash\(admin ? ", asking for your admin password once for the ones in /Library" : ""). Only items whose program is still missing are touched."

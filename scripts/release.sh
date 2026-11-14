@@ -40,7 +40,7 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" dist
 cp "$BIN" "$APP/Contents/MacOS/SystemSentinel"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
-# The login agent (LoginItem.swift): starts the app at login and again after a crash.
+# 0.8.43's login agent, no longer registered: kept so LoginItem.settle can remove it.
 mkdir -p "$APP/Contents/Library/LaunchAgents"
 cp Resources/LaunchAgent.plist "$APP/Contents/Library/LaunchAgents/consulting.cloudscale.systemsentinel.agent.plist"
 

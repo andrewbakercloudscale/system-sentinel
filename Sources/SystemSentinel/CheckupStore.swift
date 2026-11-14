@@ -629,10 +629,7 @@ final class CheckupStore: ObservableObject {
         switch LoginItem.state {
         case .on:
             return Check(id: "login-item", area: .system, title: "System Sentinel starts at login", status: .ok,
-                         detail: "And starts again by itself if it ever crashes, so monitoring has no gaps.")
-        case .plainLoginItem:
-            return Check(id: "login-item", area: .system, title: "System Sentinel starts at login", status: .ok,
-                         detail: "Quit and reopen it once so it also restarts by itself after a crash.")
+                         detail: "And opens again by itself if it ever crashes, so monitoring has no gaps.")
         case .needsApproval:
             return Check(id: "login-item", area: .system, title: "System Sentinel is not allowed to start at login", status: .warning,
                          detail: "It is switched off in Login Items, so after a restart nothing is watched or recorded until you open it.",
@@ -681,7 +678,7 @@ final class CheckupStore: ObservableObject {
             Model.current?.launchAtLogin = true
             let ok = LoginItem.state == .on
             toast(Model.Toast(ok: ok, title: ok ? "\(label): done" : "\(label) did not work",
-                              detail: ok ? "It starts at every login and again if it ever crashes." : Model.current?.lastError))
+                              detail: ok ? "It starts at every login from now on." : Model.current?.lastError))
             run()
         case .removeAgents(let label, let plists):
             working.insert(key)

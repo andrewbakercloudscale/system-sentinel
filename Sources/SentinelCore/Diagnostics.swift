@@ -232,3 +232,18 @@ public struct CrashMarker {
             .max { $0.1 < $1.1 }?.0
     }
 }
+
+/// How often the watchdog may open the app again after a crash.
+public enum RestartPolicy {
+    public static let limit = 3
+    public static let window: TimeInterval = 600
+
+    public static func recent(_ past: [Date], now: Date) -> [Date] {
+        past.filter { now.timeIntervalSince($0) < window && $0 <= now }
+    }
+
+    /// Fewer than `limit` restarts in the last `window`.
+    public static func allows(past: [Date], now: Date) -> Bool {
+        recent(past, now: now).count < limit
+    }
+}
