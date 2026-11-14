@@ -31,7 +31,10 @@ echo "== build $VERSION"
 # Universal: Apple chips and Intel Macs.
 swift build -c release --arch arm64 --arch x86_64
 BIN="$(swift build -c release --arch arm64 --arch x86_64 --show-bin-path)/SystemSentinel"
-lipo "$BIN" -verify_arch arm64 x86_64 || { echo "not universal, not releasing"; exit 1; }
+# One arch per check: the lipo in Xcode 26.4 refuses two after -verify_arch.
+for arch in arm64 x86_64; do
+    lipo "$BIN" -verify_arch "$arch" || { echo "not universal (no $arch), not releasing"; exit 1; }
+done
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" dist
 cp "$BIN" "$APP/Contents/MacOS/SystemSentinel"
