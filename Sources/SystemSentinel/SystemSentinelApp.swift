@@ -15,7 +15,9 @@ struct SystemSentinelApp: App {
     init() {
         // macOS's own tooltips (left in menus and popovers) wait about a second and a half.
         UserDefaults.standard.set(200, forKey: "NSInitialToolTipDelay")
-        // Before anything else: a second copy leaves straight away.
+        // Before anything else: the watchdog process never gets further, and a second copy
+        // leaves straight away.
+        Watchdog.runIfAsked()
         SingleInstance.claim()
         SelfGuard.start()
         MenuBarState.placeRight()
@@ -553,7 +555,7 @@ struct SettingsView: View {
             Card(title: "Startup", symbol: "power", tint: Tab.processes.color) {
                 Toggle("Launch System Sentinel at login", isOn: draft.login)
                     .toggleStyle(.switch)
-                Text("Trends and insights only cover the time System Sentinel is running. When on, it is also started again if it ever crashes; quitting it from the menu keeps it quit.")
+                Text("Trends and insights only cover the time System Sentinel is running. If it ever crashes it opens again by itself; quitting it from the menu keeps it quit.")
                     .font(.caption2).foregroundStyle(.secondary)
             }
             MenuBarSettingsCard(model: model, draft: draft)
@@ -759,7 +761,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
            e.paramDescriptor(forKeyword: keyAEPropData)?.enumCodeValue == keyAELaunchedAsLogInItem {
             atLogin = true
         }
-        if LoginItem.launchedByAgent { atLogin = true }
+        if LoginItem.launchedInBackground { atLogin = true }
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -768,6 +770,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if Model.snapshotDir == nil {
             SingleInstance.listen()
             LoginItem.settle(newInstall: !WelcomeWindow.seen)
+            Watchdog.start()
         }
         // The welcome shows once, even on a launch at login, so people who installed before it existed see it too.
         if Model.snapshotDir == nil, !WelcomeWindow.seen {

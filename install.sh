@@ -58,8 +58,6 @@ xattr -dr com.apple.quarantine "$APP" 2>/dev/null || true
 
 if [ -z "${SYSTEM_SENTINEL_NO_OPEN:-}" ]; then
   echo "== Launching"
-  # Through the login agent when it is on (so a crash is restarted), then open shows the window.
-  launchctl kickstart "gui/$(id -u)/consulting.cloudscale.systemsentinel.agent" 2>/dev/null && sleep 2
   open "$APP"
 fi
 echo "Done: $(defaults read "$APP/Contents/Info" CFBundleShortVersionString). Look for the red chip in the menu bar."

@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
-<!-- Installed in the app as Contents/Library/LaunchAgents/consulting.cloudscale.systemsentinel.agent.plist
-     and registered with SMAppService.agent: starts System Sentinel at login and, through
-     KeepAlive SuccessfulExit=false, starts it again if it crashes. Quitting it exits 0, so a
-     quit stays quit. -->
+<!-- 0.8.43 registered this with SMAppService.agent to start the app at login and after a
+     crash. launchd refuses an agent once a self-signed app is replaced by an update, so it is
+     no longer registered: it stays in the app (Contents/Library/LaunchAgents) only so that
+     LoginItem.settle can unregister it on Macs that ran 0.8.43. -->
 <dict>
     <key>Label</key>
     <string>consulting.cloudscale.systemsentinel.agent</string>
