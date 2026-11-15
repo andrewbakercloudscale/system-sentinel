@@ -76,7 +76,9 @@ else
     codesign --force --options runtime --entitlements Resources/SystemSentinel.entitlements --sign "$SENTINEL_SIGN_ID" "$APP"
     codesign --verify --strict "$APP"
 fi
-codesign -dv "$APP" 2>&1 | grep -q 'flags=.*runtime' || { echo "!! not signed with the hardened runtime, not releasing" >&2; exit 1; }
+# Read into a variable first: grep -q under pipefail can cut codesign off and fail the check.
+SIGNED="$(codesign -dv "$APP" 2>&1)"
+[[ "$SIGNED" == *"flags="*"runtime"* ]] || { echo "!! not signed with the hardened runtime, not releasing" >&2; exit 1; }
 
 rm -f "$ZIP"
 ditto -c -k --keepParent "$APP" "$ZIP"
