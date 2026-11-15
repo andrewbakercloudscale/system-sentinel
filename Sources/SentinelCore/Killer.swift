@@ -48,11 +48,14 @@ public enum Killer {
     /// and this app stay refused.
     public static func forceKill(_ s: ProcessSample) -> KillOutcome {
         guard s.pid > 1, s.pid != getpid() else { return .refused("\(s.name) cannot be killed") }
+        guard !Safety.isCompanyAgent(s) else { return .refused(companyAgent(s)) }
+        guard !Safety.processControlOff else { return .refused("Stopping processes is turned off by your organisation.") }
         guard isAlive(s.pid), isSameProcess(s) else { return .alreadyGone }
         if s.uid != getuid() {
+            guard let command = rootKill(s.pid, signal: "KILL") else { return .alreadyGone }
             let task = Process()
             task.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-            task.arguments = ["-e", "do shell script \"/bin/kill -KILL \(s.pid)\" with administrator privileges"]
+            task.arguments = ["-e", RootStaging.appleScript(command)]
             task.standardError = FileHandle.nullDevice
             do { try task.run() } catch { return .failed(error.localizedDescription) }
             task.waitUntilExit()
@@ -63,11 +66,18 @@ public enum Killer {
         return waitForExit(s.pid, timeout: 5) ? .forceKilled : .failed("still running after SIGKILL")
     }
 
+    /// Why a company agent is left alone.
+    public static func companyAgent(_ s: ProcessSample) -> String {
+        "\(s.displayName) is security or device management software from your organisation. System Sentinel never stops it; if it is slowing the Mac, tell IT."
+    }
+
     /// The force kill command to paste into Terminal.
     public static func forceSudoCommand(for s: ProcessSample) -> String { "sudo kill -9 \(s.pid)" }
 
     /// Kills a process owned by this user. Blocks for up to `grace` seconds.
     public static func kill(_ s: ProcessSample, grace: TimeInterval = 5) -> KillOutcome {
+        guard !Safety.isCompanyAgent(s) else { return .refused(companyAgent(s)) }
+        guard !Safety.processControlOff else { return .refused("Stopping processes is turned off by your organisation.") }
         guard Safety.canKillManually(s) else { return .refused("\(s.name) is protected") }
         guard isAlive(s.pid), isSameProcess(s) else { return .alreadyGone }
         if s.uid != getuid() { return killAsAdmin(s) }
@@ -86,6 +96,8 @@ public enum Killer {
     /// refused: there is no outcome of killing those that anyone wants.
     public static func killProtectedAsAdmin(_ s: ProcessSample) -> KillOutcome {
         guard s.pid > 1, s.pid != getpid() else { return .refused("\(s.name) cannot be killed") }
+        guard !Safety.isCompanyAgent(s) else { return .refused(companyAgent(s)) }
+        guard !Safety.processControlOff else { return .refused("Stopping processes is turned off by your organisation.") }
         guard isAlive(s.pid), isSameProcess(s) else { return .alreadyGone }
         return killAsAdmin(s)
     }
@@ -100,15 +112,40 @@ public enum Killer {
     /// Root and other users' processes: the standard macOS admin prompt via osascript.
     /// launchd restarts the daemons this is meant for (PerfPowerServices), so TERM is enough.
     static func killAsAdmin(_ s: ProcessSample) -> KillOutcome {
-        let script = "do shell script \"/bin/kill -TERM \(s.pid)\" with administrator privileges"
+        guard let command = rootKill(s.pid, signal: "TERM") else { return .alreadyGone }
         let task = Process()
         task.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-        task.arguments = ["-e", script]
+        task.arguments = ["-e", RootStaging.appleScript(command)]
         task.standardError = FileHandle.nullDevice
         do { try task.run() } catch { return .failed(error.localizedDescription) }
         task.waitUntilExit()
         guard task.terminationStatus == 0 else { return .failed("admin prompt cancelled or refused") }
         return waitForExit(s.pid, timeout: 5) ? .terminated : .failed("still running after SIGTERM as admin")
+    }
+
+    /// The process's start time as `ps` prints it, whitespace collapsed; letters, digits,
+    /// colons and spaces only, so it can go into a shell string. nil when it is gone.
+    static func startStamp(_ pid: Int32) -> String? {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/bin/ps")
+        p.arguments = ["-o", "lstart=", "-p", String(pid)]
+        p.environment = ["LC_ALL": "C"]
+        let pipe = Pipe()
+        p.standardOutput = pipe
+        p.standardError = FileHandle.nullDevice
+        guard (try? p.run()) != nil else { return nil }
+        let out = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+        p.waitUntilExit()
+        let stamp = out.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        guard p.terminationStatus == 0, stamp.range(of: "\\A[A-Za-z0-9: ]+\\z", options: .regularExpression) != nil else { return nil }
+        return stamp
+    }
+
+    /// The root kill command. The password prompt can take a while, and a pid can be reused
+    /// by then, so root signals it only if it is still the process that started at the same time.
+    public static func rootKill(_ pid: Int32, signal: String, stamp: String? = nil) -> String? {
+        guard ["TERM", "KILL"].contains(signal), let st = stamp ?? startStamp(pid) else { return nil }
+        return "[ \"$(echo $(LC_ALL=C /bin/ps -o lstart= -p \(pid)))\" = \"\(st)\" ] && /bin/kill -\(signal) \(pid)"
     }
 
     static func waitForExit(_ pid: Int32, timeout: TimeInterval) -> Bool {

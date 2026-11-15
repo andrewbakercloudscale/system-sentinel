@@ -27,7 +27,8 @@ mkdir -p "$APP/Contents/Library/LaunchAgents"
 cp Resources/LaunchAgent.plist "$APP/Contents/Library/LaunchAgents/consulting.cloudscale.systemsentinel.agent.plist"
 source "$(dirname "$0")/sign-id.sh"
 echo "== sign: $SENTINEL_SIGN_ID"
-codesign --force --sign "$SENTINEL_SIGN_ID" "$APP"
+# Hardened runtime: nothing can inject code and borrow the app's privacy permissions.
+codesign --force --options runtime --entitlements Resources/SystemSentinel.entitlements --sign "$SENTINEL_SIGN_ID" "$APP"
 codesign --verify "$APP"
 
 DEST="$HOME/Applications/System Sentinel.app"

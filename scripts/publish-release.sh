@@ -16,7 +16,8 @@ NOTES="${1:?usage: publish-release.sh NOTES.md}"
 VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" Resources/Info.plist)
 TAG="v$VERSION"
 [[ "$(git branch --show-current)" == main ]] || { echo "not on main" >&2; exit 1; }
-git diff --quiet HEAD -- Sources Resources Package.swift scripts || { echo "uncommitted changes in the app, commit first" >&2; exit 1; }
+# Untracked files too: a stray .swift file under Sources would be built into the release.
+[[ -z "$(git status --porcelain -- Sources Resources Package.swift scripts)" ]] || { echo "uncommitted or untracked files in the app, commit first" >&2; exit 1; }
 git rev-parse -q --verify "refs/tags/$TAG" >/dev/null && { echo "$TAG already exists, bump the version" >&2; exit 1; }
 
 # S3 comes last, so find out now, before anything is tagged, whether it would work.
@@ -32,7 +33,10 @@ for f in "$ZIP" "$DMG" "$LATEST"; do [[ -s "$f" ]] || { echo "missing $f" >&2; e
 
 git tag "$TAG"
 git push -q origin main "$TAG"
-gh release create "$TAG" "$ZIP" "$DMG" "$LATEST" --title "$TAG" --notes-file "$NOTES"
+# Checksums, so a download can be checked against what was published.
+SUMS="dist/SHA256SUMS-$VERSION.txt"
+(cd dist && shasum -a 256 "$(basename "$ZIP")" "$(basename "$DMG")" "$(basename "$LATEST")") > "$SUMS"
+gh release create "$TAG" "$ZIP" "$DMG" "$LATEST" "$SUMS" --title "$TAG" --notes-file "$NOTES"
 
 # The latest/download link is what people click; check it serves this build.
 URL="https://github.com/andrewbakercloudscale/system-sentinel/releases/latest/download/System-Sentinel.dmg"

@@ -35,7 +35,14 @@ extension Model {
         return "\(s.name) installs updates. If an update is downloading or installing, killing it stops that part way and it starts again later. Check System Settings, General, Software Update first."
     }
 
+    /// Company security and device management software is never stopped or slowed.
+    func companyAgentNotice(_ s: ProcessSample) {
+        if Safety.processControlOff { return showToast(Toast(ok: false, title: "Not available", detail: "Stopping or slowing processes: " + Managed.off)) }
+        showToast(Toast(ok: false, title: "\(s.displayName) is left alone", detail: Killer.companyAgent(s)))
+    }
+
     func confirmKill(_ s: ProcessSample) {
+        guard !Safety.isCompanyAgent(s), !Safety.processControlOff else { return companyAgentNotice(s) }
         var points = ["Asks it to stop the normal way, so it can save and clean up.",
                       "If it is still running after 5 seconds, it is stopped by force."]
         if let w = Self.installWarning(s) { points.insert(w, at: 0) }
@@ -49,6 +56,7 @@ extension Model {
     }
 
     func confirmForceKill(_ s: ProcessSample) {
+        guard !Safety.isCompanyAgent(s), !Safety.processControlOff else { return companyAgentNotice(s) }
         let protected = !Safety.canKillManually(s)
         var points = ["Stops it at once (kill -9). It cannot refuse, and gets no chance to save or clean up."]
         if let w = Self.installWarning(s) { points.insert(w, at: 0) }
@@ -64,6 +72,7 @@ extension Model {
     }
 
     func confirmSudoKill(_ s: ProcessSample) {
+        guard !Safety.isCompanyAgent(s), !Safety.processControlOff else { return companyAgentNotice(s) }
         Confirm.ask(ConfirmRequest(symbol: "lock.fill", tint: Self.red, title: "Kill \(s.name) as admin?",
                                    message: "pid \(s.pid). A protected macOS process.",
                                    points: [SudoButton.consequence(of: s.name), "macOS asks for your password."],
@@ -102,6 +111,7 @@ extension Model {
     }
 
     func confirmSlowDown(_ s: ProcessSample, always: Bool) {
+        guard !Safety.isCompanyAgent(s), !Safety.processControlOff else { return companyAgentNotice(s) }
         var points = ["It keeps running, on the efficiency cores, with its disk access last in line.",
                       "The apps you are using stay quick; it finishes a little later."]
         if always { points.append("Every new \(s.name) process is lowered as soon as it starts, until you put it back.") }
@@ -129,6 +139,7 @@ extension Model {
 
     /// Rules that kill on their own ask first; the rest are easy to change back.
     func confirmPolicy(_ p: Policy, for s: ProcessSample) {
+        guard !Safety.isCompanyAgent(s), !Safety.processControlOff else { return companyAgentNotice(s) }
         switch p {
         case .autoKill, .autoKillOnBattery, .autoKillBelow:
             Confirm.ask("\(p.label) \(s.displayName)?", "From now on System Sentinel stops it by itself when it runs hot\(p == .autoKill ? "" : " under this condition"), without asking.",
@@ -158,10 +169,13 @@ extension Model {
     }
 
     func confirmRemove(_ item: BackgroundItem) {
-        var points: [String] = []
+        // Company security, VPN and device management items are never removed from here.
         if let org = item.managedBy {
-            points.append("\(org) is usually installed and managed by your organisation's IT. Removing it can cut off the VPN or company network, or mark this Mac out of compliance. Ask IT first.")
+            showToast(Toast(ok: false, title: "\(item.name) is left alone",
+                            detail: "\(org) is installed and managed by your organisation's IT. Removing it can cut off the company network or mark this Mac out of compliance, so System Sentinel does not. Ask IT."))
+            return
         }
+        var points: [String] = []
         points += ["Stops it now, and it no longer starts at login.",
                    "Its file (\((item.plist as NSString).lastPathComponent)) goes to the Trash."]
         if item.scope != .user { points.append("It is installed for every user, so macOS asks for your password.") }

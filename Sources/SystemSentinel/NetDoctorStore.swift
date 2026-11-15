@@ -93,8 +93,9 @@ extension NetworkStore {
                 for await x in group { out.append(x) }
                 return out.sorted { $0.0 < $1.0 }.map(\.1)
             }
-            // A name that cannot exist must not resolve.
-            let made = "sentinel-check-\(UUID().uuidString.prefix(12).lowercased()).com"
+            // A name that cannot exist must not resolve. One fixed name, not a random one each
+            // time: random failing lookups are what DNS security tools flag as malware.
+            let made = "nxdomain-check-7f3a9c2e.system-sentinel-test.com"
             r.madeUp = NetworkStore.resolve(made).addresses
             r.captive = await NetworkStore.captivePortal()
             if !work.isEmpty {

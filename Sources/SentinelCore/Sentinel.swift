@@ -74,7 +74,8 @@ public final class Sentinel {
         var events: [SentinelEvent] = []
         for actor in detector.update(latest, at: now) {
             let s = actor.sample
-            if Safety.isProtected(s) { continue }
+            // Company security software is still reported when it runs hot, never stopped.
+            if Safety.isProtected(s) && !Safety.isCompanyAgent(s) { continue }
             let policy = policies.policy(for: s.path, at: now).resolved(at: now, onBattery: onBattery(), percent: batteryPercent())
             switch policy {
             case .ignore:
@@ -84,7 +85,8 @@ public final class Sentinel {
                 events.append(.alert(s))
             case .autoKill:
                 if !Safety.canAutoKill(s) {
-                    let why = s.isRoot ? "runs as root, needs the admin password" : "not owned by this user"
+                    let why = Safety.isCompanyAgent(s) ? "security or device management software from your organisation, never stopped"
+                        : s.isRoot ? "runs as root, needs the admin password" : "not owned by this user"
                     history.record(.flagged, s, detail: "auto-kill withheld: \(why)", at: now)
                     events.append(.autoKillWithheld(s, reason: why))
                 } else if !limiter.allow(s.path, at: now) {

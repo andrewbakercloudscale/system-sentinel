@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<!-- Signed with the hardened runtime, so no other program can inject code into the app and
+     borrow its Full Disk Access or Automation. The one exception it needs: sending Apple
+     Events (Terminal for sudo commands, Chrome for its tabs). No library validation or DYLD
+     exceptions: those would undo the protection. -->
+<dict>
+    <key>com.apple.security.automation.apple-events</key>
+    <true/>
+</dict>
+</plist>

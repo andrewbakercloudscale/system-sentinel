@@ -11,8 +11,21 @@ public enum Safety {
         "logind", "UserEventAgent", "mds", "configd", "powerd", "syslogd", "notifyd",
     ]
 
+    /// Set by the organisation's profile (DisableProcessControl): nothing is killed or slowed.
+    nonisolated(unsafe) public static var processControlOff = false
+
     public static func isProtected(_ s: ProcessSample) -> Bool {
-        s.pid <= 1 || protectedNames.contains(s.name) || s.pid == getpid()
+        processControlOff || s.pid <= 1 || protectedNames.contains(s.name) || s.pid == getpid() || isCompanyAgent(s)
+    }
+
+    /// Security, VPN and device management software an employer installs (EDR, DLP, MDM,
+    /// zero trust). Never killed, auto-killed, slowed or offered a Kill, not even with the
+    /// admin password: stopping one can be a policy breach and looks like tampering.
+    public static func isCompanyAgent(_ s: ProcessSample) -> Bool {
+        let text = s.path + " " + s.name
+        if SecurityAgents.product(text) != nil { return true }
+        let t = text.lowercased()
+        return BackgroundItems.managed.contains { t.contains($0.0) }
     }
 
     /// Whether a Kill button is offered at all.

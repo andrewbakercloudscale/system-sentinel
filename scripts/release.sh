@@ -46,7 +46,7 @@ cp Resources/LaunchAgent.plist "$APP/Contents/Library/LaunchAgents/consulting.cl
 
 if [[ -n "${DEVELOPER_ID:-}" ]]; then
     echo "== sign: $DEVELOPER_ID"
-    codesign --force --options runtime --timestamp --sign "$DEVELOPER_ID" "$APP"
+    codesign --force --options runtime --timestamp --entitlements Resources/SystemSentinel.entitlements --sign "$DEVELOPER_ID" "$APP"
     codesign --verify --strict --verbose=2 "$APP"
     if [[ -n "${NOTARY_PROFILE:-}" ]]; then
         echo "== notarise"
@@ -60,6 +60,11 @@ if [[ -n "${DEVELOPER_ID:-}" ]]; then
     fi
 else
     source "$(dirname "$0")/sign-id.sh"
+    # Only the publisher's certificate: installed copies refuse an update signed by anything else.
+    if [[ "$SENTINEL_SIGN_ID" != "$SENTINEL_PUBLISHER_ID" && -z "${ALLOW_OTHER_SIGNER:-}" ]]; then
+        echo "!! signing identity $SENTINEL_SIGN_ID is not the publisher's ($SENTINEL_PUBLISHER_ID): every installed copy would refuse this update." >&2
+        exit 1
+    fi
     # A release signed ad-hoc is refused by every installed copy's updater: never ship one by accident.
     if [[ "$SENTINEL_SIGN_ID" == "-" && -z "${ALLOW_ADHOC:-}" ]]; then
         echo "!! no code signing identity found: the release would be ad-hoc signed and the in-app updater would refuse it." >&2
@@ -67,9 +72,11 @@ else
         exit 1
     fi
     echo "== sign: $SENTINEL_SIGN_ID (no DEVELOPER_ID: users need xattr -dr com.apple.quarantine)"
-    codesign --force --sign "$SENTINEL_SIGN_ID" "$APP"
-    codesign --verify "$APP"
+    # Hardened runtime: nothing can inject code and borrow the app's privacy permissions.
+    codesign --force --options runtime --entitlements Resources/SystemSentinel.entitlements --sign "$SENTINEL_SIGN_ID" "$APP"
+    codesign --verify --strict "$APP"
 fi
+codesign -dv "$APP" 2>&1 | grep -q 'flags=.*runtime' || { echo "!! not signed with the hardened runtime, not releasing" >&2; exit 1; }
 
 rm -f "$ZIP"
 ditto -c -k --keepParent "$APP" "$ZIP"

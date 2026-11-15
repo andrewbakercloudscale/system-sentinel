@@ -34,6 +34,25 @@ public struct HostsEntry: Equatable, Sendable {
 }
 
 extension NetParse {
+    /// Private suffixes no public DNS server should be asked about.
+    static let privateSuffixes = ["local", "internal", "intranet", "corp", "lan", "home", "home.arpa", "localdomain", "private"]
+
+    /// A name that belongs inside the organisation: no dot, a private suffix, or under a
+    /// domain this Mac's DNS settings send to a VPN or company server (a supplemental
+    /// resolver's domain, or a search domain).
+    public static func isInternalName(_ name: String, resolvers: [Resolver]) -> Bool {
+        let n = name.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "."))
+        guard n.contains(".") else { return true }
+        func under(_ d: String) -> Bool {
+            let d = d.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "."))
+            return !d.isEmpty && (n == d || n.hasSuffix("." + d))
+        }
+        if privateSuffixes.contains(where: under) { return true }
+        return resolvers.contains { r in
+            (r.supplemental && !r.mdns && r.domain.map(under) == true) || r.searchDomains.contains(where: under)
+        }
+    }
+
     /// Every resolver in the first section of `scutil --dns` (the second repeats them per
     /// interface).
     public static func resolvers(_ s: String) -> [Resolver] {

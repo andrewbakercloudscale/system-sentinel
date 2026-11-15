@@ -19,6 +19,7 @@ struct SystemSentinelApp: App {
         // leaves straight away.
         Watchdog.runIfAsked()
         SingleInstance.claim()
+        Managed.apply()
         SelfGuard.start()
         MenuBarState.placeRight()
         // Before Model reads any settings.

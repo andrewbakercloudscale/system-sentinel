@@ -124,10 +124,7 @@ public struct BackgroundItem: Equatable, Sendable, Identifiable {
 
     /// Security, VPN and device management agents an employer installs. Removing one can cut
     /// off the VPN or mark the Mac out of compliance, so the bin warns before it does.
-    public var managedBy: String? {
-        let text = (label + " " + (program ?? "")).lowercased()
-        return BackgroundItems.managed.first { text.contains($0.0) }?.1
-    }
+    public var managedBy: String? { BackgroundItems.managedBy(label: label, program: program) }
 
     /// The executable path a running copy shows in ps, unless it runs through an
     /// interpreter, where every zsh or python would match.
@@ -153,6 +150,13 @@ public enum BackgroundItems {
         ("beyondtrust", "BeyondTrust"), ("cyberark", "CyberArk"), ("absolute", "Absolute"), ("code42", "Code42"),
     ]
 
+    /// The organisation product a launch item belongs to, if any.
+    public static func managedBy(label: String, program: String?) -> String? {
+        let text = label + " " + (program ?? "")
+        let t = text.lowercased()
+        return managed.first { t.contains($0.0) }?.1 ?? SecurityAgents.product(text)?.name
+    }
+
     static let interpreters: Set<String> = ["sh", "bash", "zsh", "env", "python", "python3", "node", "ruby", "perl", "osascript"]
 
     public static func isInterpreter(_ program: String?) -> Bool {
@@ -174,13 +178,20 @@ public enum BackgroundItems {
         return out.sorted { $0.label.lowercased() < $1.label.lowercased() }
     }
 
-    /// Stops it and moves its plist to the Trash, so Put Back undoes it. Items outside your own
-    /// folder belong to root, so this runs with administrator privileges.
+    /// Stops one of your own items and moves its plist to the Trash, run as you. Items outside
+    /// your folder belong to root and go through `rootRemoval` instead.
     public static func removeCommand(_ item: BackgroundItem, uid: uid_t, trash: String) -> String {
         let domain = item.scope == .system ? "system" : "gui/\(uid)"
         let dest = (trash as NSString).appendingPathComponent(
             ((item.plist as NSString).lastPathComponent as NSString).deletingPathExtension + " \(Int(Date().timeIntervalSince1970)).plist")
         return "/bin/launchctl bootout \(quote(domain + "/" + item.label)) 2>/dev/null; /bin/mv \(quote(item.plist)) \(quote(dest))"
+    }
+
+    /// A root item for `RootStaging`: root stops it and moves its plist into a private folder
+    /// it makes, never into ~/.Trash, which the user (and any program they run) can change.
+    public static func rootRemoval(_ item: BackgroundItem, uid: uid_t) -> RootStaging.Item {
+        let domain = item.scope == .system ? "system" : "gui/\(uid)"
+        return RootStaging.Item(stop: "/bin/launchctl bootout \(quote(domain + "/" + item.label))", plist: item.plist)
     }
 
     /// A shell word in single quotes.

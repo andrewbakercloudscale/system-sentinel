@@ -112,7 +112,11 @@ final class DNSMapStore: ObservableObject {
                 let scope = r.supplemental ? (r.domain.map { "only for \($0)" } ?? "VPN") : "main"
                 for s in r.servers where !serverList.contains(where: { $0.0 == s }) && serverList.count < 8 { serverList.append((s, scope)) }
             }
-            for extra in ["1.1.1.1", "8.8.8.8"] where !serverList.contains(where: { $0.0 == extra }) {
+            // Public resolvers only for public names: an internal name (a VPN or search domain,
+            // or a private suffix) must not be sent to Cloudflare or Google. The organisation
+            // can turn them off altogether.
+            let outside = !Managed.noPublicDNS && !NetParse.isInternalName(name, resolvers: resolvers)
+            for extra in ["1.1.1.1", "8.8.8.8"] where outside && !serverList.contains(where: { $0.0 == extra }) {
                 serverList.append((extra, "public, for comparison"))
             }
             let servers = serverList
@@ -145,10 +149,10 @@ final class DNSMapStore: ObservableObject {
                 let recs = all.sorted { $0.0 < $1.0 }.flatMap(\.1).filter { seen.insert($0).inserted }
                 return (recs, all.compactMap(\.2).first)
             }
-            async let trace = dig(gen, ["+trace", "+nodnssec", name, "A"], timeout: 25)
-            async let cloudflare = doh(gen, "Cloudflare", "https://cloudflare-dns.com/dns-query", name)
-            async let google = doh(gen, "Google", "https://dns.google/resolve", name)
-            let a = await answers + [await cloudflare, await google]
+            async let trace = outside ? dig(gen, ["+trace", "+nodnssec", name, "A"], timeout: 25) : ""
+            async let cloudflare = outside ? doh(gen, "Cloudflare", "https://cloudflare-dns.com/dns-query", name) : nil
+            async let google = outside ? doh(gen, "Google", "https://dns.google/resolve", name) : nil
+            let a = await answers + [await cloudflare, await google].compactMap { $0 }
             await update(gen) { $0.answers = a }
             let (recs, status) = await records
             await update(gen) { $0.records = recs; $0.status = status }
@@ -296,7 +300,9 @@ final class DNSMapStore: ObservableObject {
     /// One DNS-over-HTTPS lookup, logged like the commands.
     private nonisolated func doh(_ gen: Int, _ label: String, _ endpoint: String, _ name: String) async -> DNSMapResult.ServerAnswer {
         let t0 = Date()
-        let body = await fetch(gen, "\(endpoint)?name=\(name)&type=A", accept: "application/dns-json")
+        var c = URLComponents(string: endpoint)
+        c?.queryItems = [URLQueryItem(name: "name", value: name), URLQueryItem(name: "type", value: "A")]
+        let body = await fetch(gen, c?.url?.absoluteString ?? endpoint, accept: "application/dns-json")
         let ms = Int(Date().timeIntervalSince(t0) * 1000)
         let d = NetParse.dohJSON(Data(body.utf8))
         return .init(server: label, scope: "over HTTPS, skips the DNS here", status: d?.status, ms: d == nil ? nil : ms,

@@ -10,10 +10,11 @@ public struct SecurityAgent: Equatable, Sendable, Identifiable {
         case monitoring = "activity monitoring"
         case zeroTrust = "zero trust network"
         case vpn = "VPN"
+        case mdm = "device management"
         case unknown = "security extension"
 
         /// Inspects files as they are written, so the kind most likely to stall the Mac.
-        var rank: Int { [.dlp: 0, .edr: 1, .monitoring: 2, .unknown: 3, .zeroTrust: 4, .vpn: 5][self]! }
+        var rank: Int { [.dlp: 0, .edr: 1, .monitoring: 2, .unknown: 3, .zeroTrust: 4, .vpn: 5, .mdm: 6][self]! }
         public static func < (a: Kind, b: Kind) -> Bool { a.rank < b.rank }
     }
 
@@ -73,6 +74,12 @@ public enum SecurityAgents {
         (["wireguard"], "WireGuard", .vpn),
         (["nordvpn"], "NordVPN", .vpn),
         (["fortitray", "forticlient", "fortivpn"], "FortiClient", .vpn),
+        (["intunemdm", "com.microsoft.intune", "companyportal", "company portal"], "Microsoft Intune", .mdm),
+        (["jamf"], "Jamf", .mdm),
+        (["kandji"], "Kandji", .mdm),
+        (["mosyle"], "Mosyle", .mdm),
+        (["addigy"], "Addigy", .mdm),
+        (["workspaceone", "airwatch", "hubcli"], "Workspace ONE", .mdm),
     ]
 
     /// A known product named in `text`. A pattern must start a word ("eset" matches ESET or

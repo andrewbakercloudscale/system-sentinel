@@ -25,6 +25,10 @@ extension Model {
     /// `manual` reports the outcome on screen, in the window named by `surface`; the automatic
     /// check stays quiet unless it finds one.
     func checkForUpdates(manual: Bool, surface: String = "main") {
+        if Managed.noSelfUpdate {
+            if manual { showToast(Toast(ok: false, title: "Updates come from IT", detail: Managed.off)) }
+            return
+        }
         guard updateState != .checking, updateState != .installing else { return }
         updateState = .checking
         let mine = Model.appVersion
@@ -72,6 +76,7 @@ extension Model {
     /// Downloads the latest release and installs it even when it is this same version: a
     /// repair, and a way to try the installer.
     func reinstallLatest() {
+        if Managed.noSelfUpdate { return showToast(Toast(ok: false, title: "Updates come from IT", detail: Managed.off)) }
         guard updateState != .checking, updateState != .installing else { return }
         updateState = .checking
         Task.detached {
@@ -79,6 +84,10 @@ extension Model {
             await MainActor.run {
                 self.updateState = .idle
                 switch result {
+                // Never older than this copy: a release marked latest by mistake (or by someone
+                // with access to the repository) must not roll every Mac back.
+                case .success(let rel) where Updates.isNewer(Model.appVersion, than: rel.version):
+                    self.showToast(Toast(ok: false, title: "Not reinstalled", detail: "The latest release, \(rel.version), is older than this copy (\(Model.appVersion))."))
                 case .success(let rel): self.installUpdate(rel)
                 case .failure(let e):
                     self.updateState = .failed(e.text)
@@ -89,6 +98,7 @@ extension Model {
     }
 
     func installUpdate(_ release: Updates.Release? = nil) {
+        if Managed.noSelfUpdate { return showToast(Toast(ok: false, title: "Updates come from IT", detail: Managed.off)) }
         guard let rel = release ?? update, updateState != .installing else { return }
         let installed = Bundle.main.bundlePath
         guard installed.hasSuffix(".app") else {
