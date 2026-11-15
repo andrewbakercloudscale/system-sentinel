@@ -10,6 +10,12 @@
 # as CSSMERR_TP_NOT_TRUSTED and hidden by -v, but codesign signs with it just the same, and
 # the signature's requirement names the certificate's hash, not its trust. Falling back to
 # ad-hoc there shipped v0.8.41 with a signature the in-app updater refuses.
+# Releases pin the publisher's certificate (release.sh): every installed copy only accepts
+# updates signed by it, so signing with any other identity would cut the fleet off updates.
+SENTINEL_PUBLISHER_ID="8D7FBBB7FA351E97AEBEA46F65D73E69C1ADAB89"
+if [[ -z "${SENTINEL_SIGN_ID:-}" ]] && security find-identity -p codesigning 2>/dev/null | grep -q " $SENTINEL_PUBLISHER_ID "; then
+    SENTINEL_SIGN_ID="$SENTINEL_PUBLISHER_ID"
+fi
 if [[ -z "${SENTINEL_SIGN_ID:-}" ]]; then
     SENTINEL_SIGN_ID="$(security find-identity -p codesigning 2>/dev/null | awk '/^ *[0-9]+\) [0-9A-F]{40} / {print $2; exit}')"
 fi

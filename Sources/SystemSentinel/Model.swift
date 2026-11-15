@@ -855,13 +855,11 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
 
     // MARK: Explain
 
-    /// Opens ChatGPT with a prompt describing this process and this Mac, asking why it is
-    /// busy and how to bring it down. Nothing is sent until the owner presses Enter there.
+    /// A prompt describing this process and this Mac, asking why it is busy and how to bring
+    /// it down, copied for ChatGPT. Nothing is sent until the owner pastes it and presses Enter.
     func explain(_ s: ProcessSample) {
-        guard var c = URLComponents(string: "https://chatgpt.com/") else { return }
-        c.queryItems = [URLQueryItem(name: "q", value: explainPrompt(s))]
-        if let url = c.url { NSWorkspace.shared.open(url) }
-        lastAction = "Opened ChatGPT about \(s.displayName)"
+        open(explainPrompt(s))
+        lastAction = "Copied a ChatGPT prompt about \(s.displayName)"
     }
 
     /// ChatGPT about an insight: the finding, the processes involved, and this Mac.
@@ -882,10 +880,24 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
         lastAction = "Opened ChatGPT about: \(insight.title)"
     }
 
+    /// Copies the prompt and opens ChatGPT empty. Not in the address (`?q=`): that is sent the
+    /// moment the page loads and lands in browser history and proxy logs. The home folder and
+    /// user name are taken out first.
     private func open(_ prompt: String) {
-        guard var c = URLComponents(string: "https://chatgpt.com/") else { return }
-        c.queryItems = [URLQueryItem(name: "q", value: prompt)]
-        if let url = c.url { NSWorkspace.shared.open(url) }
+        if Managed.noExplain { return showToast(Toast(ok: false, title: "Explain is not available", detail: Managed.off)) }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(Model.scrub(prompt), forType: .string)
+        if let url = URL(string: "https://chatgpt.com/") { NSWorkspace.shared.open(url) }
+        showToast(Toast(ok: true, title: "Prompt copied for ChatGPT", detail: "Paste it (Cmd-V), read it, then send. Nothing has been sent."))
+    }
+
+    /// The prompt without the home folder or user name.
+    nonisolated static func scrub(_ s: String) -> String {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        var out = s.replacingOccurrences(of: home, with: "~")
+        let user = NSUserName()
+        if user.count >= 3 { out = out.replacingOccurrences(of: user, with: "<user>") }
+        return out
     }
 
     private func machineSummary() -> String {
@@ -896,7 +908,8 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
             let px = screen.convertRectToBacking(screen.frame).size
             return "\(Int(px.width))x\(Int(px.height)) @ \(screen.maximumFramesPerSecond) Hz"
         }
-        let others = sentinel.latest.filter { $0.cpu >= 3 }.sorted { $0.cpu > $1.cpu }.prefix(10)
+        // Company security software is left out: its names say what protects this Mac.
+        let others = sentinel.latest.filter { $0.cpu >= 3 && !Safety.isCompanyAgent($0) }.sorted { $0.cpu > $1.cpu }.prefix(10)
             .map { "\($0.name) \(Int($0.cpu))%" }.joined(separator: ", ")
         return """
         Mac: \(String(cString: hw)), \(Int(cores)) cores, macOS \(ProcessInfo.processInfo.operatingSystemVersionString)
@@ -915,7 +928,7 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
             let px = screen.convertRectToBacking(screen.frame).size
             return "\(Int(px.width))x\(Int(px.height)) @ \(screen.maximumFramesPerSecond) Hz"
         }
-        let others = sentinel.latest.filter { $0.pid != s.pid && $0.cpu >= 3 }.sorted { $0.cpu > $1.cpu }.prefix(10)
+        let others = sentinel.latest.filter { $0.pid != s.pid && $0.cpu >= 3 && !Safety.isCompanyAgent($0) }.sorted { $0.cpu > $1.cpu }.prefix(10)
             .map { "\($0.name) \(Int($0.cpu))%" }.joined(separator: ", ")
         let note = ProcessGuide.note(for: s.name).map { "\nWhat I know: \($0.headline). \($0.detail)" } ?? ""
         return """
@@ -1080,20 +1093,21 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
 
     /// Stops a launch agent or daemon and moves its plist to the Trash.
     func removeBackgroundItem(_ item: BackgroundItem) {
+        guard item.managedBy == nil else { return }
         let cmd = BackgroundItems.removeCommand(item, uid: getuid(), trash: NSString(string: "~/.Trash").expandingTildeInPath)
         let front = frontWindowNumber()
         Task.detached {
-            let task = Process()
+            var ok = false
             if item.scope == .user {
+                let task = Process()
                 task.executableURL = URL(fileURLWithPath: "/bin/sh")
                 task.arguments = ["-c", cmd]
-            } else {
-                let escaped = cmd.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
-                task.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-                task.arguments = ["-e", "do shell script \"\(escaped)\" with administrator privileges"]
+                task.standardError = FileHandle.nullDevice
+                ok = (try? task.run()) != nil && { task.waitUntilExit(); return task.terminationStatus == 0 }()
+            } else if let staged = RootStaging.run([BackgroundItems.rootRemoval(item, uid: getuid())]) {
+                // Root moved it into its own private folder; the Trash takes it from there, as you.
+                ok = !staged.anyFailed && RootStaging.trashAll(staged.folder).moved > 0
             }
-            task.standardError = FileHandle.nullDevice
-            let ok = (try? task.run()) != nil && { task.waitUntilExit(); return task.terminationStatus == 0 }()
             let gone = !FileManager.default.fileExists(atPath: item.plist)
             await MainActor.run {
                 comeBack(to: front)

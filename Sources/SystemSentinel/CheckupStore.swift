@@ -432,7 +432,11 @@ final class CheckupStore: ObservableObject {
                 let p = dir + "/" + f
                 guard let d = NSDictionary(contentsOfFile: p) as? [String: Any] else { continue }
                 let item = CheckParse.launchItem(d)
-                guard let prog = item.program, prog.hasPrefix("/"), !fm.fileExists(atPath: prog) else { continue }
+                // Only a program that is really gone (ENOENT), never one in a folder this user
+                // cannot read (EACCES), and never a company security or management agent.
+                var st = stat()
+                guard let prog = item.program, prog.hasPrefix("/"), stat(prog, &st) != 0, errno == ENOENT,
+                      BackgroundItems.managedBy(label: item.label, program: prog) == nil else { continue }
                 broken.append((p, item.label, prog, user))
             }
         }
@@ -455,28 +459,15 @@ final class CheckupStore: ObservableObject {
         }
         let system = still.filter { !$0.user }.map(\.plist)
         guard !system.isEmpty else { return (removed, failed, false) }
-        let staging = fm.temporaryDirectory.appendingPathComponent("SystemSentinel-startup-items-\(UUID().uuidString)")
-        for sub in CheckParse.systemLaunchDirs.values {
-            try? fm.createDirectory(at: staging.appendingPathComponent(sub), withIntermediateDirectories: true)
-        }
-        guard let command = CheckParse.removeSystemItemsCommand(plists: system, staging: staging.path, uid: uid) else {
-            try? fm.removeItem(at: staging)
+        guard let items = CheckParse.removeSystemItems(plists: system, uid: uid) else {
             return (removed, failed + system.count, false)
         }
-        // The command holds only paths that passed the shape check: no quotes or backslashes.
-        let ok = status("/usr/bin/osascript", ["-e", "do shell script \"\(command)\" with administrator privileges"]) == 0
-        var moved = 0, stuck = 0
-        for sub in CheckParse.systemLaunchDirs.values {
-            let dir = staging.appendingPathComponent(sub)
-            for f in (try? fm.contentsOfDirectory(atPath: dir.path)) ?? [] {
-                if (try? fm.trashItem(at: dir.appendingPathComponent(f), resultingItemURL: nil)) != nil { moved += 1 } else { stuck += 1 }
-            }
-        }
-        // Only an empty staging folder is deleted: a file the Trash refused stays there.
-        if stuck == 0 { try? fm.removeItem(at: staging) }
+        // Root moves them into a private folder it makes itself (RootStaging), never into one the user owns.
+        let staged = RootStaging.run(items, uid: uid)
+        let (moved, stuck) = staged.map { RootStaging.trashAll($0.folder, uid: uid) } ?? (0, 0)
         removed += moved
         failed += stuck + system.filter { fm.fileExists(atPath: $0) }.count
-        let cancelled = !ok && moved == 0 && stuck == 0
+        let cancelled = staged == nil && moved == 0 && stuck == 0
         return (removed, failed, cancelled)
     }
 

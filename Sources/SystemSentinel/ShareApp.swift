@@ -28,6 +28,8 @@ enum ShareApp {
 
     /// Opens the share menu under the mouse, in the window that was clicked.
     static func show() {
+        // Installs go through IT where updates are managed.
+        guard !Managed.noSelfUpdate else { return }
         guard let window = NSApp.keyWindow ?? NSApp.windows.first(where: \.isVisible), let view = window.contentView else { return }
         let point = view.convert(window.mouseLocationOutsideOfEventStream, from: nil)
         let picker = NSSharingServicePicker(items: [message])

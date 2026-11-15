@@ -30,16 +30,23 @@ echo "== Downloading the latest release"
 if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
   gh release download --repo "$REPO" --pattern '*Sentinel-*.zip' --dir "$TMP"
 else
-  URL="$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" \
+  URL="$(curl -fsSL --proto '=https' --proto-redir '=https' "https://api.github.com/repos/$REPO/releases/latest" \
     | grep -o '"browser_download_url": *"[^"]*\.zip"' | head -1 | cut -d'"' -f4 || true)"
   if [ -z "$URL" ]; then
     stop "Could not reach GitHub. Check the internet connection and run this again."
   fi
-  curl -fL --progress-bar -o "$TMP/System-Sentinel.zip" "$URL"
+  curl -fL --proto '=https' --proto-redir '=https' --progress-bar -o "$TMP/System-Sentinel.zip" "$URL"
 fi
 ZIP="$(ls "$TMP"/*.zip | head -1)"
 ditto -x -k "$ZIP" "$TMP/unzipped"
 NEW="$(ls -d "$TMP"/unzipped/*.app | head -1)"
+
+# Only an app signed by System Sentinel's publisher, the same check the in-app updater makes:
+# whoever could change the release on GitHub still cannot get another program installed.
+PUBLISHER='identifier "consulting.cloudscale.systemsentinel" and certificate leaf = H"8d7fbbb7fa351e97aebea46f65d73e69c1adab89"'
+if ! codesign --verify --strict --deep -R="$PUBLISHER" "$NEW" 2>/dev/null; then
+  stop "The download is not signed by System Sentinel's publisher. Nothing was installed."
+fi
 
 # Releases before 0.8.35 were built for Apple chips (M1 and later) only.
 ARCH="$(uname -m)"

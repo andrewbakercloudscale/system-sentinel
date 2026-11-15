@@ -79,27 +79,57 @@ final class CheckupTests: XCTestCase {
         XCTAssertEqual(CheckParse.caskTargets(info), ["/Applications/AltTab.app", "/Applications/Foo.app", "/Users/a/Library/Fonts/a.ttf"])
     }
 
-    func testRemoveSystemItemsCommand() {
-        let cmd = CheckParse.removeSystemItemsCommand(plists: ["/Library/LaunchDaemons/com.microsoft.OneDriveStandaloneUpdater.plist",
-                                                               "/Library/LaunchAgents/com.microsoft.SyncReporter.plist"],
-                                                      staging: "/var/folders/ab/x_1/T/SystemSentinel-startup-items-1", uid: 501)
-        XCTAssertEqual(cmd, "f=0; /bin/launchctl bootout system '/Library/LaunchDaemons/com.microsoft.OneDriveStandaloneUpdater.plist' 2>/dev/null; "
-            + "/bin/mv -f '/Library/LaunchDaemons/com.microsoft.OneDriveStandaloneUpdater.plist' '/var/folders/ab/x_1/T/SystemSentinel-startup-items-1/Daemons/com.microsoft.OneDriveStandaloneUpdater.plist' "
-            + "&& /usr/sbin/chown 501 '/var/folders/ab/x_1/T/SystemSentinel-startup-items-1/Daemons/com.microsoft.OneDriveStandaloneUpdater.plist' || f=1; "
-            + "/bin/launchctl bootout gui/501 '/Library/LaunchAgents/com.microsoft.SyncReporter.plist' 2>/dev/null; "
-            + "/bin/mv -f '/Library/LaunchAgents/com.microsoft.SyncReporter.plist' '/var/folders/ab/x_1/T/SystemSentinel-startup-items-1/Agents/com.microsoft.SyncReporter.plist' "
-            + "&& /usr/sbin/chown 501 '/var/folders/ab/x_1/T/SystemSentinel-startup-items-1/Agents/com.microsoft.SyncReporter.plist' || f=1; exit $f")
+    func testRemoveSystemItems() {
+        let items = CheckParse.removeSystemItems(plists: ["/Library/LaunchDaemons/com.microsoft.OneDriveStandaloneUpdater.plist",
+                                                          "/Library/LaunchAgents/com.microsoft.SyncReporter.plist"], uid: 501)
+        XCTAssertEqual(items, [
+            RootStaging.Item(stop: "/bin/launchctl bootout system '/Library/LaunchDaemons/com.microsoft.OneDriveStandaloneUpdater.plist'",
+                             plist: "/Library/LaunchDaemons/com.microsoft.OneDriveStandaloneUpdater.plist"),
+            RootStaging.Item(stop: "/bin/launchctl bootout gui/501 '/Library/LaunchAgents/com.microsoft.SyncReporter.plist'",
+                             plist: "/Library/LaunchAgents/com.microsoft.SyncReporter.plist"),
+        ])
         // Anything that could break out of the quoting, or reach outside the two folders, refuses the lot.
         let ok = "/Library/LaunchAgents/a.plist"
         for bad in ["/Library/LaunchAgents/a'b.plist", "/Library/LaunchAgents/a\"b.plist", "/Library/LaunchAgents/a b.plist",
                     "/Library/LaunchAgents/a.plist\n", "/Library/LaunchAgents/../LaunchDaemons/a.plist", "/Library/LaunchAgents/sub/a.plist",
                     "/System/Library/LaunchDaemons/a.plist", "/Library/LaunchAgents/a.txt", "/Library/LaunchAgents/.plist", "/Library/LaunchAgents/$(x).plist"] {
-            XCTAssertNil(CheckParse.removeSystemItemsCommand(plists: [ok, bad], staging: "/tmp/s", uid: 501), bad)
+            XCTAssertNil(CheckParse.removeSystemItems(plists: [ok, bad], uid: 501), bad)
         }
-        for bad in ["/tmp/a b", "/tmp/'x", "/tmp/../etc", "tmp/s", "/tmp/s\n"] {
-            XCTAssertNil(CheckParse.removeSystemItemsCommand(plists: [ok], staging: bad, uid: 501), bad)
+        XCTAssertNil(CheckParse.removeSystemItems(plists: [], uid: 501))
+    }
+
+    /// Root never writes into a folder the user owns: it moves into a folder mktemp makes for it.
+    func testRootStagingCommand() {
+        let cmd = RootStaging.command([RootStaging.Item(stop: "/bin/launchctl bootout 'system/it'\\''s'", plist: "/Library/LaunchDaemons/it's.plist")], uid: 501)
+        XCTAssertEqual(cmd, "f=0; d=$(/usr/bin/mktemp -d /private/tmp/systemsentinel-items.XXXXXXXX) || exit 1; "
+            + "/bin/launchctl bootout 'system/it'\\''s' 2>/dev/null; /bin/mkdir \"$d/0\" && /bin/mv -f '/Library/LaunchDaemons/it'\\''s.plist' \"$d/0/\"'it'\\''s.plist' || f=1; "
+            + "/usr/sbin/chown -R -h 501 \"$d\"; echo \"$d $f\"")
+        XCTAssertFalse(cmd.contains("/var/folders"))
+        XCTAssertFalse(cmd.contains(".Trash"))
+        // The AppleScript string escapes backslash before quote.
+        XCTAssertEqual(RootStaging.appleScript(#"a "b" \c"#), #"do shell script "a \"b\" \\c" with administrator privileges"#)
+    }
+
+    func testRootStagingParse() {
+        XCTAssertEqual(RootStaging.parse("/private/tmp/systemsentinel-items.Ab12Cd34 0\n")?.folder, "/private/tmp/systemsentinel-items.Ab12Cd34")
+        XCTAssertEqual(RootStaging.parse("/private/tmp/systemsentinel-items.Ab12Cd34 1")?.anyFailed, true)
+        for bad in ["", "/tmp/x 0", "/private/tmp/systemsentinel-items.Ab12Cd34", "/private/tmp/systemsentinel-items.../../etc 0",
+                    "/Users/me/systemsentinel-items.Ab12Cd34 0", "/private/tmp/systemsentinel-items.Ab12Cd34 0\nmore"] {
+            XCTAssertNil(RootStaging.parse(bad), bad)
         }
-        XCTAssertNil(CheckParse.removeSystemItemsCommand(plists: [], staging: "/tmp/s", uid: 501))
+    }
+
+    /// The user-side half refuses a link, so a swapped folder cannot point the Trash elsewhere.
+    func testTrashAllRefusesLinks() throws {
+        let fm = FileManager.default
+        let base = fm.temporaryDirectory.appendingPathComponent("rs-\(UUID().uuidString)")
+        try fm.createDirectory(at: base.appendingPathComponent("real/0"), withIntermediateDirectories: true)
+        try "x".write(to: base.appendingPathComponent("real/0/a.plist"), atomically: true, encoding: .utf8)
+        try fm.createSymbolicLink(atPath: base.appendingPathComponent("link").path, withDestinationPath: base.appendingPathComponent("real").path)
+        let r = RootStaging.trashAll(base.appendingPathComponent("link").path)
+        XCTAssertEqual(r.moved + r.stuck, 0)
+        XCTAssertTrue(fm.fileExists(atPath: base.appendingPathComponent("real/0/a.plist").path))
+        try fm.removeItem(at: base)
     }
 
     func testNetworkAndSystemParsers() {
