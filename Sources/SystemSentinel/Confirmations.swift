@@ -41,15 +41,38 @@ extension Model {
         showToast(Toast(ok: false, title: "\(s.displayName) is left alone", detail: Killer.companyAgent(s)))
     }
 
+    /// What the process is, before anyone decides to stop it: the guide's note, or what its
+    /// location says about it.
+    static func whatItIs(_ s: ProcessSample) -> String {
+        ProcessGuide.about(name: s.name, path: s.path)
+    }
+
+    /// The guide's advice on stopping it, as the first thing the card says it would do.
+    static func killAdvice(_ s: ProcessSample) -> String? {
+        switch ProcessGuide.note(for: s.name)?.verdict {
+        case .avoid: "Do not kill unless you must: macOS depends on it. It usually restarts at once, and things can misbehave until it does."
+        case .wait: "This is normal background work that settles on its own. Killing it rarely helps: macOS starts it again and it picks up where it left off."
+        case .safe: "Safe to stop: it comes back by itself when it is needed."
+        case .yours: "Something you or one of your apps started: stopping it stops that work."
+        case nil: nil
+        }
+    }
+
+    /// The card's message: what it is first, then which one.
+    func killMessage(_ s: ProcessSample, _ tail: String) -> String {
+        "\(Self.whatItIs(s))\n\n\(tail)"
+    }
+
     func confirmKill(_ s: ProcessSample) {
         guard !Safety.isCompanyAgent(s), !Safety.processControlOff else { return companyAgentNotice(s) }
         var points = ["Asks it to stop the normal way, so it can save and clean up.",
                       "If it is still running after 5 seconds, it is stopped by force."]
+        if let a = Self.killAdvice(s) { points.insert(a, at: 0) }
         if let w = Self.installWarning(s) { points.insert(w, at: 0) }
         if s.isRoot { points.append("It runs as root, so macOS asks for your password.") }
         if let m = memoryText([s.pid]) { points.append(m) }
         Confirm.ask(ConfirmRequest(symbol: "xmark.octagon.fill", tint: Self.red, title: "Kill \(s.displayName)?",
-                                   message: "pid \(s.pid)\(uptime(s).map { ", running \($0)" } ?? "").",
+                                   message: killMessage(s, "pid \(s.pid)\(uptime(s).map { ", running \($0)" } ?? "")."),
                                    points: points,
                                    undo: "Open it again to undo. Anything it had not saved is lost.",
                                    confirm: .init(title: "Kill", destructive: true) { self.kill(s) }))
@@ -59,13 +82,14 @@ extension Model {
         guard !Safety.isCompanyAgent(s), !Safety.processControlOff else { return companyAgentNotice(s) }
         let protected = !Safety.canKillManually(s)
         var points = ["Stops it at once (kill -9). It cannot refuse, and gets no chance to save or clean up."]
+        if let a = Self.killAdvice(s) { points.insert(a, at: 0) }
         if let w = Self.installWarning(s) { points.insert(w, at: 0) }
         if protected { points.append(SudoButton.consequence(of: s.name)) }
         if s.uid != getuid() { points.append("It runs as \(s.isRoot ? "root" : "another user"), so macOS asks for your password.") }
         var others: [ConfirmRequest.Choice] = []
         if s.uid != getuid() { others.append(.init(title: "Open sudo shell") { self.openSudoShell(s, force: true) }) }
         Confirm.ask(ConfirmRequest(symbol: "bolt.fill", tint: Self.red, title: "Force kill \(s.displayName)?",
-                                   message: "pid \(s.pid). Use Kill first: it lets the process save.",
+                                   message: killMessage(s, "pid \(s.pid). Use Kill first: it lets the process save."),
                                    points: points, undo: "Cannot be undone. Open the app again to start it fresh.",
                                    command: s.uid != getuid() ? Killer.forceSudoCommand(for: s) : nil,
                                    confirm: .init(title: "Force kill", destructive: true) { self.forceKill(s) }, others: others))
@@ -74,7 +98,7 @@ extension Model {
     func confirmSudoKill(_ s: ProcessSample) {
         guard !Safety.isCompanyAgent(s), !Safety.processControlOff else { return companyAgentNotice(s) }
         Confirm.ask(ConfirmRequest(symbol: "lock.fill", tint: Self.red, title: "Kill \(s.name) as admin?",
-                                   message: "pid \(s.pid). A protected macOS process.",
+                                   message: killMessage(s, "pid \(s.pid). A protected macOS process."),
                                    points: [SudoButton.consequence(of: s.name), "macOS asks for your password."],
                                    undo: "macOS restarts most of its own processes by itself.",
                                    command: Killer.sudoCommand(for: s),
