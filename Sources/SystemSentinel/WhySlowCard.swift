@@ -11,14 +11,15 @@ struct WhySlowCard: View {
 
     var body: some View {
         let r = model.recentLoad.report(cores: Int(CPUScale.cores))
-        let busy = r.busyShare ?? 0
-        let hot = busy >= 0.5 || (r.systemShare ?? 0) >= 0.25
-        let tint = hot ? Theme.heat(100) : Tab.processes.color
+        // Green normal, amber a bit slow, red slow.
+        let level = r.busy == nil ? .normal : r.level
+        let hot = level == .slow
+        let tint = level == .slow ? Theme.heat(100) : level == .someWhatSlow ? Theme.heat(20) : Theme.heat(0)
         VStack(alignment: .leading, spacing: 8) {
             Button { open.toggle() } label: {
                 HStack(spacing: 6) {
                     Image(systemName: "chevron.right").rotationEffect(.degrees(open ? 90 : 0)).font(.caption.weight(.bold))
-                    Image(systemName: hot ? "tortoise.fill" : "gauge.with.dots.needle.33percent")
+                    Image(systemName: hot ? "tortoise.fill" : level == .someWhatSlow ? "gauge.with.dots.needle.67percent" : "gauge.with.dots.needle.33percent")
                     Text("WHY IS IT SLOW? LAST \(max(Int((r.span / 60).rounded()), 1)) MIN").sectionLabel()
                     Spacer()
                     Text(headline(r)).font(.callout.weight(.semibold))
@@ -50,7 +51,7 @@ struct WhySlowCard: View {
         }
         .padding(10)
         .background(RoundedRectangle(cornerRadius: 9).fill(tint.opacity(0.06)))
-        .overlay(RoundedRectangle(cornerRadius: 9).stroke(tint.opacity(hot ? 0.45 : 0.18), lineWidth: hot ? 1.5 : 1))
+        .overlay(RoundedRectangle(cornerRadius: 9).stroke(tint.opacity(level == .normal ? 0.3 : 0.45), lineWidth: hot ? 1.5 : 1))
     }
 
     /// Many processes starting is load no row shows: every start costs the kernel a fork,
