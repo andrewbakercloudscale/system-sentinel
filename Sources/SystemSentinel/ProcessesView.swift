@@ -55,6 +55,7 @@ struct ProcessesView: View {
         // column headers stay in view however far the list is scrolled.
         Section {
             let cols = ProcessColumns(trend: colTrend, now: colNow, avg: colAvg, mem: colMem, gpu: colGPU)
+            if frozen == nil && search.isEmpty { WhySlowCard(model: model) }
             if !runaways.isEmpty {
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 6) {
