@@ -73,6 +73,41 @@ import Testing
         #expect(r.report(cores: 4, at: t0.addingTimeInterval(10)).started == 29)
     }
 
+    @Test func starterNamesTheLoopingScript() {
+        let r = RecentLoad(window: 300)
+        let t0 = Date(timeIntervalSince1970: 1_000_000)
+        let term = p(10, "/Applications/Ghostty.app/Contents/MacOS/ghostty", 1)
+        let panel = ProcessSample(pid: 20, uid: 501, cpu: 0, path: "/bin/bash", ppid: 10)
+        let inline = ProcessSample(pid: 30, uid: 501, cpu: 0, path: "/bin/zsh", ppid: 10)
+        let args: [Int32: [String]] = [20: ["bash", "/Users/a/.local/bin/ccusage-panel.sh", "10"], 30: ["zsh", "-c", "sleep 1"]]
+        r.record([term, panel, inline], ticks: [], parent: { _ in nil }, arguments: { args[$0] ?? [] }, at: t0)
+        r.record([term, panel, inline, ProcessSample(pid: 40, uid: 501, cpu: 0, path: "/bin/sleep", ppid: 20),
+                  ProcessSample(pid: 41, uid: 501, cpu: 0, path: "/bin/sleep", ppid: 20),
+                  ProcessSample(pid: 42, uid: 501, cpu: 0, path: "/bin/sleep", ppid: 30)],
+                 ticks: [], parent: { _ in nil }, arguments: { args[$0] ?? [] }, at: t0.addingTimeInterval(5))
+        let by = r.report(cores: 4, at: t0.addingTimeInterval(5)).startedBy
+        #expect(by.first?.family == "ccusage-panel.sh")
+        #expect(by.first?.count == 2)
+        #expect(by.contains { $0.family == "Ghostty" }) // a -c shell passes on to its parent
+    }
+
+    @Test func levels() {
+        func rep(busy: Double, sys: Double, started: Int = 0) -> RecentLoad.Report {
+            RecentLoad.Report(span: 60, busy: busy, system: sys, families: [], unseen: 0, capacity: 1000, started: started, startedBy: [])
+        }
+        #expect(rep(busy: 200, sys: 50).level == .normal)
+        #expect(rep(busy: 430, sys: 110, started: 39 * 60).level == .someWhatSlow)
+        #expect(rep(busy: 710, sys: 190).level == .slow)
+        #expect(rep(busy: 200, sys: 50, started: 174 * 60).level == .slow)
+    }
+
+    @Test func scriptFromArguments() {
+        #expect(RecentLoad.script(["/bin/zsh", "/usr/local/libexec/x/lid-awake-root.sh", "watch"]) == "lid-awake-root.sh")
+        #expect(RecentLoad.script(["bash", "-e", "run.sh"]) == "run.sh")
+        #expect(RecentLoad.script(["zsh", "-c", "source x"]) == nil)
+        #expect(RecentLoad.script(["-zsh"]) == nil)
+    }
+
     @Test func classification() {
         #expect(LoadFamily.of(p(1, "/Users/a/.local/share/claude/versions/2.1.323", 1)).name == LoadFamily.claude)
         #expect(LoadFamily.of(p(1, "/Users/a/.local/bin/claude-burst", 1)).name == LoadFamily.claude)

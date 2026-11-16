@@ -22,6 +22,8 @@ public final class RecentLoad {
     }
     private var readings: [Reading] = []
     private var known: Set<Int32> = []
+    /// The script each shell runs, read once per shell: nil for an interactive or -c shell.
+    private var scripts: [Int32: String?] = [:]
     private var newestPid: Int32?
     /// macOS hands out pids up to this, then starts again from the bottom.
     static let pidMax: Int32 = 99_999
@@ -33,7 +35,8 @@ public final class RecentLoad {
 
     /// One process sample, and the CPU counters summed over every core at the same moment.
     public func record(_ samples: [ProcessSample], ticks t: [CoreLoad.Ticks],
-                       parent: (Int32) -> Int32? = ProcessDetail.parent, at now: Date) {
+                       parent: (Int32) -> Int32? = ProcessDetail.parent,
+                       arguments: (Int32) -> [String] = ProcessDetail.arguments, at now: Date) {
         var fam: [String: (cpu: Double, pids: Set<Int32>, names: [String: Double])] = [:]
         for s in samples where s.cpu > 0 {
             let k = LoadFamily.of(s).name
@@ -65,10 +68,11 @@ public final class RecentLoad {
         if !known.isEmpty {
             let byPid = Dictionary(samples.map { ($0.pid, $0) }, uniquingKeysWith: { a, _ in a })
             for s in samples where !known.contains(s.pid) {
-                startedBy[Self.starter(of: s, byPid: byPid, parent: parent), default: 0] += 1
+                startedBy[starter(of: s, byPid: byPid, parent: parent, arguments: arguments), default: 0] += 1
             }
         }
         known = Set(samples.map(\.pid))
+        scripts = scripts.filter { known.contains($0.key) }
         readings.append(Reading(at: now, families: fam, started: started, startedBy: startedBy))
         if !t.isEmpty {
             let sum = t.reduce(CoreLoad.Ticks(user: 0, system: 0, idle: 0, nice: 0)) {
@@ -85,14 +89,33 @@ public final class RecentLoad {
     /// Shells and timers only pass work on; the family is whoever is above them.
     static let passThrough: Set<String> = ["bash", "zsh", "sh", "-zsh", "-bash", "login", "sleep", "env", "caffeinate", "xargs", "timeout"]
 
-    /// The family of the program that started `s`: up through shells and launchd's children
-    /// to the first program that is not a shell, or `s` itself.
-    static func starter(of s: ProcessSample, byPid: [Int32: ProcessSample], parent: (Int32) -> Int32?) -> String {
+    static let shells: Set<String> = ["bash", "zsh", "sh", "-zsh", "-bash", "dash", "fish"]
+
+    /// The script a shell runs, from its command line: "bash /path/ccusage-panel.sh 10" is
+    /// ccusage-panel.sh. Nil for an interactive shell or one running a -c command string.
+    public static func script(_ args: [String]) -> String? {
+        for a in args.dropFirst() {
+            if a == "-c" { return nil }
+            if a.hasPrefix("-") { continue }
+            let name = (a as NSString).lastPathComponent
+            return name.isEmpty ? nil : name
+        }
+        return nil
+    }
+
+    /// Who started `s`: up through shells and timers to the first real program, or the
+    /// script a shell on the way runs, since a looping script is what someone can stop.
+    func starter(of s: ProcessSample, byPid: [Int32: ProcessSample], parent: (Int32) -> Int32?,
+                 arguments: (Int32) -> [String]) -> String {
         var cur = s
         for _ in 0..<8 {
             guard let pp = cur.ppid > 0 ? cur.ppid : parent(cur.pid), pp > 1, let up = byPid[pp] else { break }
             cur = up
-            if !passThrough.contains(cur.name) { break }
+            if Self.shells.contains(cur.name) {
+                if scripts[cur.pid] == nil { scripts[cur.pid] = .some(Self.script(arguments(cur.pid))) }
+                if let name = scripts[cur.pid] ?? nil { return name }
+            }
+            if !Self.passThrough.contains(cur.name) { break }
         }
         return LoadFamily.of(cur).name
     }
@@ -124,6 +147,20 @@ public final class RecentLoad {
         public let startedBy: [(family: String, count: Int)]
 
         public var startsPerSecond: Double { span > 0 ? Double(started) / span : 0 }
+
+        public enum Level: Int, Comparable, Sendable {
+            case normal, someWhatSlow, slow
+            public static func < (a: Level, b: Level) -> Bool { a.rawValue < b.rawValue }
+        }
+
+        /// How slow it will feel: the worst of how busy the CPUs are, how much of that is the
+        /// kernel, and how fast processes are starting.
+        public var level: Level {
+            let busy = busyShare ?? 0, sys = systemShare ?? 0, starts = startsPerSecond
+            if busy >= 0.6 || sys >= 0.2 || starts >= 100 { return .slow }
+            if busy >= 0.3 || sys >= 0.1 || starts >= 30 { return .someWhatSlow }
+            return .normal
+        }
 
         public static func == (a: Report, b: Report) -> Bool {
             a.span == b.span && a.busy == b.busy && a.system == b.system && a.families == b.families
