@@ -1,0 +1,115 @@
+import SentinelCore
+import SwiftUI
+
+/// Top of the Processes tab: the last 5 minutes added up by family, and the CPU no row
+/// accounts for. The list below ranks single processes, which hides many small ones of one
+/// kind and processes too short-lived to be sampled; this is where those show up.
+struct WhySlowCard: View {
+    @ObservedObject var model: Model
+    /// Closed by default: one line with the headline, opened when wanted.
+    @AppStorage("whySlow.open.v2") private var open = false
+
+    var body: some View {
+        let r = model.recentLoad.report(cores: Int(CPUScale.cores))
+        let busy = r.busyShare ?? 0
+        let hot = busy >= 0.5 || (r.systemShare ?? 0) >= 0.25
+        let tint = hot ? Theme.heat(100) : Tab.processes.color
+        VStack(alignment: .leading, spacing: 8) {
+            Button { open.toggle() } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "chevron.right").rotationEffect(.degrees(open ? 90 : 0)).font(.caption.weight(.bold))
+                    Image(systemName: hot ? "tortoise.fill" : "gauge.with.dots.needle.33percent")
+                    Text("WHY IS IT SLOW? LAST \(max(Int((r.span / 60).rounded()), 1)) MIN").sectionLabel()
+                    Spacer()
+                    Text(headline(r)).font(.callout.weight(.semibold))
+                }
+                .foregroundStyle(tint).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .tip("What used the CPU over the last few minutes, added up by kind, including processes too short-lived for the list")
+            if open {
+                let top = Array(r.families.prefix(6))
+                let peak = max(top.first?.cpu ?? 1, r.unseen ?? 0, 1)
+                ForEach(top) { f in
+                    row(f.name, cpu: f.cpu, peak: peak, tint: tint,
+                        detail: detail(f), note: f.note)
+                }
+                if let u = r.unseen, u >= 10 {
+                    row("Not in any row: kernel and short-lived processes", cpu: u, peak: peak, tint: tint,
+                        detail: r.system.map { "\(Fmt.cpu($0)) of the Mac was kernel (system) time" } ?? "",
+                        note: "Work the process list cannot show: the kernel, and programs that start and finish between two samples (scripts, status bars, hooks). High system time also comes from heavy disk or network work, or many processes starting at once.")
+                }
+                if r.started > 0 {
+                    starts(r, tint: tint)
+                }
+                if r.families.isEmpty && (r.unseen ?? 0) < 10 {
+                    Text("Nothing has been busy. If the Mac still feels slow, look at Memory (swap) and Energy (heat).")
+                        .font(.callout).foregroundStyle(.secondary)
+                }
+            }
+        }
+        .padding(10)
+        .background(RoundedRectangle(cornerRadius: 9).fill(tint.opacity(0.06)))
+        .overlay(RoundedRectangle(cornerRadius: 9).stroke(tint.opacity(hot ? 0.45 : 0.18), lineWidth: hot ? 1.5 : 1))
+    }
+
+    /// Many processes starting is load no row shows: every start costs the kernel a fork,
+    /// a code signature check and loading libraries, and a loop of `sleep` or `ps` in a
+    /// dozen terminals adds up to whole cores.
+    private func starts(_ r: RecentLoad.Report, tint: Color) -> some View {
+        let rate = r.startsPerSecond
+        let busy = rate >= 10
+        let who = r.startedBy.map { "\($0.family) \($0.count)" }.joined(separator: ", ")
+        return VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 6) {
+                Image(systemName: busy ? "exclamationmark.triangle.fill" : "arrow.triangle.branch")
+                    .foregroundStyle(busy ? tint : .secondary)
+                Text("\(r.started) processes started, \(rate >= 1 ? "\(Int(rate.rounded())) a second" : "under 1 a second")")
+                    .font(.callout.weight(.semibold))
+            }
+            if !who.isEmpty {
+                Text("Started by: \(who)").font(.caption).foregroundStyle(.secondary).lineLimit(2)
+            }
+            if busy {
+                Text("That many starts keeps the kernel busy on its own. Usually scripts polling in a loop: status bars, terminal panels, file watchers or a build or test run. Close the ones you do not need.")
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .tip("Counted from process ids, so ones that started and finished between two samples count too. Started by counts only the ones a sample caught.")
+    }
+
+    private func headline(_ r: RecentLoad.Report) -> String {
+        guard let b = r.busy else { return "measuring…" }
+        var s = "Mac \(Fmt.cpu(b)) busy"
+        if let sys = r.system, sys >= 0.1 * r.capacity { s += ", \(Fmt.cpu(sys)) kernel" }
+        if r.startsPerSecond >= 10 { s += ", \(Int(r.startsPerSecond.rounded())) new processes a second" }
+        return s
+    }
+
+    private func detail(_ f: RecentLoad.Family) -> String {
+        let who = f.examples.joined(separator: ", ")
+        let n = f.processes > 1 ? "\(f.processes) processes" : ""
+        return [n, who].filter { !$0.isEmpty }.joined(separator: ": ")
+    }
+
+    private func row(_ name: String, cpu: Double, peak: Double, tint: Color, detail: String, note: String?) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 8) {
+                Text(name).font(.callout.weight(.semibold)).lineLimit(1)
+                Spacer(minLength: 8)
+                GeometryReader { g in
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(Color.primary.opacity(0.08))
+                        Capsule().fill(Theme.heat(min(cpu / peak * 100, 100))).frame(width: g.size.width * min(cpu / peak, 1))
+                    }
+                }
+                .frame(width: 90, height: 6)
+                Text(Fmt.cpu(cpu)).font(.callout.monospacedDigit().weight(.semibold)).frame(width: 56, alignment: .trailing)
+            }
+            if !detail.isEmpty {
+                Text(detail).font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.tail)
+            }
+        }
+        .tip(note ?? name)
+    }
+}

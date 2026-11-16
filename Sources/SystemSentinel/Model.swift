@@ -139,6 +139,8 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
     }
 
     let sentinel: Sentinel
+    /// The last 5 minutes by family, for Why is it slow.
+    let recentLoad = RecentLoad()
     /// The running model, for the app delegate (which SwiftUI creates before the scene's state).
     static weak var current: Model?
     /// Kept alive so SIGTERM saves before quitting.
@@ -318,6 +320,7 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
             attentionCache = nil
             top = sentinel.top(30)
             totalCPU = sentinel.totalCPU
+            recentLoad.record(sentinel.latest, ticks: CoreLoad.readTicks(), at: Date())
             let live = Set(sentinel.latest.map(\.pid))
             flagged.formIntersection(live)
             slowed.formIntersection(live)

@@ -13,9 +13,13 @@ public struct ProcessSample: Equatable, Sendable {
     /// `ps` state letters: "R" running, "S" sleeping, "U" stuck waiting (disk or paging).
     /// Empty where the sample did not read it.
     public let state: String
+    /// The parent, where the sample read it (0 otherwise). Read with the sample because a
+    /// short-lived process is often gone by the time anything could ask the kernel.
+    public let ppid: Int32
 
-    public init(pid: Int32, uid: UInt32, cpu: Double, path: String, rssKB: Int = 0, state: String = "") {
+    public init(pid: Int32, uid: UInt32, cpu: Double, path: String, rssKB: Int = 0, state: String = "", ppid: Int32 = 0) {
         self.pid = pid
+        self.ppid = ppid
         self.state = state
         self.uid = uid
         self.cpu = cpu
@@ -104,7 +108,7 @@ public enum ProcessSampler {
         }
         guard cpu > 0 || rss > 0, let i = out.firstIndex(where: { $0.pid == me }) else { return out }
         let s = out[i]
-        out[i] = ProcessSample(pid: s.pid, uid: s.uid, cpu: s.cpu + cpu, path: s.path, rssKB: s.rssKB + rss, state: s.state)
+        out[i] = ProcessSample(pid: s.pid, uid: s.uid, cpu: s.cpu + cpu, path: s.path, rssKB: s.rssKB + rss, state: s.state, ppid: s.ppid)
         return out
     }
 
@@ -120,7 +124,7 @@ public enum ProcessSampler {
             var path = s.path
             if path.hasPrefix("("), path.hasSuffix(")") { path = String(path.dropFirst().dropLast()) }
             if let full = pathOf(s.pid), (full as NSString).lastPathComponent == path { path = full }
-            return path == s.path ? s : ProcessSample(pid: s.pid, uid: s.uid, cpu: s.cpu, path: path, rssKB: s.rssKB, state: s.state)
+            return path == s.path ? s : ProcessSample(pid: s.pid, uid: s.uid, cpu: s.cpu, path: path, rssKB: s.rssKB, state: s.state, ppid: s.ppid)
         }
     }
 
@@ -170,7 +174,7 @@ public enum ProcessSampler {
             else { continue }
             let ppid = count > 4 ? Int32(fields[4]) ?? 0 : 0
             let state = count > 5 ? String(fields[5]) : ""
-            out.append((ProcessSample(pid: pid, uid: uid, cpu: cpu, path: String(path), rssKB: rss, state: state), ppid))
+            out.append((ProcessSample(pid: pid, uid: uid, cpu: cpu, path: String(path), rssKB: rss, state: state, ppid: ppid), ppid))
         }
         return out
     }
