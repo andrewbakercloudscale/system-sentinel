@@ -260,3 +260,32 @@ public enum LoadFamily {
         }
     }
 }
+
+/// Swapping over the same few minutes: memory written out to disk and read back. Each page
+/// read back stalls whatever needed it, so a busy swap makes the whole Mac stutter even when
+/// the CPU is not full.
+public struct SwapActivity: Equatable, Sendable {
+    /// Swap traffic in and out, bytes a second, averaged over the minutes.
+    public let rate: Double
+    /// Highest memory pressure seen: 0 normal, 1 warning, 2 critical.
+    public let pressure: Int
+
+    public init(rate: Double, pressure: Int) {
+        self.rate = rate
+        self.pressure = pressure
+    }
+
+    /// From the memory timeline's minutes since `since` (the CPU window's start).
+    public static func of(_ points: [MemoryHistory.Point]) -> SwapActivity? {
+        guard !points.isEmpty else { return nil }
+        let rate = points.reduce(0) { $0 + $1.swapIn + $1.swapOut } / Double(points.count)
+        return SwapActivity(rate: rate, pressure: points.map(\.pressure).max() ?? 0)
+    }
+
+    /// 20 MB/s of swap is several thousand stalls a second; 5 MB/s is felt as hitches.
+    public var level: RecentLoad.Report.Level {
+        if rate >= 20_000_000 || pressure >= 2 { return .slow }
+        if rate >= 5_000_000 || pressure >= 1 { return .someWhatSlow }
+        return .normal
+    }
+}
