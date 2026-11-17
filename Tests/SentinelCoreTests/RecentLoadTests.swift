@@ -116,3 +116,19 @@ import Testing
         #expect(LoadFamily.of(p(0, "kernel_task", 1)).name == LoadFamily.kernel)
     }
 }
+
+@Suite struct SwapActivityTests {
+    func point(_ t: Int, inn: Double, out: Double, pressure: Int = 0) -> MemoryHistory.Point {
+        MemoryHistory.Point(t: t, used: 0, compressed: 0, swap: 0, pressure: pressure, swapIn: inn, swapOut: out)
+    }
+
+    @Test func averagesAndLevels() {
+        #expect(SwapActivity.of([]) == nil)
+        let calm = SwapActivity.of([point(0, inn: 0, out: 1_000_000), point(60, inn: 1_000_000, out: 0)])
+        #expect(calm?.rate == 1_000_000)
+        #expect(calm?.level == .normal)
+        #expect(SwapActivity.of([point(0, inn: 4_000_000, out: 4_000_000)])?.level == .someWhatSlow)
+        #expect(SwapActivity.of([point(0, inn: 30_000_000, out: 0)])?.level == .slow)
+        #expect(SwapActivity.of([point(0, inn: 0, out: 0, pressure: 2)])?.level == .slow)
+    }
+}

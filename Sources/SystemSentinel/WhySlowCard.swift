@@ -11,8 +11,9 @@ struct WhySlowCard: View {
 
     var body: some View {
         let r = model.recentLoad.report(cores: Int(CPUScale.cores))
-        // Green normal, amber a bit slow, red slow.
-        let level = r.busy == nil ? .normal : r.level
+        let swap = SwapActivity.of(model.memoryHistory.since(Date().addingTimeInterval(-max(r.span, 60))))
+        // Green normal, amber a bit slow, red slow: the worse of the CPU and swapping.
+        let level = max(r.busy == nil ? .normal : r.level, swap?.level ?? .normal)
         let hot = level == .slow
         let tint = level == .slow ? Theme.heat(100) : level == .someWhatSlow ? Theme.heat(20) : Theme.heat(0)
         VStack(alignment: .leading, spacing: 8) {
@@ -22,7 +23,7 @@ struct WhySlowCard: View {
                     Image(systemName: hot ? "tortoise.fill" : level == .someWhatSlow ? "gauge.with.dots.needle.67percent" : "gauge.with.dots.needle.33percent")
                     Text("WHY IS IT SLOW? LAST \(max(Int((r.span / 60).rounded()), 1)) MIN").sectionLabel()
                     Spacer()
-                    Text(headline(r)).font(.callout.weight(.semibold))
+                    Text(headline(r, swap: swap)).font(.callout.weight(.semibold))
                 }
                 .foregroundStyle(tint).contentShape(Rectangle())
             }
@@ -43,7 +44,10 @@ struct WhySlowCard: View {
                 if r.started > 0 {
                     starts(r, tint: tint)
                 }
-                if r.families.isEmpty && (r.unseen ?? 0) < 10 {
+                if let swap, showsSwap(swap) {
+                    swapping(swap, tint: tint)
+                }
+                if r.families.isEmpty && (r.unseen ?? 0) < 10 && !(swap.map(showsSwap) ?? false) {
                     Text("Nothing has been busy. If the Mac still feels slow, look at Memory (swap) and Energy (heat).")
                         .font(.callout).foregroundStyle(.secondary)
                 }
@@ -84,12 +88,47 @@ struct WhySlowCard: View {
         span < 90 ? "\(max(Int(span.rounded()), 1)) seconds" : "\(Int((span / 60).rounded())) minutes"
     }
 
-    private func headline(_ r: RecentLoad.Report) -> String {
+    private func headline(_ r: RecentLoad.Report, swap: SwapActivity?) -> String {
         guard let b = r.busy else { return "measuring…" }
         var s = "Mac \(Fmt.cpu(b)) busy"
         if let sys = r.system, sys >= 0.1 * r.capacity { s += ", \(Fmt.cpu(sys)) kernel" }
         if r.startsPerSecond >= 10 { s += ", \(Int(r.startsPerSecond.rounded())) new processes a second" }
+        if let swap, swap.level > .normal { s += ", swapping \(IORow.rate(swap.rate))" }
         return s
+    }
+
+    private func showsSwap(_ swap: SwapActivity) -> Bool {
+        swap.rate >= 1_000_000 || swap.pressure >= 1 || model.readingBack.contains { $0.rate >= 1_000_000 }
+    }
+
+    /// Memory written out to disk and read back: each page read back stalls whoever needed
+    /// it, so this is slow the CPU rows cannot show. macOS keeps no swap count per process;
+    /// page-ins (which include file reads) and what is out of RAM are the closest per app.
+    private func swapping(_ swap: SwapActivity, tint: Color) -> some View {
+        let heavy = swap.level > .normal
+        let back = model.readingBack.prefix(4).filter { $0.rate >= 500_000 }
+            .map { "\($0.name) \(IORow.rate($0.rate))" }.joined(separator: ", ")
+        let away = model.memoryApps.filter { $0.outOfRAM >= 512 << 20 }.sorted { $0.outOfRAM > $1.outOfRAM }.prefix(4)
+            .map { "\($0.name) \(ReportDocument.bytes($0.outOfRAM))" }.joined(separator: ", ")
+        let pressure = swap.pressure >= 2 ? ", memory pressure critical" : swap.pressure == 1 ? ", memory pressure high" : ""
+        return VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 6) {
+                Image(systemName: heavy ? "exclamationmark.triangle.fill" : "memorychip")
+                    .foregroundStyle(heavy ? tint : .secondary)
+                Text("Swapping \(IORow.rate(swap.rate)) to and from disk\(pressure)").font(.callout.weight(.semibold))
+            }
+            if !back.isEmpty {
+                Text("Reading memory back most: \(back)").font(.caption).foregroundStyle(.secondary).lineLimit(2)
+            }
+            if !away.isEmpty {
+                Text("Most memory out of RAM (compressed or in swap): \(away)").font(.caption).foregroundStyle(.secondary).lineLimit(2)
+            }
+            if heavy {
+                Text("Apps want more memory than the Mac has, so macOS keeps moving it to disk and back, and everything waits. Quit the app with the most out of RAM, or close tabs and windows you do not need.")
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .tip("Swap traffic for the whole Mac over these minutes. macOS does not count swap per app, so the apps are the ones reading pages back from disk (files included) and holding the most outside RAM.")
     }
 
     private func detail(_ f: RecentLoad.Family) -> String {
