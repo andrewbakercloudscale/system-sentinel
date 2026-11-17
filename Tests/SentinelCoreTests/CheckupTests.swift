@@ -178,6 +178,17 @@ final class CheckupTests: XCTestCase {
         XCTAssertNil(CheckParse.crashCheck([.init(process: "x", dates: [now, now], bundleID: nil)], reports: "/r", now: now), "two is not a pattern")
     }
 
+    func testKillsAndBlockedLaunchesAreNotCrashes() {
+        let head = #"{"app_name":"SystemSentinel"}"# + "\n{\n  \"procName\" : \"SystemSentinel\",\n"
+        XCTAssertTrue(CheckParse.notACrash(head + #"  "termination" : {"flags":0,"code":11,"namespace":"SIGNAL","indicator":"Segmentation fault: 11","byProc":"zsh","byPid":25385},"#))
+        XCTAssertTrue(CheckParse.notACrash(head + #"  "termination" : {"flags":66,"code":4,"namespace":"CODESIGNING","indicator":"Launch Constraint Violation"},"#))
+        XCTAssertFalse(CheckParse.notACrash(head + #"  "termination" : {"flags":0,"code":6,"namespace":"SIGNAL","indicator":"Abort trap: 6","byProc":"SystemSentinel","byPid":28305},"#))
+        XCTAssertFalse(CheckParse.notACrash(head + #"  "termination" : {"flags":0,"code":11,"namespace":"SIGNAL","indicator":"Segmentation fault: 11"},"#))
+        XCTAssertFalse(CheckParse.notACrash("Process: Old\nException Type: EXC_BAD_ACCESS"))
+        let now = Date()
+        XCTAssertTrue(CheckParse.crashCounts([("ExcUserFault_secinitd-2026-11-14-102016.ips", now)], since: now.addingTimeInterval(-60)).isEmpty)
+    }
+
     func testReadsTheBundleIDFromACrashReportHeader() {
         XCTAssertNil(CheckParse.crashBundleID(#"{"app_name":"swift-frontend","bundleID":"","name":"swift-frontend"}"# + "\n{"))
         XCTAssertEqual(CheckParse.crashBundleID(#"{"app_name":"Slack","bundleID":"com.tinyspeck.slackmacgap"}"# + "\n{"), "com.tinyspeck.slackmacgap")

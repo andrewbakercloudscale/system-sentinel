@@ -433,12 +433,28 @@ public enum CheckParse {
         return c
     }
 
+    /// A report macOS files under the same name as a crash for something that was not one:
+    /// a program stopped by another (`kill -SEGV` from a shell, a watchdog), or one blocked
+    /// before it ran because its file changed under it (a rebuild or update replacing the
+    /// binary while it was launching). Reads the first few KB of the report's text.
+    public static func notACrash(_ report: String) -> Bool {
+        guard let r = report.range(of: #""termination"\s*:\s*\{[^}]*\}"#, options: .regularExpression) else { return false }
+        let t = String(report[r])
+        if t.contains("\"CODESIGNING\"") { return true }
+        guard let by = t.range(of: #""byProc"\s*:\s*"[^"]*""#, options: .regularExpression),
+              let name = report.range(of: #""procName"\s*:\s*"[^"]*""#, options: .regularExpression) else { return false }
+        func value(_ s: Substring) -> String { String(s.split(separator: "\"").last ?? "") }
+        return value(t[by]) != value(report[name])
+    }
+
     public static func crashCounts(_ files: [(name: String, date: Date)], since: Date) -> [(process: String, count: Int)] {
         var counts: [String: Int] = [:]
         for f in files where f.date >= since && (f.name.hasSuffix(".ips") || f.name.hasSuffix(".crash")) {
             guard let r = f.name.range(of: #"-\d{4}-\d{2}-\d{2}-\d{6}"#, options: .regularExpression) else { continue }
             let proc = String(f.name[..<r.lowerBound])
-            if proc.hasPrefix("panic") || proc.hasPrefix("JetsamEvent") || proc.contains(".cpu_resource") || proc.contains(".diag") { continue }
+            // ExcUserFault_ reports are a system service noting a fault it survived, not a crash.
+            if proc.hasPrefix("panic") || proc.hasPrefix("JetsamEvent") || proc.hasPrefix("ExcUserFault")
+                || proc.contains(".cpu_resource") || proc.contains(".diag") { continue }
             counts[proc, default: 0] += 1
         }
         return counts.map { ($0.key, $0.value) }.sorted { $0.count > $1.count }
