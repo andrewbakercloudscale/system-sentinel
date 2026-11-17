@@ -64,23 +64,60 @@ struct WhySlowCard: View {
     private func starts(_ r: RecentLoad.Report, tint: Color) -> some View {
         let rate = r.startsPerSecond
         let busy = rate >= 10
-        let who = r.startedBy.map { "\($0.family) \($0.count)" }.joined(separator: ", ")
-        return VStack(alignment: .leading, spacing: 2) {
+        return VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
                 Image(systemName: busy ? "exclamationmark.triangle.fill" : "arrow.triangle.branch")
                     .foregroundStyle(busy ? tint : .secondary)
                 Text("\(r.started) processes started in \(period(r.span)), \(rate >= 1 ? "\(Int(rate.rounded())) a second" : "under 1 a second")")
                     .font(.callout.weight(.semibold))
             }
-            if !who.isEmpty {
-                Text("Started by (of the ones a sample caught): \(who)").font(.caption).foregroundStyle(.secondary).lineLimit(2)
+            .tip("Counted from process ids, which macOS hands out in order, so ones that started and finished between two samples count too.")
+            if !r.startedBy.isEmpty {
+                starters(r)
             }
             if busy {
                 Text("That many starts keeps the kernel busy on its own. Usually scripts polling in a loop: status bars, terminal panels, file watchers or a build or test run. Close the ones you do not need.")
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
         }
-        .tip("Counted from process ids, so ones that started and finished between two samples count too. Started by counts only the ones a sample caught.")
+    }
+
+    /// Top 5 starters. A sample every 5 seconds catches only some of the new processes, so
+    /// each one's rate is its share of those caught, times the real rate from the pid count.
+    private func starters(_ r: RecentLoad.Report) -> some View {
+        Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 5) {
+            GridRow {
+                Text("Top starters")
+                Text("Share").gridColumnAlignment(.trailing)
+                Text("About").gridColumnAlignment(.trailing)
+                Text("Caught").gridColumnAlignment(.trailing)
+            }
+            .font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
+            Divider().gridCellUnsizedAxes(.horizontal)
+            ForEach(r.startedBy) { s in
+                GridRow {
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(s.name).font(.caption.weight(.medium)).lineLimit(1).truncationMode(.middle)
+                        if !s.detail.isEmpty && s.detail != s.name {
+                            Text(s.detail).font(.caption2.monospaced()).foregroundStyle(.secondary)
+                                .lineLimit(1).truncationMode(.middle).textSelection(.enabled)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    Text("\(Int((s.share * 100).rounded()))%").font(.caption.monospacedDigit())
+                    Text(perSecond(s.share * r.startsPerSecond)).font(.caption.monospacedDigit())
+                    Text("\(s.caught)").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                }
+                .help(s.detail)
+            }
+        }
+        .padding(8)
+        .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 6))
+        .tip("Who started the new processes. Samples every 5 seconds catch only some of them (Caught); Share is each one's part of those, and About is that share of the real rate. Hover a row for its full command.")
+    }
+
+    private func perSecond(_ v: Double) -> String {
+        v >= 1 ? "\(Int(v.rounded()))/s" : v >= 0.1 ? String(format: "%.1f/s", v) : "<0.1/s"
     }
 
     /// "40 seconds" just after launch, "5 minutes" once the window is full.

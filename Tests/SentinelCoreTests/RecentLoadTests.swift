@@ -59,7 +59,7 @@ import Testing
         r.record([old, claude, shell, p(500, "/bin/sleep", 0)], ticks: [], parent: { parents[$0] }, at: t0.addingTimeInterval(10))
         let rep = r.report(cores: 4, at: t0.addingTimeInterval(10))
         #expect(rep.started == 400) // pids 101 to 500 were handed out, most never sampled
-        #expect(rep.startedBy.first?.family == LoadFamily.claude)
+        #expect(rep.startedBy.first?.name == LoadFamily.claude)
         #expect(rep.startsPerSecond == 40)
     }
 
@@ -71,6 +71,17 @@ import Testing
         r.record([a, p(99_990, "/bin/sleep", 0)], ticks: [], parent: { _ in nil }, at: t0.addingTimeInterval(5))
         r.record([a, p(20, "/bin/sleep", 0)], ticks: [], parent: { _ in nil }, at: t0.addingTimeInterval(10))
         #expect(r.report(cores: 4, at: t0.addingTimeInterval(10)).started == 29)
+    }
+
+    @Test func aMissedOldProcessIsNotAWrap() {
+        let r = RecentLoad(window: 300)
+        let t0 = Date(timeIntervalSince1970: 1_000_000)
+        let a = p(5, "/bin/a", 0)
+        r.record([a], ticks: [], parent: { _ in nil }, at: t0)
+        r.record([a, p(40_000, "/bin/sleep", 0)], ticks: [], parent: { _ in nil }, at: t0.addingTimeInterval(5))
+        r.record([a, p(39_000, "/bin/old", 0), p(40_100, "/bin/sleep", 0)], ticks: [], parent: { _ in nil },
+                 at: t0.addingTimeInterval(10))
+        #expect(r.report(cores: 4, at: t0.addingTimeInterval(10)).started == 100)
     }
 
     @Test func starterNamesTheLoopingScript() {
@@ -86,9 +97,22 @@ import Testing
                   ProcessSample(pid: 42, uid: 501, cpu: 0, path: "/bin/sleep", ppid: 30)],
                  ticks: [], parent: { _ in nil }, arguments: { args[$0] ?? [] }, at: t0.addingTimeInterval(5))
         let by = r.report(cores: 4, at: t0.addingTimeInterval(5)).startedBy
-        #expect(by.first?.family == "ccusage-panel.sh")
-        #expect(by.first?.count == 2)
-        #expect(by.contains { $0.family == "Ghostty" }) // a -c shell passes on to its parent
+        #expect(by.first?.name == "ccusage-panel.sh")
+        #expect(by.first?.caught == 2)
+        #expect(by.first?.detail == "/Users/a/.local/bin/ccusage-panel.sh")
+        #expect(by.first.map { abs($0.share - 2.0 / 3) < 0.001 } == true)
+        #expect(by.first { $0.name == "Ghostty" }?.detail == "zsh -c sleep 1") // a -c shell passes on to its parent
+    }
+
+    @Test func aShellLaunchdStartedIsNamedByItsCommand() {
+        let r = RecentLoad(window: 300)
+        let t0 = Date(timeIntervalSince1970: 1_000_000)
+        let sh = ProcessSample(pid: 20, uid: 0, cpu: 0, path: "/bin/zsh", ppid: 1)
+        let args: [Int32: [String]] = [20: ["/bin/zsh", "-c", "while true; do pmset -g; done"]]
+        r.record([sh], ticks: [], parent: { _ in nil }, arguments: { args[$0] ?? [] }, at: t0)
+        r.record([sh, ProcessSample(pid: 40, uid: 0, cpu: 0, path: "/usr/bin/pmset", ppid: 20)],
+                 ticks: [], parent: { _ in nil }, arguments: { args[$0] ?? [] }, at: t0.addingTimeInterval(5))
+        #expect(r.report(cores: 4, at: t0.addingTimeInterval(5)).startedBy.first?.name == "zsh -c while true; do pmset -g; done")
     }
 
     @Test func levels() {

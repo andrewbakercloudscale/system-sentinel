@@ -19,11 +19,13 @@ public final class RecentLoad {
         let started: Int
         /// The new processes this sample caught, by the family of whoever started them.
         let startedBy: [String: Int]
+        /// What each starter is: the script's path, the shell's command, or the program's path.
+        let detail: [String: String]
     }
     private var readings: [Reading] = []
     private var known: Set<Int32> = []
-    /// The script each shell runs, read once per shell: nil for an interactive or -c shell.
-    private var scripts: [Int32: String?] = [:]
+    /// Each shell's command line, read once per shell (shells live long; their children don't).
+    private var shellArgs: [Int32: [String]] = [:]
     private var newestPid: Int32?
     /// macOS hands out pids up to this, then starts again from the bottom.
     static let pidMax: Int32 = 99_999
@@ -36,7 +38,7 @@ public final class RecentLoad {
     /// One process sample, and the CPU counters summed over every core at the same moment.
     public func record(_ samples: [ProcessSample], ticks t: [CoreLoad.Ticks],
                        parent: (Int32) -> Int32? = ProcessDetail.parent,
-                       arguments: (Int32) -> [String] = ProcessDetail.arguments, at now: Date) {
+                       arguments: (Int32) -> [String] = RecentLoad.commandLine, at now: Date) {
         var fam: [String: (cpu: Double, pids: Set<Int32>, names: [String: Double])] = [:]
         for s in samples where s.cpu > 0 {
             let k = LoadFamily.of(s).name
@@ -53,7 +55,9 @@ public final class RecentLoad {
         var started = 0
         if let h = newestPid, !fresh.isEmpty {
             let after = fresh.filter { $0 > h }, wrapped = fresh.filter { $0 < h }
-            if let n = wrapped.max() {
+            // A real wrap only happens near the top, to a low pid. Anything else below the newest
+            // (a process ps missed last time) would otherwise count as ~100 000 starts.
+            if h > Self.pidMax - 20_000, let n = wrapped.filter({ $0 < 20_000 }).max() {
                 started = Int(Self.pidMax - h) + Int(n)
                 newestPid = n
             } else if let n = after.max() {
@@ -64,16 +68,18 @@ public final class RecentLoad {
             // The first new process sets where counting starts.
             newestPid = fresh.max()
         }
-        var startedBy: [String: Int] = [:]
+        var startedBy: [String: Int] = [:], detail: [String: String] = [:]
         if !known.isEmpty {
             let byPid = Dictionary(samples.map { ($0.pid, $0) }, uniquingKeysWith: { a, _ in a })
             for s in samples where !known.contains(s.pid) {
-                startedBy[starter(of: s, byPid: byPid, parent: parent, arguments: arguments), default: 0] += 1
+                let who = starter(of: s, byPid: byPid, parent: parent, arguments: arguments)
+                startedBy[who.name, default: 0] += 1
+                if !who.detail.isEmpty { detail[who.name] = who.detail }
             }
         }
         known = Set(samples.map(\.pid))
-        scripts = scripts.filter { known.contains($0.key) }
-        readings.append(Reading(at: now, families: fam, started: started, startedBy: startedBy))
+        shellArgs = shellArgs.filter { known.contains($0.key) }
+        readings.append(Reading(at: now, families: fam, started: started, startedBy: startedBy, detail: detail))
         if !t.isEmpty {
             let sum = t.reduce(CoreLoad.Ticks(user: 0, system: 0, idle: 0, nice: 0)) {
                 CoreLoad.Ticks(user: $0.user + $1.user, system: $0.system + $1.system, idle: $0.idle + $1.idle, nice: $0.nice + $1.nice)
@@ -103,21 +109,55 @@ public final class RecentLoad {
         return nil
     }
 
+    /// The command after a shell's -c, cut short: "sleep 1; ccusage …".
+    public static func command(_ args: [String]) -> String? {
+        guard let i = args.firstIndex(of: "-c"), i + 1 < args.count else { return nil }
+        let c = args[(i + 1)...].joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+        return c.isEmpty ? nil : (c.count > 80 ? String(c.prefix(80)) + "…" : c)
+    }
+
+    /// A process's arguments. The kernel will not give another user's (root's) to an app, so
+    /// for those ask ps, which may; split on spaces, which is good enough for a script path.
+    public static func commandLine(_ pid: Int32) -> [String] {
+        let a = ProcessDetail.arguments(pid)
+        if !a.isEmpty { return a }
+        let p = Process(), out = Pipe()
+        p.executableURL = URL(fileURLWithPath: "/bin/ps")
+        p.arguments = ["-ww", "-o", "args=", "-p", String(pid)]
+        p.standardOutput = out
+        p.standardError = FileHandle.nullDevice
+        guard (try? p.run()) != nil else { return [] }
+        let data = out.fileHandleForReading.readDataToEndOfFile()
+        p.waitUntilExit()
+        return String(decoding: data, as: UTF8.self).split(whereSeparator: \.isWhitespace).map(String.init)
+    }
+
     /// Who started `s`: up through shells and timers to the first real program, or the
     /// script a shell on the way runs, since a looping script is what someone can stop.
+    /// The detail says what exactly: the script's path, the shell's command, the program.
     func starter(of s: ProcessSample, byPid: [Int32: ProcessSample], parent: (Int32) -> Int32?,
-                 arguments: (Int32) -> [String]) -> String {
+                 arguments: (Int32) -> [String]) -> (name: String, detail: String) {
         var cur = s
+        var command: String?
         for _ in 0..<8 {
             guard let pp = cur.ppid > 0 ? cur.ppid : parent(cur.pid), pp > 1, let up = byPid[pp] else { break }
             cur = up
             if Self.shells.contains(cur.name) {
-                if scripts[cur.pid] == nil { scripts[cur.pid] = .some(Self.script(arguments(cur.pid))) }
-                if let name = scripts[cur.pid] ?? nil { return name }
+                if shellArgs[cur.pid] == nil { shellArgs[cur.pid] = arguments(cur.pid) }
+                let args = shellArgs[cur.pid] ?? []
+                if let name = Self.script(args) {
+                    let path = args.dropFirst().first { !$0.hasPrefix("-") } ?? name
+                    return (name, path)
+                }
+                if command == nil, let c = Self.command(args) { command = "\(cur.name) -c \(c)" }
             }
             if !Self.passThrough.contains(cur.name) { break }
         }
-        return LoadFamily.of(cur).name
+        if Self.passThrough.contains(cur.name), let command {
+            // Nothing named above the shell (launchd started it): the command is the best name.
+            return (command, command)
+        }
+        return (LoadFamily.of(cur).name, command ?? cur.path)
     }
 
     public struct Family: Equatable, Sendable, Identifiable {
@@ -144,7 +184,19 @@ public final class RecentLoad {
         public let capacity: Double
         /// Processes started over the span, and the biggest starters among those a sample caught.
         public let started: Int
-        public let startedBy: [(family: String, count: Int)]
+        public let startedBy: [Starter]
+
+        /// One starter among the new processes the samples caught.
+        public struct Starter: Equatable, Sendable, Identifiable {
+            public var id: String { name }
+            public let name: String
+            /// Of the new processes the samples caught, how many this one started.
+            public let caught: Int
+            /// The script's path, the shell's command, or the program's path.
+            public let detail: String
+            /// Its share of the caught starts, 0 to 1.
+            public let share: Double
+        }
 
         public var startsPerSecond: Double { span > 0 ? Double(started) / span : 0 }
 
@@ -164,7 +216,7 @@ public final class RecentLoad {
 
         public static func == (a: Report, b: Report) -> Bool {
             a.span == b.span && a.busy == b.busy && a.system == b.system && a.families == b.families
-                && a.unseen == b.unseen && a.started == b.started && a.startedBy.map(\.family) == b.startedBy.map(\.family)
+                && a.unseen == b.unseen && a.started == b.started && a.startedBy == b.startedBy
         }
 
         /// Share of the whole Mac in use, 0 to 1.
@@ -204,11 +256,17 @@ public final class RecentLoad {
         }
         let seen = cpu.values.reduce(0, +) / n
         let unseen = busy.map { max($0 - seen, 0) }
-        var by: [String: Int] = [:]
-        for r in readings.dropFirst() { by.merge(r.startedBy, uniquingKeysWith: +) }
+        var by: [String: Int] = [:], detail: [String: String] = [:]
+        for r in readings.dropFirst() {
+            by.merge(r.startedBy, uniquingKeysWith: +)
+            detail.merge(r.detail) { _, new in new }
+        }
+        let caught = Double(max(by.values.reduce(0, +), 1))
         let started = readings.dropFirst().reduce(0) { $0 + $1.started }
+        let top = by.sorted { $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key }.prefix(5)
+            .map { Report.Starter(name: $0.key, caught: $0.value, detail: detail[$0.key] ?? "", share: Double($0.value) / caught) }
         return Report(span: span, busy: busy, system: system, families: families, unseen: unseen, capacity: capacity,
-                      started: started, startedBy: by.sorted { $0.value > $1.value }.prefix(3).map { ($0.key, $0.value) })
+                      started: started, startedBy: top)
     }
 }
 
