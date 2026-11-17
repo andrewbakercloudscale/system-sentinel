@@ -65,11 +65,11 @@ struct WhySlowCard: View {
             HStack(spacing: 6) {
                 Image(systemName: busy ? "exclamationmark.triangle.fill" : "arrow.triangle.branch")
                     .foregroundStyle(busy ? tint : .secondary)
-                Text("\(r.started) processes started, \(rate >= 1 ? "\(Int(rate.rounded())) a second" : "under 1 a second")")
+                Text("\(r.started) processes started in \(period(r.span)), \(rate >= 1 ? "\(Int(rate.rounded())) a second" : "under 1 a second")")
                     .font(.callout.weight(.semibold))
             }
             if !who.isEmpty {
-                Text("Started by: \(who)").font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                Text("Started by (of the ones a sample caught): \(who)").font(.caption).foregroundStyle(.secondary).lineLimit(2)
             }
             if busy {
                 Text("That many starts keeps the kernel busy on its own. Usually scripts polling in a loop: status bars, terminal panels, file watchers or a build or test run. Close the ones you do not need.")
@@ -77,6 +77,11 @@ struct WhySlowCard: View {
             }
         }
         .tip("Counted from process ids, so ones that started and finished between two samples count too. Started by counts only the ones a sample caught.")
+    }
+
+    /// "40 seconds" just after launch, "5 minutes" once the window is full.
+    private func period(_ span: TimeInterval) -> String {
+        span < 90 ? "\(max(Int(span.rounded()), 1)) seconds" : "\(Int((span / 60).rounded())) minutes"
     }
 
     private func headline(_ r: RecentLoad.Report) -> String {
