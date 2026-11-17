@@ -60,6 +60,9 @@ final class Permissions: ObservableObject {
         list.insert(Item(id: "notifications", title: "Notifications", why: "Alarms, runaway processes, updates and the weekly report. Without it, you only see them when you open System Sentinel.",
                          symbol: "bell.badge.fill", state: current), at: 0)
         if list != items { items = list }
+        // Outside an app bundle (the bare binary from a dev build) the notification center
+        // aborts the process on first use.
+        guard Bundle.main.bundleIdentifier != nil else { return }
         UNUserNotificationCenter.current().getNotificationSettings { settings in
             let style = settings.alertStyle
             Task { @MainActor in if self.alertStyle != style { self.alertStyle = style } }

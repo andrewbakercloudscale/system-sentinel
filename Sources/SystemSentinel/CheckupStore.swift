@@ -508,6 +508,13 @@ final class CheckupStore: ObservableObject {
         let userDir = home.appendingPathComponent("Library/Logs/DiagnosticReports").path
         let crashFiles = (userReports.map { (dir: userDir, file: $0) } + sysReports.map { (dir: "/Library/Logs/DiagnosticReports", file: $0) })
             .filter { $0.file.date >= weekAgo }
+            .filter { f in
+                // Drop programs killed by another and launches blocked mid-update: not crashes.
+                guard f.file.name.hasSuffix(".ips"),
+                      let h = try? FileHandle(forReadingFrom: URL(fileURLWithPath: f.dir + "/" + f.file.name)) else { return true }
+                defer { try? h.close() }
+                return !CheckParse.notACrash(String(decoding: (try? h.read(upToCount: 16_384)) ?? Data(), as: UTF8.self))
+            }
         let crashes = CheckParse.crashCounts(crashFiles.map(\.file), since: weekAgo).filter { $0.count >= 3 }.map { c -> CheckParse.Crashes in
             let mine = crashFiles.filter { $0.file.name.hasPrefix(c.process + "-") && ($0.file.name.hasSuffix(".ips") || $0.file.name.hasSuffix(".crash")) }
             // The newest report's header says whether it is an app (it has a bundle id).
