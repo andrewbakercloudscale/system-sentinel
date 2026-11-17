@@ -1,4 +1,9 @@
 #!/bin/bash
+# System Sentinel installer. Do not copy this file into Terminal; it only works run like this,
+# as one line pasted into Terminal:
+#
+#   curl -fsSL https://raw.githubusercontent.com/andrewbakercloudscale/system-sentinel/main/install.sh | bash
+#
 # Installs (or updates to) the latest System Sentinel release in /Applications, or in
 # ~/Applications on an account that cannot write to /Applications.
 # Needs nothing beyond macOS itself: curl, ditto, xattr and file are built in.
@@ -7,7 +12,7 @@ REPO="andrewbakercloudscale/system-sentinel"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
-stop() { echo; echo "!! $1"; echo; exit 1; }
+stop() { echo; echo "Stopped: $1"; echo; exit 1; }
 
 echo "== Checking this Mac"
 OS="$(sw_vers -productVersion)"
