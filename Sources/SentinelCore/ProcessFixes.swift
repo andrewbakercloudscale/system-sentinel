@@ -66,7 +66,7 @@ public enum ProcessFixes {
     /// Whether there is something better to do for this one than lower or restart it.
     public static func hasSpecific(_ name: String) -> Bool { !specific(name).isEmpty }
 
-    static let spotlight = "x-apple.systempreferences:com.apple.Spotlight-Settings.extension"
+    public static let spotlight = "x-apple.systempreferences:com.apple.Spotlight-Settings.extension"
     static let timeMachine = "x-apple.systempreferences:com.apple.Time-Machine-Settings.extension"
     static let softwareUpdate = "x-apple.systempreferences:com.apple.Software-Update-Settings.extension"
     static let iCloud = "x-apple.systempreferences:com.apple.systempreferences.AppleIDSettings:icloud"

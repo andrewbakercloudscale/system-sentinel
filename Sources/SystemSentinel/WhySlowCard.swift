@@ -47,6 +47,9 @@ struct WhySlowCard: View {
                 if let swap, showsSwap(swap) {
                     swapping(swap, tint: tint)
                 }
+                if indexingBusy(r) {
+                    indexing(tint: tint)
+                }
                 if r.families.isEmpty && (r.unseen ?? 0) < 10 && !(swap.map(showsSwap) ?? false) {
                     Text("Nothing has been busy. If the Mac still feels slow, look at Memory (swap) and Energy (heat).")
                         .font(.callout).foregroundStyle(.secondary)
@@ -171,6 +174,63 @@ struct WhySlowCard: View {
             }
         }
         .tip("Swap traffic for the whole Mac over these minutes. macOS does not count swap per app, so the apps are the ones reading pages back from disk (files included) and holding the most outside RAM.")
+    }
+
+    /// Spotlight (and Photos and Siri) indexing among the load: a family using a twentieth of
+    /// a core or more, or starting two or more workers a second.
+    private func indexingBusy(_ r: RecentLoad.Report) -> Bool {
+        let cpu = r.families.first { $0.name == LoadFamily.indexing }?.cpu ?? 0
+        let starts = r.startedBy.first { $0.name == LoadFamily.indexing }.map { $0.share * r.startsPerSecond } ?? 0
+        return cpu >= 5 || starts >= 2
+    }
+
+    /// What Spotlight is re-reading, and how to stop it: macOS does not say which files it
+    /// indexes, but it indexes every file that changes, so the folders changing most are it.
+    private func indexing(tint: Color) -> some View {
+        let folders = model.folderChurn.top()
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                Text("Spotlight is indexing").font(.callout.weight(.semibold))
+                Spacer()
+                Button {
+                    NSWorkspace.shared.open(URL(string: ProcessFixes.spotlight)!)
+                } label: {
+                    Label("Spotlight settings", systemImage: "gearshape")
+                }
+                .controlSize(.small)
+                .tip("Opens Spotlight in System Settings: Search Privacy (or Spotlight Privacy) at the bottom keeps folders out of the index")
+            }
+            if folders.isEmpty {
+                Text("No folder in your home folder is changing much, so it is most likely catching up after a macOS update, a new disk or a big copy. That settles by itself within hours; leaving the Mac awake on the charger lets it finish sooner.")
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            } else {
+                Text("Spotlight re-reads every file that changes. These folders changed most in the last few minutes:")
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 5) {
+                    ForEach(folders) { f in
+                        GridRow {
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(home(f.path)).font(.caption.monospaced()).lineLimit(1).truncationMode(.middle)
+                                Text(f.generated ? "Written by a build or package tool: never worth searching" : "Your files")
+                                    .font(.caption2).foregroundStyle(.secondary)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            Text("\(f.changes) changes").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                            Button {
+                                NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: f.path)])
+                            } label: { Image(systemName: "folder") }
+                            .buttonStyle(.borderless)
+                            .tip("Show in Finder, to drag it into Spotlight's privacy list")
+                        }
+                    }
+                }
+                .padding(8)
+                .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 6))
+                Text("To calm it: open Spotlight settings, then Search Privacy, and add the folders you never search (drag them in from Finder). Build output and packages are the usual ones. A tool's output folder named with .noindex at the end (out.noindex) is skipped too.")
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+        }
     }
 
     private func detail(_ f: RecentLoad.Family) -> String {
