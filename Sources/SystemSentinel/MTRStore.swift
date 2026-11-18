@@ -30,6 +30,14 @@ final class MTRStore: ObservableObject {
     enum Phase: Equatable { case idle, resolving, tracing, pinging, failed(String) }
 
     static let durations = ["1 min", "5 min", "15 min", "1 hour"]
+    /// One-click targets: the two big public DNS servers, then sites on the big networks.
+    static let presets: [(target: String, about: String)] = [
+        ("1.1.1.1", "Cloudflare's DNS server"),
+        ("8.8.8.8", "Google's DNS server"),
+        ("google.com", "Google's website, on Google's own network"),
+        ("cloudflare.com", "Cloudflare's website, on Cloudflare's network"),
+        ("apple.com", "Apple's website, served from Akamai or Apple's network"),
+    ]
     static func seconds(_ d: String) -> Int {
         switch d { case "5 min": 300; case "15 min": 900; case "1 hour": 3600; default: 60 }
     }
@@ -165,9 +173,10 @@ struct MTRCard: View {
                     .textFieldStyle(.roundedBorder)
                     .onSubmit { if !store.running { store.start() } }
                     .disabled(store.running)
-                ForEach(["1.1.1.1", "8.8.8.8", "apple.com"], id: \.self) { t in
-                    Button(t) { store.input = t; store.start() }
+                ForEach(MTRStore.presets, id: \.target) { p in
+                    Button(p.target) { store.input = p.target; store.start() }
                         .buttonStyle(.bordered).tint(tint).disabled(store.running)
+                        .tip(p.about)
                 }
             }
             HStack(spacing: 8) {
