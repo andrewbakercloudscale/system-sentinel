@@ -141,6 +141,8 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
     let sentinel: Sentinel
     /// The last 5 minutes by family, for Why is it slow.
     let recentLoad = RecentLoad()
+    /// The folders with the most files changing: what keeps Spotlight indexing.
+    let folderChurn = FolderChurn()
     /// The running model, for the app delegate (which SwiftUI creates before the scene's state).
     static weak var current: Model?
     /// Kept alive so SIGTERM saves before quitting.
@@ -251,6 +253,7 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
         checkup = CheckupStore(readOnly: Model.snapshotDir != nil)
         network = NetworkStore(readOnly: Model.snapshotDir != nil)
         super.init()
+        folderChurn.start()
         Model.current = self
         storage.toast = { [weak self] in self?.showToast($0) }
         checkup.toast = { [weak self] in self?.showToast($0) }
