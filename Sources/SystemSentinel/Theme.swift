@@ -339,6 +339,12 @@ struct TabBar: View {
 }
 
 enum Fmt {
+    /// Whole days up: "1 day", "3 days".
+    static func days(_ seconds: TimeInterval) -> String {
+        let d = Int(seconds / 86_400)
+        return d == 1 ? "1 day" : "\(d) days"
+    }
+
     /// A CPU figure measured per core, shown as a share of the whole Mac.
     static func cpu(_ perCore: Double) -> String { CPUScale.text(perCore) }
 

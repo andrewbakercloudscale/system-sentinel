@@ -330,7 +330,7 @@ public enum MemoryAnalysis {
         } else if m.swapUsed >= 3 << 30, let up = uptime, up >= 3 * 86_400 {
             var x = Insight(id: "mem-uptime", tone: .info, symbol: "restart.circle.fill",
                             title: "Up \(Int(up / 86_400)) days with \(gb(m.swapUsed)) in swap",
-                            detail: "Swap only empties when the Mac restarts.")
+                            detail: "Quitting an app frees its part of swap; only a restart empties all of it.")
             x.steps = ["Restart when convenient: it clears swap and memory that apps have leaked."]
             out.append(x)
         }
