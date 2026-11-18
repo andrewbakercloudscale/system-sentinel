@@ -90,7 +90,7 @@ public struct MemoryStatus: Equatable, Sendable {
         return m
     }
 
-    /// Seconds since the Mac started. Swap only empties on a restart.
+    /// Seconds since the Mac started. Only a restart empties all of swap.
     public static func uptime(at now: Date = Date()) -> TimeInterval? {
         var tv = timeval()
         var size = MemoryLayout<timeval>.size

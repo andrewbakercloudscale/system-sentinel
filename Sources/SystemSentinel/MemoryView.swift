@@ -477,7 +477,7 @@ private struct CleanUp: View {
                 let t = model.ruleTarget(top)
                 let canQuit = t.sample.pid != getpid() && Safety.canKillManually(t.sample)
                 action(symbol: "xmark.app.fill", title: "Quit \(t.name)",
-                       text: "Frees about \(gb(model.ruleBytes(t))), including \(gb(top.outOfRAM)) compressed or in swap: the most of any app. Quitting apps is the only way to free swap while the Mac runs\(model.canRestart(t.pids) ? "; Restart quits it and opens it again" : ""). The rest are under Memory by app.",
+                       text: "Frees about \(gb(model.ruleBytes(t))), including \(gb(top.outOfRAM)) compressed or in swap: the most of any app. Quitting an app frees its part of swap; only a restart empties all of it\(model.canRestart(t.pids) ? "; Restart quits it and opens it again" : ""). The rest are under Memory by app.",
                        extra: top.pids.count > 1 && !Model.isVM(top.key) ? AnyView(WhatIsRunning(model: model, app: top)) : nil,
                        button: canQuit ? AnyView(HStack(spacing: 6) {
                            if model.canRestart(t.pids) {
@@ -499,7 +499,7 @@ private struct CleanUp: View {
                    button: AnyView(button(model.purging ? "Purging…" : "Purge", symbol: "arrow.3.trianglepath", color: Color(hex: "#d97706")) { model.purgeCaches() }
                     .disabled(model.purging)))
             action(symbol: "restart.circle.fill", title: "Restart to clear swap",
-                   text: "Swap only empties on a restart. \(up.map { "This Mac has been up \(Int($0 / 86_400)) days with \(gb(m.swapUsed)) in swap." } ?? "")",
+                   text: "Empties all of swap at once; quitting apps only frees their part. \(up.map { "This Mac has been up \(Fmt.days($0)) with \(gb(m.swapUsed)) in swap." } ?? "")",
                    button: AnyView(button("Restart…", symbol: "restart", color: Tab.processes.color) { model.askToRestart() }
                     .tip("Opens macOS's own Restart dialog: nothing restarts until you confirm")))
         }
