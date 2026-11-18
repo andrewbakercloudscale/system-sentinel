@@ -117,7 +117,9 @@ struct Card<Content: View>: View {
                 .background(UnevenRoundedRectangle(topLeadingRadius: 12, topTrailingRadius: 12, style: .continuous).fill(tint.opacity(0.13)))
                 .overlay(alignment: .bottom) { Rectangle().fill(tint.opacity(0.35)).frame(height: 1) }
             }
-            content.padding(12)
+            // One stack for the content: padding a bare list of views pads each one, which put
+            // 24 points between every line of a card.
+            VStack(alignment: .leading, spacing: 10) { content }.padding(12)
         }
         .frame(maxWidth: .infinity, maxHeight: fill ? .infinity : nil, alignment: .topLeading)
         .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Theme.cardFill))
