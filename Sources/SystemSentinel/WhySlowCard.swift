@@ -97,9 +97,9 @@ struct WhySlowCard: View {
             ForEach(r.startedBy) { s in
                 GridRow {
                     VStack(alignment: .leading, spacing: 1) {
-                        Text(s.name).font(.caption.weight(.medium)).lineLimit(1).truncationMode(.middle)
+                        Text(home(s.name)).font(.caption.weight(.medium)).lineLimit(1).truncationMode(.middle)
                         if !s.detail.isEmpty && s.detail != s.name {
-                            Text(s.detail).font(.caption2.monospaced()).foregroundStyle(.secondary)
+                            Text(home(s.detail)).font(.caption2.monospaced()).foregroundStyle(.secondary)
                                 .lineLimit(1).truncationMode(.middle).textSelection(.enabled)
                         }
                     }
@@ -108,12 +108,17 @@ struct WhySlowCard: View {
                     Text(perSecond(s.share * r.startsPerSecond)).font(.caption.monospacedDigit())
                     Text("\(s.caught)").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
                 }
-                .help(s.detail)
+                .help(home(s.detail))
             }
         }
         .padding(8)
         .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 6))
         .tip("Who started the new processes. Samples every 5 seconds catch only some of them (Caught); Share is each one's part of those, and About is that share of the real rate. Hover a row for its full command.")
+    }
+
+    /// Paths under the home folder as ~/…: shorter, and no user name in a screenshot.
+    private func home(_ s: String) -> String {
+        s.replacingOccurrences(of: NSHomeDirectory() + "/", with: "~/")
     }
 
     private func perSecond(_ v: Double) -> String {
