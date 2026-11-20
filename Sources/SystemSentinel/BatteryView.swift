@@ -379,16 +379,22 @@ private struct EnergyCard: View {
     @AppStorage("energyRange") private var range = "Now"
 
     private var options: [String] {
-        ["Now", "24 hours"] + HistoryRetention.choices.filter { $0 <= model.retentionDays }.map { "\($0) days" }
+        ["Now", "1 hour", "8 hours", "24 hours"] + HistoryRetention.choices.filter { $0 <= model.retentionDays }.map { "\($0) days" }
     }
 
     var body: some View {
         Card(title: "Energy by app", symbol: "flame.fill", tint: Tab.battery.color,
              trailing: AnyView(ChipPicker(options: options, selection: $range, color: Tab.battery.color))) {
-            if range == "Now" || !options.contains(range) { now } else { history(hours: range == "24 hours" ? 24 : (Int(range.split(separator: " ")[0]) ?? 7) * 24) }
+            if range == "Now" || !options.contains(range) { now } else { history(hours: Self.hours(range)) }
             Text("Watts and watt-hours are estimates: the Mac's measured draw above idle, split by each app's Energy Impact (Activity Monitor's unitless score for CPU, wakeups, graphics and disk). Wakeups are times a second the app interrupts the chip's rest.")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
+    }
+
+    /// "1 hour" is 1, "8 hours" 8, "7 days" 168.
+    static func hours(_ range: String) -> Int {
+        let n = Int(range.split(separator: " ")[0]) ?? 7
+        return range.hasSuffix("days") ? n * 24 : n
     }
 
     @ViewBuilder
@@ -511,37 +517,9 @@ private struct SleepBlockersCard: View {
             if model.blockers.isEmpty {
                 Text("Nothing is stopping your Mac from sleeping.").font(.caption).foregroundStyle(.secondary)
             }
-            ForEach(model.blockers) { b in
-                let sample = model.sample(pid: b.pid)
-                HStack(spacing: 10) {
-                    Image(systemName: b.kind == .display ? "display" : "moon.zzz")
-                        .font(.system(size: 13, weight: .semibold)).foregroundStyle(Color(hex: "#6366f1")).frame(width: 24)
-                    VStack(alignment: .leading, spacing: 2) {
-                        HStack(spacing: 6) {
-                            Text(b.name).font(.callout.weight(.medium))
-                            if let who = b.onBehalfOf {
-                                Text("for \(who)\(b.onBehalfOfPID.map { " (pid \($0))" } ?? "")").font(.caption).foregroundStyle(.secondary)
-                            }
-                        }
-                        Text(detail(b)).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
-                    }
-                    Spacer()
-                    if let since = b.since {
-                        let held = Date().timeIntervalSince(since)
-                        Pill(text: held >= 86_400 ? "\(Int(held / 86_400))d \(Int(held.truncatingRemainder(dividingBy: 86_400) / 3600))h" : Model.duration(held),
-                             symbol: "clock", color: held >= 3600 ? Theme.heat(85) : .secondary)
-                    }
-                    if let s = sample, s.name == "caffeinate" {
-                        if model.killing.contains(s.pid) {
-                            BusyButton(title: "Releasing…")
-                        } else {
-                            sleepButton("Let it sleep") { model.confirmDecaffeinate([s]) }
-                                .tip("Stops this caffeinate only. \(b.onBehalfOf.map { "\($0) keeps running." } ?? "")")
-                        }
-                    } else if let s = sample, Safety.canKillManually(s) {
-                        KillButton(model: model, sample: s)
-                    }
-                }
+            // Many of one kind for one app (a caffeinate per Claude session) fold into one row.
+            ForEach(groups, id: \.key) { g in
+                if g.items.count > 1 { group(g.key, g.items) } else { blocker(g.items[0]) }
             }
             let caffeinates = model.blockers.compactMap { model.sample(pid: $0.pid) }.filter { $0.name == "caffeinate" }
             if caffeinates.count > 1 {
@@ -558,6 +536,102 @@ private struct SleepBlockersCard: View {
             if !model.blockers.isEmpty {
                 Text("Let it sleep stops only the caffeinate, which exists just to keep the Mac awake; the tool it was started for carries on. Apps (video calls, players, downloads) release their hold when they finish.")
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    @State private var expanded: Set<String> = []
+
+    /// Blockers by what they are and whom for, in first-seen order.
+    private var groups: [(key: String, items: [SleepBlocker])] {
+        var order: [String] = [], by: [String: [SleepBlocker]] = [:]
+        for b in model.blockers {
+            let k = "\(b.name)|\(b.onBehalfOf ?? "")|\(b.kind.rawValue)"
+            if by[k] == nil { order.append(k) }
+            by[k, default: []].append(b)
+        }
+        return order.map { ($0, by[$0]!) }
+    }
+
+    private func held(_ since: Date) -> String {
+        let h = Date().timeIntervalSince(since)
+        return h >= 86_400 ? "\(Int(h / 86_400))d \(Int(h.truncatingRemainder(dividingBy: 86_400) / 3600))h" : Model.duration(h)
+    }
+
+    @ViewBuilder
+    private func group(_ key: String, _ items: [SleepBlocker]) -> some View {
+        let b = items[0], open = expanded.contains(key)
+        let caffs = items.compactMap { model.sample(pid: $0.pid) }.filter { $0.name == "caffeinate" }
+        let oldest = items.compactMap(\.since).min()
+        Button { withAnimation(.easeInOut(duration: 0.15)) { if open { expanded.remove(key) } else { expanded.insert(key) } } } label: {
+            HStack(spacing: 10) {
+                Image(systemName: b.kind == .display ? "display" : "moon.zzz")
+                    .font(.system(size: 13, weight: .semibold)).foregroundStyle(Color(hex: "#6366f1")).frame(width: 24)
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) {
+                        if let who = b.onBehalfOf {
+                            let n = Set(items.compactMap(\.onBehalfOfPID)).count
+                            Text("\(max(n, 1)) instances of \(who)").font(.callout.weight(.medium))
+                            Text("\(items.count) \(b.name)").font(.caption).foregroundStyle(.secondary)
+                        } else {
+                            Text("\(items.count) × \(b.name)").font(.callout.weight(.medium))
+                        }
+                        Image(systemName: open ? "chevron.down" : "chevron.right").font(.caption2.weight(.bold)).foregroundStyle(.secondary)
+                    }
+                    Text("\(b.kind.meaning) · \(open ? "hide" : "show") the \(items.count) processes").font(.caption2).foregroundStyle(.secondary)
+                }
+                Spacer()
+                if let oldest {
+                    Pill(text: held(oldest), symbol: "clock", color: Date().timeIntervalSince(oldest) >= 3600 ? Theme.heat(85) : .secondary)
+                        .tip("The oldest has held the Mac awake this long")
+                }
+                if caffs.count > 1 {
+                    if caffs.contains(where: { model.killing.contains($0.pid) }) {
+                        BusyButton(title: "Releasing…")
+                    } else {
+                        sleepButton("Let it sleep") { model.confirmDecaffeinate(caffs) }
+                            .tip("Stops these \(caffs.count) caffeinates. \(b.onBehalfOf.map { "\($0) keeps running." } ?? "") Asks first")
+                    }
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        if open {
+            ForEach(items) { blocker($0).padding(.leading, 24) }
+        }
+    }
+
+    @ViewBuilder
+    private func blocker(_ b: SleepBlocker) -> some View {
+        let sample = model.sample(pid: b.pid)
+        HStack(spacing: 10) {
+            Image(systemName: b.kind == .display ? "display" : "moon.zzz")
+                .font(.system(size: 13, weight: .semibold)).foregroundStyle(Color(hex: "#6366f1")).frame(width: 24)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text(b.name).font(.callout.weight(.medium))
+                    if let who = b.onBehalfOf {
+                        Text("for \(who)\(b.onBehalfOfPID.map { " (pid \($0))" } ?? "")").font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                Text(detail(b)).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+            }
+            Spacer()
+            if let since = b.since {
+                let held = Date().timeIntervalSince(since)
+                Pill(text: held >= 86_400 ? "\(Int(held / 86_400))d \(Int(held.truncatingRemainder(dividingBy: 86_400) / 3600))h" : Model.duration(held),
+                     symbol: "clock", color: held >= 3600 ? Theme.heat(85) : .secondary)
+            }
+            if let s = sample, s.name == "caffeinate" {
+                if model.killing.contains(s.pid) {
+                    BusyButton(title: "Releasing…")
+                } else {
+                    sleepButton("Let it sleep") { model.confirmDecaffeinate([s]) }
+                        .tip("Stops this caffeinate only. \(b.onBehalfOf.map { "\($0) keeps running." } ?? "")")
+                }
+            } else if let s = sample, Safety.canKillManually(s) {
+                KillButton(model: model, sample: s)
             }
         }
     }
