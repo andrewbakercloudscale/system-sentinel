@@ -539,7 +539,9 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
     }
 
     func energySummaries(hours: Int) -> [DailyUsage.Summary] {
-        energyUsage.summaries(at: Date(), hours: hours, group: Model.appKey, name: Model.appName)
+        // Kept by clock hour, so the last hour also takes the one before: the current hour
+        // alone is a few minutes just after it turns.
+        energyUsage.summaries(at: Date(), buckets: hours == 1 ? 2 : hours, group: Model.appKey, name: Model.appName)
     }
 
     func weekly() -> WeeklyReport {
