@@ -25,6 +25,15 @@ enum Managed {
     /// The DNS map asks only this Mac's own DNS servers: no 1.1.1.1, 8.8.8.8, DNS over HTTPS
     /// or walk from the root servers, so no name typed in reaches anyone outside.
     static var noPublicDNS: Bool { on("DisablePublicDNSLookups") }
+    /// The organisation's internal domains (InternalDomains, an array of strings, e.g.
+    /// "corp.example.com"). Names under them are never sent to public DNS, on or off the VPN.
+    static var internalDomains: [String] {
+        let key = "InternalDomains" as CFString
+        guard CFPreferencesAppValueIsForced(key, domain) else { return [] }
+        let v = CFPreferencesCopyAppValue(key, domain)
+        let list = (v as? [String]) ?? (v as? String).map { $0.split(whereSeparator: { $0 == "," || $0 == " " }).map(String.init) } ?? []
+        return list.map { $0.trimmingCharacters(in: CharacterSet(charactersIn: " .")).lowercased() }.filter { !$0.isEmpty }
+    }
     /// No killing, auto-killing, quit rules or lowering priority of any process.
     static var noProcessControl: Bool { on("DisableProcessControl") }
     /// No admin password prompts at all: no root kills, purge, Low Power Mode, Checkup admin

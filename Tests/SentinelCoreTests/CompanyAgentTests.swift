@@ -10,7 +10,13 @@ final class CompanyAgentTests: XCTestCase {
                      "/Applications/Falcon.app/Contents/Resources/Falcon Notifications.app/Contents/MacOS/Falcon Notifications",
                      "/Library/Application Support/Forcepoint/Neo/fpneo",
                      "/usr/local/jamf/bin/jamf",
-                     "/Applications/Company Portal.app/Contents/MacOS/Company Portal"] {
+                     "/Applications/Company Portal.app/Contents/MacOS/Company Portal",
+                     "/Library/Elastic/Agent/elastic-agent",
+                     "/opt/rapid7/ir_agent/components/insight_agent/common/ir_agent",
+                     "/Applications/QualysCloudAgent.app/Contents/MacOS/qualys-cloud-agent",
+                     "/opt/osquery/lib/osquery.app/Contents/MacOS/osqueryd",
+                     "/Applications/Cloudflare WARP.app/Contents/MacOS/CloudflareWARP",
+                     "/Applications/Okta Verify.app/Contents/MacOS/Okta Verify"] {
             let s = sample(path)
             XCTAssertTrue(Safety.isCompanyAgent(s), path)
             XCTAssertFalse(Safety.canKillManually(s), path)
@@ -40,5 +46,14 @@ final class InternalNameTests: XCTestCase {
         for n in ["www.apple.com", "example.com", "notcorp.example.com", "github.com"] {
             XCTAssertFalse(NetParse.isInternalName(n, resolvers: rs), n)
         }
+    }
+
+    func testTheOrganisationsOwnDomainsStayInsideOffTheVPN() {
+        let main = Resolver(domain: nil, servers: ["192.168.1.1"])
+        XCTAssertFalse(NetParse.isInternalName("jira.example.com", resolvers: [main]))
+        for n in ["jira.example.com", "example.com", "JIRA.Example.com."] {
+            XCTAssertTrue(NetParse.isInternalName(n, resolvers: [main], extra: ["example.com"]), n)
+        }
+        XCTAssertFalse(NetParse.isInternalName("notexample.com", resolvers: [main], extra: ["example.com"]))
     }
 }
