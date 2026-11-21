@@ -314,6 +314,15 @@ final class UsageAdviceTests: XCTestCase {
         XCTAssertEqual(w.display ?? 0, 0.2, accuracy: 0.001)
         XCTAssertEqual(w.total, 3.0, accuracy: 0.001)
         XCTAssertNil(PartPower.watts([], seconds: 0).gpu)
+        // M5: the power manager's counters read zero; only the GPU's are live.
+        let m5 = PartPower.watts([
+            .init(name: "CPU Energy", unit: "mJ", value: 0), .init(name: "DRAM0", unit: "mJ", value: 0),
+            .init(name: "DISP", unit: "mJ", value: 0), .init(name: "GPU Energy", unit: "nJ", value: 1_000_000_000),
+        ], seconds: 5)
+        XCTAssertNil(m5.cpu)
+        XCTAssertNil(m5.dram)
+        XCTAssertNil(m5.display)
+        XCTAssertEqual(m5.gpu ?? 0, 0.2, accuracy: 0.001)
     }
 
     func testScreenLight() {

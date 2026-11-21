@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  System Sentinel: recommended fleet settings. Upload to your MDM as a custom profile
+  (device or user scope). docs/ENTERPRISE.md explains each key.
+  - Settings: forced values for consulting.cloudscale.systemsentinel. Change true/false to
+    suit your policy; DisableProcessControl is false here so people can still stop their
+    own runaway apps.
+  - Login item: keeps System Sentinel starting at login without a prompt.
+  Replace the PayloadOrganization and, if you like, the PayloadUUIDs.
+-->
+<plist version="1.0">
+<dict>
+    <key>PayloadType</key><string>Configuration</string>
+    <key>PayloadVersion</key><integer>1</integer>
+    <key>PayloadIdentifier</key><string>consulting.cloudscale.systemsentinel.profile</string>
+    <key>PayloadUUID</key><string>08de8f91-2f65-40cd-b963-3681558c84ff</string>
+    <key>PayloadDisplayName</key><string>System Sentinel settings</string>
+    <key>PayloadDescription</key><string>Organisation settings and login item for System Sentinel.</string>
+    <key>PayloadOrganization</key><string>Your organisation</string>
+    <key>PayloadScope</key><string>System</string>
+    <key>PayloadContent</key>
+    <array>
+        <dict>
+            <key>PayloadType</key><string>consulting.cloudscale.systemsentinel</string>
+            <key>PayloadVersion</key><integer>1</integer>
+            <key>PayloadIdentifier</key><string>consulting.cloudscale.systemsentinel.settings</string>
+            <key>PayloadUUID</key><string>0419348b-4fa1-4bd9-a191-a736fd2e5800</string>
+            <key>PayloadDisplayName</key><string>System Sentinel policy</string>
+            <key>DisableSelfUpdate</key><true/>
+            <key>DisableExplain</key><true/>
+            <key>DisablePublicDNSLookups</key><true/>
+            <key>DisableAdminActions</key><true/>
+            <key>DisableProcessControl</key><false/>
+        </dict>
+        <dict>
+            <key>PayloadType</key><string>com.apple.servicemanagement</string>
+            <key>PayloadVersion</key><integer>1</integer>
+            <key>PayloadIdentifier</key><string>consulting.cloudscale.systemsentinel.loginitem</string>
+            <key>PayloadUUID</key><string>952b95d9-8e8e-47d1-a05b-6bf2f48e3dbf</string>
+            <key>PayloadDisplayName</key><string>System Sentinel login item</string>
+            <key>Rules</key>
+            <array>
+                <dict>
+                    <key>RuleType</key><string>BundleIdentifier</string>
+                    <key>RuleValue</key><string>consulting.cloudscale.systemsentinel</string>
+                    <key>Comment</key><string>System Sentinel</string>
+                </dict>
+            </array>
+        </dict>
+    </array>
+</dict>
+</plist>

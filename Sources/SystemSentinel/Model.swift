@@ -245,18 +245,19 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
             policies: PolicyStore(fileURL: Model.supportDir.appendingPathComponent("policies.json")),
             history: History(fileURL: Model.snapshotDir == nil ? Model.supportDir.appendingPathComponent("history.jsonl") : nil,
                              seed: Model.snapshotDir == nil ? nil : Model.supportDir.appendingPathComponent("history.jsonl")),
-            // Hourly despite the file name, and up to 28 days: written every 5 minutes.
+            // Hourly despite the file name, and up to 28 days. Every 15 minutes, and at quit: a few MB
+            // each, so every 5 minutes added up to gigabytes a day of disk writes.
             dailyUsage: DailyUsage(fileURL: Model.supportDir.appendingPathComponent("usage-24h.json"),
-                                   saveEvery: 300, readOnly: Model.snapshotDir != nil),
-            // A larger file than the hourly one, so it is written every 5 minutes, not every minute.
+                                   saveEvery: 900, readOnly: Model.snapshotDir != nil),
+            // A larger file than the hourly one: every 15 minutes, and at quit.
             recentUsage: DailyUsage(fileURL: Model.supportDir.appendingPathComponent("usage-6h.json"),
-                                    retainHours: 6, bucket: 60, saveEvery: 300, readOnly: Model.snapshotDir != nil),
+                                    retainHours: 6, bucket: 60, saveEvery: 900, readOnly: Model.snapshotDir != nil),
             // nettop, ps, ping and the other commands this app runs count as System Sentinel.
             sampler: { try ProcessSampler.sample(foldingInto: getpid()) })
         powerHistory = PowerHistory(fileURL: Model.supportDir.appendingPathComponent("power-7d.json"), readOnly: Model.snapshotDir != nil)
         // Energy is read every 30 s, so a tick may stand for up to 45 s.
         energyUsage = DailyUsage(fileURL: Model.supportDir.appendingPathComponent("energy-7d.json"), maxStep: 45,
-                                 saveEvery: 300, readOnly: Model.snapshotDir != nil)
+                                 saveEvery: 900, readOnly: Model.snapshotDir != nil)
         energyUsage.dropOutliers(above: EnergySampler.maxImpact)
         memoryHistory = MemoryHistory(fileURL: Model.supportDir.appendingPathComponent("memory-7d.json"), readOnly: Model.snapshotDir != nil)
         healthLog = HealthLog(fileURL: Model.supportDir.appendingPathComponent("battery-health.json"), readOnly: Model.snapshotDir != nil)
