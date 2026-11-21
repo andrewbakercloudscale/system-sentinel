@@ -177,7 +177,7 @@ private struct Hero: View {
                     Text("\(Int(value.rounded()))%").font(.system(size: 18, weight: .bold, design: .rounded)).foregroundStyle(.white)
                 }
                 .gaugeStyle(.accessoryCircularCapacity)
-                .tint(Gradient(colors: [.green, .yellow, .orange, .red]))
+                .tint(Theme.machineHeat(value))
                 .scaleEffect(1.2)
                 .frame(width: 64, height: 64)
                 Text(label).font(.caption.weight(.bold)).foregroundStyle(.white.opacity(0.9))
