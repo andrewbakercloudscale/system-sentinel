@@ -331,6 +331,7 @@ private struct TopApps: View {
                 if let s = sample { IconView(icon: IconCache.shared.icon(for: s), size: 18) }
                 else { Image(systemName: "gearshape").frame(width: 18).foregroundStyle(.secondary) }
                 Text(r.name).font(.callout).lineLimit(1)
+                if let s = sample { WhatIsIt(model: model, name: r.name, path: s.path) }
                 if r.carriesOthers {
                     Pill(text: "carries all traffic", symbol: "arrow.triangle.branch", color: .secondary, compact: true)
                         .tip("A VPN, zero trust client or proxy: its traffic is the other apps' traffic, counted again")

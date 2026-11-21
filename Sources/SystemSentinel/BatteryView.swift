@@ -285,6 +285,7 @@ private struct RightNowPower: View {
                     IconView(icon: IconCache.shared.icon(for: sample ?? ProcessSample(pid: 0, uid: 501, cpu: 0, path: r.key)), size: 20)
                     HStack(spacing: 6) {
                         Text(r.name).font(.callout).lineLimit(1).truncationMode(.middle)
+                        WhatIsIt(model: model, name: r.name, path: sample?.path ?? r.key)
                         if r.pids.count > 1 { Text("\(r.pids.count) processes").font(.caption).foregroundStyle(.secondary).fixedSize() }
                     }
                     .frame(width: 230, alignment: .leading)
@@ -412,6 +413,7 @@ private struct EnergyCard: View {
                 VStack(alignment: .leading, spacing: 3) {
                     HStack {
                         Text(r.name).font(.callout.weight(.medium)).lineLimit(1)
+                        WhatIsIt(model: model, name: r.name, path: sample?.path ?? r.key)
                         if r.pids.count > 1 { Text("\(r.pids.count) processes").font(.caption2).foregroundStyle(.secondary) }
                         if r.name.contains("Chrome"), ChromeTabs.isRunning { ChromeTabsButton() }
                     }
@@ -469,7 +471,10 @@ private struct EnergyCard: View {
             HStack(spacing: 10) {
                 IconView(icon: IconCache.shared.icon(for: ProcessSample(pid: 0, uid: 501, cpu: 0, path: r.key)), size: 24)
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(r.name).font(.callout.weight(.medium)).lineLimit(1)
+                    HStack(spacing: 6) {
+                        Text(r.name).font(.callout.weight(.medium)).lineLimit(1)
+                        WhatIsIt(model: model, name: r.name, path: r.key)
+                    }
                     ShareBar(share: total > 0 ? r.coreSeconds / total : 0, color: Tab.battery.color)
                 }
                 Spacer(minLength: 8)
@@ -793,6 +798,7 @@ struct CoresCard: View {
                 HStack(spacing: 8) {
                     IconView(icon: IconCache.shared.icon(for: a.sample), size: 18)
                     Text(a.name).font(.callout).lineLimit(1).truncationMode(.middle)
+                    WhatIsIt(model: model, name: a.name, path: a.sample.path)
                     Spacer(minLength: 6)
                     Text(String(format: a.cpu >= 10 ? "%.0f%%" : "%.1f%%", a.cpu)).font(.callout.weight(.semibold)).monospacedDigit()
                         .foregroundStyle(color)

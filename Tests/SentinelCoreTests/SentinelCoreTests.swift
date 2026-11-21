@@ -506,6 +506,9 @@ final class InsightsTests: XCTestCase {
         XCTAssertTrue(ProcessGuide.about(name: "Helper", path: "/Applications/Slack.app/Contents/Frameworks/Helper").contains("inside the Slack app"))
         XCTAssertTrue(ProcessGuide.about(name: "rg", path: "/opt/homebrew/bin/rg").contains("you installed"))
         XCTAssertTrue(ProcessGuide.about(name: "x", path: "x").contains("no notes"))
+        XCTAssertTrue(ProcessGuide.about(name: "AppleCentauriAlpha", path: "/System/Library/DriverExtensions/AppleCentauriAlpha.dext/AppleCentauriAlpha").contains("hardware driver"))
+        XCTAssertTrue(ProcessGuide.about(name: "com.apple.W...it.WebContent", path: "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent").hasPrefix("A web page"))
+        XCTAssertTrue(ProcessGuide.about(name: "Foo", path: "/System/Library/PrivateFrameworks/Foo.framework/XPCServices/com.apple.Foo.xpc/Contents/MacOS/com.apple.Foo").contains("helper of Foo, part of macOS"))
     }
 }
 

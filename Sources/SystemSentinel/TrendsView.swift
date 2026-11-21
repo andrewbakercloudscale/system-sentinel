@@ -91,7 +91,7 @@ struct TrendsView: View {
             }
             TrendStats(d: d)
             TrendChart(d: d, byApp: byApp)
-            HeaviestCard(d: d, byApp: byApp)
+            HeaviestCard(model: model, d: d, byApp: byApp)
             Text("Averages count only the time System Sentinel was running, so a day it was quit for does not read as idle. 100% in the table is one core; the chart is the whole Mac.")
                 .font(.caption2).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -168,6 +168,7 @@ struct StatTile: View {
 }
 
 private struct UsageRow: View {
+    @ObservedObject var model: Model
     let rank: Int
     let row: DailyUsage.Summary
     let share: Double
@@ -181,6 +182,7 @@ private struct UsageRow: View {
             VStack(alignment: .leading, spacing: 3) {
                 HStack {
                     Text(row.name).font(.callout).lineLimit(1).truncationMode(.middle)
+                    WhatIsIt(model: model, name: row.name, path: row.key)
                     Spacer(minLength: 4)
                     Text(Fmt.pct(share * 100)).font(.caption.weight(.semibold)).monospacedDigit()
                 }
@@ -313,6 +315,7 @@ private struct TrendChart: View {
 }
 
 private struct HeaviestCard: View {
+    @ObservedObject var model: Model
     let d: TrendsView.Data
     let byApp: Bool
 
@@ -328,7 +331,7 @@ private struct HeaviestCard: View {
             }
             .font(.caption2.weight(.medium)).foregroundStyle(.secondary)
             ForEach(Array(d.rows.prefix(15).enumerated()), id: \.element.key) { i, row in
-                UsageRow(rank: i + 1, row: row, share: d.total > 0 ? row.coreSeconds / d.total : 0,
+                UsageRow(model: model, rank: i + 1, row: row, share: d.total > 0 ? row.coreSeconds / d.total : 0,
                          color: d.colors[row.key] ?? Theme.other)
             }
         }

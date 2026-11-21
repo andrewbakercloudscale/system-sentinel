@@ -66,7 +66,7 @@ struct EventsView: View {
                 ForEach(byDay.keys.sorted(by: >), id: \.self) { day in
                     Text(Self.dayLabel(day)).font(.caption.weight(.semibold)).foregroundStyle(.secondary).padding(.top, 2)
                     ForEach(Array(byDay[day]!.reversed().enumerated()), id: \.offset) { _, e in
-                        EventRow(entry: e)
+                        EventRow(model: model, entry: e)
                     }
                 }
             }
@@ -117,6 +117,7 @@ struct EventsView: View {
 }
 
 private struct EventRow: View {
+    @ObservedObject var model: Model
     let entry: HistoryEntry
 
     var body: some View {
@@ -128,6 +129,7 @@ private struct EventRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     Text(e.name).font(.callout.weight(.medium)).lineLimit(1)
+                    WhatIsIt(model: model, name: e.name, path: e.path)
                     Pill(text: EventsView.label(e.kind), color: EventsView.color(e.kind))
                 }
                 if let detail = Self.friendly(e.detail) {

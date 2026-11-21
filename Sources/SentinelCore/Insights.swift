@@ -24,14 +24,30 @@ public enum ProcessGuide {
     public static func note(for name: String) -> Note? {
         if name.hasPrefix("mdworker") { return notes["mdworker"] }
         if name.hasPrefix("Google Chrome Helper") { return notes["Google Chrome Helper"] }
-        return notes[name]
+        if name.hasPrefix("com.apple.WebKit.WebContent") { return notes["com.apple.WebKit.WebContent"] }
+        if name.hasPrefix("com.apple.WebKit.Networking") { return notes["com.apple.WebKit.Networking"] }
+        if name.hasPrefix("com.apple.WebKit.GPU") { return notes["com.apple.WebKit.GPU"] }
+        return notes[name] ?? notes[(name as NSString).lastPathComponent]
     }
 
     /// What a process is, in a sentence or two: the note when there is one, otherwise what
     /// its location says about it (part of macOS, part of an app, a tool you installed).
     public static func about(name: String, path: String) -> String {
-        if let n = note(for: name) { return "\(n.headline). \(n.detail)" }
+        let exe = (path as NSString).lastPathComponent
+        if let n = note(for: name) ?? note(for: exe) { return "\(n.headline). \(n.detail)" }
         let p = path.hasPrefix("/") ? path : ""
+        if let dext = p.range(of: ".dext/") {
+            let driver = (String(p[..<dext.lowerBound]) as NSString).lastPathComponent
+            return "A hardware driver that is part of macOS (\(driver)). It runs a chip or device inside or attached to your Mac; its power use follows how busy that hardware is. It cannot be quit."
+        }
+        if let xpc = p.range(of: ".xpc/") {
+            let before = String(p[..<xpc.lowerBound])
+            let owner = before.components(separatedBy: "/").last(where: { $0.hasSuffix(".app") || $0.hasSuffix(".framework") })
+                .map { ($0 as NSString).deletingPathExtension } ?? (before as NSString).lastPathComponent
+            return p.hasPrefix("/System/")
+                ? "A background helper of \(owner), part of macOS. Apps call on it for work; it starts and stops by itself."
+                : "A background helper of \(owner). It does work for that app and stops when the app quits."
+        }
         if let app = p.range(of: ".app/") {
             let bundle = (String(p[..<app.lowerBound]) as NSString).lastPathComponent
             let system = p.hasPrefix("/System/")
@@ -83,6 +99,22 @@ public enum ProcessGuide {
                 headline: "Drawing everything on your screens",
                 detail: "It composites every window on every display. It rises with screen capture (screenshot tools, screen sharing, AI computer-use agents that take screenshots), scaled resolutions on external displays, high refresh rates, transparency and animated content. Killing it logs you out at once.",
                 verdict: .avoid),
+            "com.apple.WebKit.WebContent": Note(
+                headline: "A web page or web view",
+                detail: "Each Safari tab, and each app window that shows web content (Mail, help pages, many apps), runs in one of these. Lots of them, or a busy one, means a heavy page: close tabs or reload the one that is busy.",
+                verdict: .safe),
+            "com.apple.WebKit.Networking": Note(
+                headline: "Network traffic for Safari and web views",
+                detail: "Downloads pages, images and files for Safari and apps that show web content. Busy while something is loading or downloading.",
+                verdict: .wait),
+            "com.apple.WebKit.GPU": Note(
+                headline: "Graphics and video for Safari and web views",
+                detail: "Draws pages and plays video for Safari and web views. Rises with video, animation and many open tabs.",
+                verdict: .safe),
+            "com.apple.StreamingUnzipService": Note(
+                headline: "Unpacking a download or install",
+                detail: "Expands app installs and updates (App Store, macOS updates, installers) as they download. Busy only while something installs; it stops by itself.",
+                verdict: .wait),
             "backupd": Note(
                 headline: "Time Machine is backing up",
                 detail: "Busy while a backup runs, especially the first one. Finishes on its own.",

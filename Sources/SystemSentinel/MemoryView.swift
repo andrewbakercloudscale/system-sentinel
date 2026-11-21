@@ -336,6 +336,7 @@ private struct LargestApps: View {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
                     Text(a.name).font(.callout.weight(.semibold)).lineLimit(1).truncationMode(.middle)
+                    WhatIsIt(model: model, name: a.name, path: (host?.sample ?? a.sample).path)
                     if a.pids.count > 1 {
                         Text("\(a.pids.count) processes").font(.caption).foregroundStyle(.secondary).lineLimit(1).fixedSize()
                     }
