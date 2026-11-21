@@ -49,6 +49,10 @@ final class NetworkStore: ObservableObject {
     private var closeWait: [String: Int] = [:]
     private var looking: Set<String> = []
     private var busy = false
+    /// The Network tab is on screen: sockets every 3 s. Otherwise every 15 s, which still
+    /// catches most connections and runs netstat a fifth as often in the background.
+    var onScreen = false
+    private var lastSample = Date.distantPast
     private var mtuAt: Date?
     /// Bytes sent and resent per 10 s reading, for the resend rate over the last 5 minutes.
     private var resends: [(at: Date, sent: UInt64, resent: UInt64)] = []
@@ -75,10 +79,11 @@ final class NetworkStore: ObservableObject {
 
     // MARK: Sampling
 
-    /// Every 3 s: sockets (to catch connections that live only seconds) and interface bytes.
+    /// Every 3 s while the Network tab shows, every 15 s otherwise: sockets (to catch connections that live only seconds) and interface bytes.
     private func sample() {
-        guard !busy else { return }
+        guard !busy, onScreen || Date().timeIntervalSince(lastSample) >= 14.5 else { return }
         busy = true
+        lastSample = Date()
         Task.detached(priority: .utility) {
             let conns = NetParse.netstat(sh("/usr/sbin/netstat", ["-anv", "-p", "tcp"], timeout: 5))
                 + NetParse.netstat(sh("/usr/sbin/netstat", ["-anv", "-p", "udp"], timeout: 5))

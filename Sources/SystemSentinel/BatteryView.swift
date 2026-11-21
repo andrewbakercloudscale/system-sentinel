@@ -316,28 +316,35 @@ private struct PartsPowerCard: View {
 
     typealias Row = (name: String, symbol: String, color: Color, watts: Double, tip: String)
 
+    /// The chip reports the processor's power: false on Macs (M5) whose counters are frozen.
+    private static func measuresCPU(_ w: PartPower.Watts) -> Bool { w.cpu != nil }
+
     private static func rows(_ w: PartPower.Watts, all: Double) -> [Row] {
-        var rows: [Row] = [
+        var rows: [Row] = measuresCPU(w) ? [
             ("Processor (CPU)", "cpu", Tab.overview.color, w.cpu ?? 0, "Every app's work on the CPU cores"),
             ("Graphics (GPU)", "square.stack.3d.up.fill", GraphicsCard.color, w.gpu ?? 0, "Drawing the screen, video, games and AI models"),
             ("Neural Engine", "brain", Theme.trends, w.ane ?? 0, "Core ML models: dictation, photo analysis, Apple Intelligence"),
             ("Memory", "memorychip", Tab.memory.color, w.dram ?? 0, "The memory chips themselves"),
+        ] : [
+            ("Graphics (GPU)", "square.stack.3d.up.fill", GraphicsCard.color, w.gpu ?? 0, "Drawing the screen, video, games and AI models"),
         ]
         if let d = w.display {
             rows.append(("Display engine", "display", Color(hex: "#0891b2"), d, "The part of the chip that sends pictures to the built-in and external screens"))
         }
         if all > w.total + 0.2 {
-            rows.append(("Rest of the Mac", "ellipsis.circle", Color.secondary, all - w.total, "The screen's backlight, Wi-Fi, SSD, speakers, charging and everything else"))
+            rows.append(measuresCPU(w)
+                ? ("Rest of the Mac", "ellipsis.circle", Color.secondary, all - w.total, "The screen's backlight, Wi-Fi, SSD, speakers, charging and everything else")
+                : ("Everything else", "ellipsis.circle", Color.secondary, all - w.total, "This Mac's chip does not report processor and memory power separately, so they are counted here with the screen, Wi-Fi and SSD"))
         }
         return rows
     }
 
     /// The screen in plain words: the display engine is measured; the backlight is not, but its
     /// drive current is, and that is what its power follows.
-    private func screenLine(_ l: ScreenLight, display: Double?) -> String {
+    private func screenLine(_ l: ScreenLight, display: Double?, rest: String) -> String {
         var t = String(format: "The screen: brightness %.0f nits of a possible %.0f", l.nits, l.maxNits)
         if let c = l.currentShare { t += String(format: ", backlight at %.0f%% of full power", c) }
-        t += ". The backlight is counted in Rest of the Mac"
+        t += ". The backlight is counted in \(rest)"
         if let d = display { t += d < 0.1 ? "; the display engine above draws under 0.1 W" : String(format: "; the display engine above draws %.1f W", d) }
         t += ". Brightness is the screen's biggest cost: turning it down a few steps saves more than anything except quitting a busy app."
         return t
@@ -362,7 +369,11 @@ private struct PartsPowerCard: View {
                         .tip(r.tip)
                     }
                     if let l = model.screenLight {
-                        Text(screenLine(l, display: w.display))
+                        Text(screenLine(l, display: w.display, rest: Self.measuresCPU(w) ? "Rest of the Mac" : "Everything else"))
+                            .font(.callout).fixedSize(horizontal: false, vertical: true)
+                    }
+                    if !Self.measuresCPU(w) {
+                        Text("This Mac's chip does not share processor, memory and Neural Engine power with apps (macOS keeps those counters for Apple's own tools), so only graphics is shown on its own and the processor is counted in Everything else. The whole-Mac total is still measured. The Processes tab shows which apps keep the processor busy.")
                             .font(.callout).fixedSize(horizontal: false, vertical: true)
                     }
                     Text("Measured by the chip itself (Settings > Refresh rates sets how often). A busy graphics chip can draw more than the processor: local AI models and games are the usual reason. The Graphics card on Overview lists what is using it and how to save power.")

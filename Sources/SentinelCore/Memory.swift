@@ -105,25 +105,28 @@ public final class MemoryHistory {
             let cutoff = minute - Int(retain)
             if let i = points.firstIndex(where: { $0.t >= cutoff }), i > 0 { points.removeFirst(i) }
             if lastThinned != minute / 3600 {
-                thin(before: minute - Int(HistoryRetention.fullDetail))
+                thin(before: minute - 86_400, every: 600)
+                thin(before: minute - Int(HistoryRetention.fullDetail), every: 3600)
                 lastThinned = minute / 3600
             }
         }
-        if lastSave.map({ now.timeIntervalSince($0) >= 300 }) ?? true {
+        // Every 15 minutes, and at quit (Model.saveAll): the file is a few MB.
+        if lastSave.map({ now.timeIntervalSince($0) >= 900 }) ?? true {
             save()
             lastSave = now
         }
     }
 
     /// The app list is most of each minute's size. Older than `before`, keeps it on the first
-    /// minute of each hour only, so a 28 day history is not four times the 7 day one; every
-    /// minute's totals, swap and pressure stay.
-    public func thin(before: Int) {
-        var hour: Int?
+    /// minute of each `every` seconds only: every 10 minutes after a day, every hour after 7
+    /// days, so the file is not rewritten at 7 MB. Every minute's totals, swap and pressure stay.
+    public func thin(before: Int, every: Int = 3600) {
+        var block: Int?
         for i in points.indices {
             guard points[i].t < before else { break }
-            let h = points[i].t / 3600
-            if h == hour { points[i].apps = [] } else { hour = h }
+            guard !points[i].apps.isEmpty else { continue }
+            let b = points[i].t / every
+            if b == block { points[i].apps = [] } else { block = b }
         }
     }
 

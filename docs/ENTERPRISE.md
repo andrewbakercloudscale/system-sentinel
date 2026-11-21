@@ -15,6 +15,9 @@ and launch arguments are ignored, so a person cannot turn a policy off.
 | `DisableAdminActions` | Nothing asks for the admin password: no root kills, Free up memory (purge), Low Power Mode, Checkup admin fixes, removing system startup items, or sudo kill commands for Terminal. |
 | `autoUpdateCheck` | `false` stops the daily update check (also covered by `DisableSelfUpdate`). |
 
+A ready-to-upload profile with these recommended values and a managed login item is in
+[`SystemSentinel-Managed.mobileconfig`](SystemSentinel-Managed.mobileconfig).
+
 Example payload:
 
 ```xml

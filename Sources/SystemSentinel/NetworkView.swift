@@ -29,6 +29,8 @@ struct NetworkView: View {
             TopHosts(store: store)
             ProblemsCard(model: model, store: store)
         }
+        .onAppear { store.onScreen = true }
+        .onDisappear { store.onScreen = false }
     }
 }
 

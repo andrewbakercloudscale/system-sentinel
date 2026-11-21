@@ -52,6 +52,13 @@ public final class PartPower: @unchecked Sendable {
             else if c.name.hasPrefix("DRAM") { add(&w.dram, c) }
             else if c.name == "DISP" || c.name.hasPrefix("DISPEXT") { add(&w.display, c) }
         }
+        // The power manager's counters (CPU, Neural Engine, memory, display engine) are
+        // listed but frozen at zero on some chips and macOS versions (the M5): refreshing them
+        // needs a private Apple entitlement. A CPU and memory that drew exactly nothing is
+        // that, not a reading, so they are left unknown rather than shown as 0 W.
+        if w.cpu == 0, w.dram == nil || w.dram == 0 {
+            w.cpu = nil; w.ane = nil; w.dram = nil; w.display = nil
+        }
         return w
     }
 

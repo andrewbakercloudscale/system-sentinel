@@ -467,7 +467,8 @@ public final class PowerHistory {
             let cutoff = minute - Int(retain)
             if let i = points.firstIndex(where: { $0.t >= cutoff }), i > 0 { points.removeFirst(i) }
         }
-        if lastSave.map({ now.timeIntervalSince($0) >= 300 }) ?? true {
+        // Every 15 minutes, and at quit (Model.saveAll).
+        if lastSave.map({ now.timeIntervalSince($0) >= 900 }) ?? true {
             save()
             lastSave = now
         }

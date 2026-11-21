@@ -166,15 +166,19 @@ final class RetentionTests: XCTestCase {
     func testMemoryKeepsAppsHourlyPastAWeek() {
         let h = MemoryHistory(fileURL: nil, retain: 28 * 86_400)
         let app = MemoryHistory.App(key: "a", name: "A", bytes: GB)
-        // Two days ago is still full detail; ten days ago is thinned.
-        for days in [10.0, 2.0] {
-            for m in 0..<120 { h.record(status(swap: 0), apps: [app], at: now.addingTimeInterval(-days * 86_400 + Double(m) * 60)) }
+        // Ten days ago: hourly. Two days ago: every 10 minutes. The last day: every minute.
+        for ago in [10 * 86_400.0, 2 * 86_400.0, 3 * 3600.0] {
+            for m in 0..<120 { h.record(status(swap: 0), apps: [app], at: now.addingTimeInterval(-ago + Double(m) * 60)) }
         }
         h.record(status(swap: 0), apps: [app], at: now)
-        let cut = Int(now.timeIntervalSince1970 - 7 * 86_400)
-        let old = h.points.filter { $0.t < cut }, recent = h.points.filter { $0.t >= cut }
+        let week = Int(now.timeIntervalSince1970 - 7 * 86_400), day = Int(now.timeIntervalSince1970 - 86_400)
+        let old = h.points.filter { $0.t < week }
+        let mid = h.points.filter { $0.t >= week && $0.t < day }
+        let recent = h.points.filter { $0.t >= day }
         XCTAssertEqual(old.count, 120, "every minute's totals stay")
         XCTAssertLessThanOrEqual(old.filter { !$0.apps.isEmpty }.count, 3, "the app list once an hour")
+        XCTAssertEqual(mid.count, 120)
+        XCTAssertTrue((12...13).contains(mid.filter { !$0.apps.isEmpty }.count), "the app list every 10 minutes")
         XCTAssertTrue(recent.allSatisfy { !$0.apps.isEmpty })
     }
 
