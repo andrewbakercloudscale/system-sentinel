@@ -81,7 +81,7 @@ struct ProcessesView: View {
                     ProcessRow(model: model, sample: s, zebra: i.isMultiple(of: 2), window: window, cols: cols)
                 }
             }
-            Text("CPU is a share of the whole Mac and all its \(Int(CPUScale.cores)) cores, so one core flat out shows as \(Fmt.cpu(100)). Averages count idle time, so they show what has been chewing the CPU, not how hot it runs when it does. GPU is each process's share of the graphics chip over the last 5 seconds, where 100% is all of it. Click a column title to sort by it.")
+            Text("CPU is a share of the whole Mac and all its \(Int(CPUScale.cores)) cores, so one core flat out shows as \(Fmt.cpu(100)). Averages count idle time, so they show what has been chewing the CPU, not how hot it runs when it does. GPU is each process's share of the graphics chip since the last reading, where 100% is all of it. Click a column title to sort by it.")
                 .font(.caption2).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
         } header: {
             toolbar(sort: sort, window: window)

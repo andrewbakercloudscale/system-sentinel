@@ -329,6 +329,29 @@ final class HistoryWindowTests: XCTestCase {
         XCTAssertEqual(h.average(4, over: 60, at: t0 + 10), 0)
     }
 
+    /// Settings can slow the sample from 5 s to 30 s while running: the hour already
+    /// recorded at 5 s must keep its weight, and the new samples must weigh 30 s each.
+    func testChangingTheRateKeepsAveragesRight() {
+        let h = CPUHistory(retention: 3600, interval: 5)
+        for i in 0..<360 { h.record([ProcessSample(pid: 7, uid: 501, cpu: 60, path: "/r")], at: t0 + Double(i) * 5) }
+        h.interval = 30
+        let after = t0 + 359 * 5
+        for i in 1...60 { h.record([ProcessSample(pid: 7, uid: 501, cpu: 60, path: "/r")], at: after + Double(i) * 30) }
+        let now = after + 60 * 30
+        XCTAssertEqual(h.average(7, over: 3600, at: now), 60, accuracy: 1)
+        XCTAssertEqual(h.average(7, over: 600, at: now), 60, accuracy: 1)
+        XCTAssertEqual(h.sparkline(7, over: 600, buckets: 5, at: now)[2], 60, accuracy: 1)
+    }
+
+    func testRefreshRateChoices() {
+        XCTAssertEqual(RefreshRates.clamp(7, RefreshRates.processes), 5)
+        XCTAssertEqual(RefreshRates.clamp(0.1, RefreshRates.processes), 2)
+        XCTAssertEqual(RefreshRates.clamp(0, RefreshRates.followers), 0)
+        XCTAssertEqual(RefreshRates.label(0), "Every sample")
+        XCTAssertEqual(RefreshRates.label(15), "15 s")
+        XCTAssertEqual(RefreshRates.label(300), "5 min")
+    }
+
     func testSparklineBuckets() {
         let h = CPUHistory(interval: 5)
         for i in 0..<12 { h.record([ProcessSample(pid: 5, uid: 501, cpu: i < 6 ? 0 : 60, path: "/s")], at: t0 + Double(i) * 5) }

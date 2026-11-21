@@ -165,6 +165,17 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
     @AppStorage("threshold") var threshold: Double = 80 { didSet { sentinel.detector.threshold = threshold } }
     @AppStorage("windowSeconds") var windowSeconds: Double = 120 { didSet { sentinel.detector.window = windowSeconds } }
     @AppStorage("weeklyReport") var weeklyReport = true
+    /// Refresh rates (Settings > Refresh rates), in seconds. Processes and CPU set the main
+    /// sample; memory, graphics and battery are read on every sample (0) or less often.
+    @AppStorage("refresh.processes") var refreshProcesses: Double = RefreshRates.defaultProcesses { didSet { applyRefreshRates() } }
+    @AppStorage("refresh.memory") var refreshMemory: Double = 0
+    @AppStorage("refresh.gpu") var refreshGPU: Double = 0
+    @AppStorage("refresh.power") var refreshPower: Double = 0
+    @AppStorage("refresh.energy") var refreshEnergy: Double = RefreshRates.defaultEnergy { didSet { applyRefreshRates() } }
+    @AppStorage("refresh.sleep") var refreshSleep: Double = RefreshRates.defaultSleep
+    private var lastMemoryRead: Date?
+    private var lastGPURead: Date?
+    private var lastPowerRead: Date?
     /// Days of history kept: 7, 14 or 28 (`HistoryRetention`).
     @AppStorage("historyDays") var historyDays = HistoryRetention.defaultDays { didSet { applyRetention() } }
     /// What the menu bar shows beside the icon: none, load, watts or battery.
@@ -269,9 +280,7 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
         applyRetention()
         setUpNotifications()
         tick()
-        timer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.tick() }
-        }
+        applyRefreshRates()
         if let dir = Model.snapshotDir {
             TweakStore.shared.refresh()
             if let name = Model.argument("--dnsmap") { DNSMapStore.shared.input = name; DNSMapStore.shared.start() }
@@ -282,6 +291,30 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
             announceUpdate()
             scheduleUpdateChecks()
         }
+    }
+
+    /// Restarts the sample timer at the chosen rate, and tells the stores how long one
+    /// sample may stand for, so a slower rate does not drop time from the histories.
+    func applyRefreshRates() {
+        let every = RefreshRates.clamp(refreshProcesses, RefreshRates.processes)
+        sentinel.cpuHistory.interval = every
+        sentinel.dailyUsage.maxStep = max(15, every * 3)
+        sentinel.recentUsage.maxStep = max(15, every * 3)
+        energyUsage.maxStep = max(45, RefreshRates.clamp(refreshEnergy, RefreshRates.energy) * 1.5)
+        if let t = timer, t.timeInterval == every { return }
+        timer?.invalidate()
+        timer = Timer.scheduledTimer(withTimeInterval: every, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.tick() }
+        }
+        timer?.tolerance = every / 10
+    }
+
+    /// True when a reading set to `every` seconds (0 = every sample) is due, and marks it read.
+    private func due(_ last: inout Date?, every: Double, at now: Date) -> Bool {
+        // A second of slack, so a timer firing a little early does not skip a whole sample.
+        if every > 0, let l = last, now.timeIntervalSince(l) < every - 1 { return false }
+        last = now
+        return true
     }
 
     /// Load as a share of the whole machine: 100 means every core busy.
@@ -352,22 +385,27 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
 
     private func readPower() {
         let now = Date()
-        battery = PowerReader.read()
-        PlugInBlink.shared.active = battery?.needsPlugIn ?? false
-        if let b = battery {
-            powerHistory.record(b, at: now)
-            healthLog.record(b, at: now)
-            if powerOutlook.map({ $0.stale(b, at: now) }) ?? true {
-                powerOutlook = PowerOutlook.of(b, lastHour: powerHistory.since(now.addingTimeInterval(-3600)), at: now)
+        let powerDue = due(&lastPowerRead, every: RefreshRates.clamp(refreshPower, RefreshRates.followers), at: now)
+        if powerDue {
+            battery = PowerReader.read()
+            PlugInBlink.shared.active = battery?.needsPlugIn ?? false
+            if let b = battery {
+                powerHistory.record(b, at: now)
+                healthLog.record(b, at: now)
+                if powerOutlook.map({ $0.stale(b, at: now) }) ?? true {
+                    powerOutlook = PowerOutlook.of(b, lastHour: powerHistory.since(now.addingTimeInterval(-3600)), at: now)
+                }
             }
+            checkLowBattery(now)
         }
-        checkLowBattery(now)
         coreLoad = coreSampler.sample() ?? coreLoad
         readClusters(now)
-        memory = MemoryStatus.read()
-        readMemory(now)
-        readGPU(now)
-        if let w = partPower?.read(now: now) {
+        if due(&lastMemoryRead, every: RefreshRates.clamp(refreshMemory, RefreshRates.followers), at: now) {
+            memory = MemoryStatus.read()
+            readMemory(now)
+        }
+        if due(&lastGPURead, every: RefreshRates.clamp(refreshGPU, RefreshRates.followers), at: now) { readGPU(now) }
+        if powerDue, let w = partPower?.read(now: now) {
             partWatts = w
             screenLight = Self.readScreenLight()
             if let g = w.gpu {
@@ -378,7 +416,7 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
         checkHeat(now)
         checkAlarms(now)
         checkWeeklyReport(now)
-        if lastSleepRead.map({ now.timeIntervalSince($0) >= 900 }) ?? true {
+        if lastSleepRead.map({ now.timeIntervalSince($0) >= RefreshRates.clamp(refreshSleep, RefreshRates.sleep) }) ?? true {
             lastSleepRead = now
             Task.detached {
                 let events = SleepLog.parse(SleepLog.read(), since: now.addingTimeInterval(-86_400))
@@ -386,8 +424,9 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
                 await MainActor.run { self.sleepReport = report }
             }
         }
-        // `top` takes about a second; run it off the main thread every 30 s.
-        guard !energyRunning, lastEnergy.map({ now.timeIntervalSince($0) >= 30 }) ?? true else { return }
+        // `top` takes about a second; run it off the main thread, every 30 s unless set otherwise.
+        let energyEvery = RefreshRates.clamp(refreshEnergy, RefreshRates.energy)
+        guard !energyRunning, lastEnergy.map({ now.timeIntervalSince($0) >= energyEvery - 1 }) ?? true else { return }
         energyRunning = true
         lastEnergy = now
         let pids = sentinel.latest.map(\.pid)

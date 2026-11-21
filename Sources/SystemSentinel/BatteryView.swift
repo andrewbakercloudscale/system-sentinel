@@ -364,7 +364,7 @@ private struct PartsPowerCard: View {
                         Text(screenLine(l, display: w.display))
                             .font(.callout).fixedSize(horizontal: false, vertical: true)
                     }
-                    Text("Measured by the chip itself every 5 seconds. A busy graphics chip can draw more than the processor: local AI models and games are the usual reason. The Graphics card on Overview lists what is using it and how to save power.")
+                    Text("Measured by the chip itself (Settings > Refresh rates sets how often). A busy graphics chip can draw more than the processor: local AI models and games are the usual reason. The Graphics card on Overview lists what is using it and how to save power.")
                         .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -402,7 +402,7 @@ private struct EnergyCard: View {
         let rows = Array(model.energy.prefix(10))
         let total = model.energy.reduce(0) { $0 + $1.power }
         if rows.isEmpty {
-            Text("Reading energy use (refreshed every 30 seconds)…").font(.caption).foregroundStyle(.secondary)
+            Text("Reading energy use (refreshed every \(RefreshRates.label(model.refreshEnergy)))…").font(.caption).foregroundStyle(.secondary)
         }
         ForEach(rows) { r in
             let share = total > 0 ? r.power / total : 0
@@ -817,7 +817,7 @@ struct CoresCard: View {
 
     private func caption(_ l: CoreLoad) -> String {
         guard l.efficiencyCount > 0, let p = l.performanceAverage, let e = l.efficiencyAverage else {
-            return "Load on each core over the last 5 seconds."
+            return "Load on each core since the last sample."
         }
         if p >= 50 { return "The performance cores are busy: that is heavy foreground work, and where most of the power goes." }
         if e >= 50, p < 25 { return "Mostly efficiency cores: background work, which macOS runs cheaply." }

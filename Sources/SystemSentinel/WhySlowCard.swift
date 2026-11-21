@@ -116,7 +116,7 @@ struct WhySlowCard: View {
         }
         .padding(8)
         .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 6))
-        .tip("Who started the new processes. Samples every 5 seconds catch only some of them (Caught); Share is each one's part of those, and About is that share of the real rate. Hover a row for its full command.")
+        .tip("Who started the new processes. Samples a few seconds apart catch only some of them (Caught); Share is each one's part of those, and About is that share of the real rate. Hover a row for its full command.")
     }
 
     /// Paths under the home folder as ~/…: shorter, and no user name in a screenshot.

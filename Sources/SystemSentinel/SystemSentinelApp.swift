@@ -469,6 +469,7 @@ struct SettingsDraft: Equatable {
     var stopIdleScreenHelper: Bool
     var alertHangs: Bool
     var historyDays: Int
+    var refresh: RefreshDraft
 
     @MainActor init(_ m: Model) {
         threshold = m.threshold; window = m.windowSeconds; login = m.launchAtLogin
@@ -483,6 +484,12 @@ struct SettingsDraft: Equatable {
         stopIdleScreenHelper = m.stopIdleScreenHelper
         alertHangs = m.alertHangs
         historyDays = m.retentionDays
+        refresh = RefreshDraft(processes: RefreshRates.clamp(m.refreshProcesses, RefreshRates.processes),
+                               memory: RefreshRates.clamp(m.refreshMemory, RefreshRates.followers),
+                               gpu: RefreshRates.clamp(m.refreshGPU, RefreshRates.followers),
+                               power: RefreshRates.clamp(m.refreshPower, RefreshRates.followers),
+                               energy: RefreshRates.clamp(m.refreshEnergy, RefreshRates.energy),
+                               sleep: RefreshRates.clamp(m.refreshSleep, RefreshRates.sleep))
     }
 
     @MainActor func apply(to m: Model) {
@@ -501,6 +508,61 @@ struct SettingsDraft: Equatable {
         m.stopIdleScreenHelper = stopIdleScreenHelper
         m.alertHangs = alertHangs
         if historyDays != m.retentionDays { m.historyDays = historyDays }
+        m.refreshMemory = refresh.memory; m.refreshGPU = refresh.gpu; m.refreshPower = refresh.power
+        m.refreshSleep = refresh.sleep
+        if m.refreshProcesses != refresh.processes { m.refreshProcesses = refresh.processes }
+        if m.refreshEnergy != refresh.energy { m.refreshEnergy = refresh.energy }
+    }
+}
+
+/// How often each kind of reading is taken, as edited in Settings.
+struct RefreshDraft: Equatable {
+    var processes: Double, memory: Double, gpu: Double, power: Double, energy: Double, sleep: Double
+    static let standard = RefreshDraft(processes: RefreshRates.defaultProcesses, memory: 0, gpu: 0, power: 0,
+                                       energy: RefreshRates.defaultEnergy, sleep: RefreshRates.defaultSleep)
+}
+
+/// Settings > Refresh rates: one row of chips per kind of reading.
+struct RefreshSettingsCard: View {
+    @Binding var rates: RefreshDraft
+    private let tint = Tab.processes.color
+
+    var body: some View {
+        Card(title: "Refresh rates", symbol: "arrow.clockwise", tint: tint) {
+            row("Processes and CPU", RefreshRates.processes, $rates.processes,
+                "The main sample: the process list, CPU, per-core load, bad actor checks. Faster shows changes sooner but uses more CPU itself; every sample starts ps.")
+            row("Memory", RefreshRates.followers, $rates.memory,
+                "Memory pressure, swap and memory by app.")
+            row("Graphics", RefreshRates.followers, $rates.gpu,
+                "How busy the graphics chip is, and which apps use it.")
+            row("Battery and power", RefreshRates.followers, $rates.power,
+                "Charge, watts and the chip's power by part.")
+            row("Energy by app", RefreshRates.energy, $rates.energy,
+                "Energy impact, disk and network by app, and what keeps the Mac awake. Each reading runs top for about a second.")
+            row("Sleep history", RefreshRates.sleep, $rates.sleep,
+                "Sleep and wake over the last 24 hours, from the power log.")
+            HStack {
+                Text("\"Every sample\" follows the Processes and CPU rate.").font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                Button("Defaults") { rates = .standard }
+                    .disabled(rates == .standard)
+                    .tip("5 s for processes, every sample for memory, graphics and battery, 30 s for energy, 15 min for sleep")
+            }
+        }
+    }
+
+    private func row(_ title: String, _ choices: [Double], _ value: Binding<Double>, _ about: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(title).font(.callout.weight(.semibold))
+                Spacer()
+                ChipPicker(options: choices.map(RefreshRates.label),
+                           selection: Binding(get: { RefreshRates.label(value.wrappedValue) },
+                                              set: { l in value.wrappedValue = choices.first { RefreshRates.label($0) == l } ?? value.wrappedValue }),
+                           color: tint)
+            }
+            Text(about).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        }
     }
 }
 
@@ -575,6 +637,7 @@ struct SettingsView: View {
                 Text("Top apps, CPU hours, time on battery and average power draw for the last 7 days. The same report is always on the Events tab.")
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
+            RefreshSettingsCard(rates: draft.refresh)
             HistorySettingsCard(days: draft.historyDays)
             UpdatesCard(model: model, auto: draft.autoUpdateCheck)
             PermissionsCard(permissions: model.permissions)
