@@ -909,6 +909,17 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
         lastAction = "Copied a ChatGPT prompt about \(s.displayName)"
     }
 
+    /// ChatGPT about what a process is for, from the "what is this?" button.
+    func whatIs(name: String, path: String) {
+        let prompt = """
+        On my Mac there is a process called "\(name)"\(path.hasPrefix("/") ? " at \(path)" : ""). In plain terms: what is it for, what starts it, why might it use CPU, memory or power, and is it safe to quit or remove?
+
+        \(machineSummary())
+        """
+        open(prompt)
+        lastAction = "Copied a ChatGPT prompt about \(name)"
+    }
+
     /// ChatGPT about an insight: the finding, the processes involved, and this Mac.
     func explain(_ insight: Insight) {
         let procs = insight.related.map { r in

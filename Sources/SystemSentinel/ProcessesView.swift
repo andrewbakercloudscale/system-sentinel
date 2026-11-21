@@ -298,6 +298,7 @@ private struct ProcessRow: View {
                 HStack(spacing: 5) {
                     Text(s.displayName).font(.callout.weight(.medium)).lineLimit(1).truncationMode(.middle).layoutPriority(2)
                         .tip(s.displayName == s.name ? s.path : "\(s.displayName)\n\(s.path)")
+                    WhatIsIt(model: model, name: s.name, path: s.path)
                     if flagged { Pill(text: "Flagged", symbol: "exclamationmark.triangle.fill", color: Theme.heat(100), compact: true).tip("Flagged: it stayed over your CPU limit") }
                     if let hot { Pill(text: "Hot for \(hot)", symbol: "flame.fill", color: Theme.heat(50), compact: true) }
                     if s.isRoot {

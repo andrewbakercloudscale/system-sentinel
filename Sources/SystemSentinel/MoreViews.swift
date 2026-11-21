@@ -176,7 +176,11 @@ struct GraphicsCard: View {
                     ForEach(model.gpuApps) { a in
                         HStack(spacing: 8) {
                             IconView(icon: IconCache.shared.icon(for: a.sample), size: 18)
-                            Text(a.name).font(.callout).lineLimit(1).truncationMode(.middle).frame(width: 190, alignment: .leading)
+                            HStack(spacing: 4) {
+                                Text(a.name).font(.callout).lineLimit(1).truncationMode(.middle)
+                                WhatIsIt(model: model, name: a.name, path: a.sample.path)
+                            }
+                            .frame(width: 190, alignment: .leading)
                             ShareBar(share: a.cpu / 100, color: Self.color).frame(height: 6)
                             Text(String(format: a.cpu >= 10 ? "%.0f%%" : "%.1f%%", a.cpu)).font(.callout.weight(.semibold)).monospacedDigit()
                                 .foregroundStyle(Self.color).frame(width: 46, alignment: .trailing)
@@ -348,6 +352,7 @@ struct NetworkDiskCard: View {
                 HStack(spacing: 10) {
                     IconView(icon: IconCache.shared.icon(for: sample ?? ProcessSample(pid: 0, uid: 501, cpu: 0, path: r.key)), size: 20)
                     Text(r.name).font(.callout).lineLimit(1)
+                    WhatIsIt(model: model, name: r.name, path: sample?.path ?? r.key)
                     Spacer(minLength: 6)
                     Text(IORow.netRate(r.netIn)).frame(width: 78, alignment: .trailing)
                     Text(IORow.netRate(r.netOut)).frame(width: 78, alignment: .trailing)
