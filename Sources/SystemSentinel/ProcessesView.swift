@@ -439,6 +439,7 @@ private struct ProcessRow: View {
         Button("Force kill (kill -9)…") { ForceKillButton.confirm(model, s) }
             .disabled(s.pid <= 1 || s.pid == getpid())
         Button("Copy sudo kill command") { copy(Killer.sudoCommand(for: s)) }
+            .disabled(Safety.adminActionsOff || Safety.processControlOff || Safety.isCompanyAgent(s))
         Button("Open Activity Monitor") {
             NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/Utilities/Activity Monitor.app"))
         }

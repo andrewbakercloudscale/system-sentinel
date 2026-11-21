@@ -1,8 +1,9 @@
 import Foundation
 import Security
 
-/// Finds newer releases on GitHub: the GitHub CLI (`gh`) when it is installed and signed in,
-/// otherwise plain HTTPS to the public API.
+/// Finds newer releases on GitHub over plain HTTPS to the public API. Not the GitHub CLI:
+/// `gh` lives in Homebrew's folder, which any admin on the Mac can write to, so another
+/// account could plant one that runs as this user.
 public enum Updates {
     public static let repo = "andrewbakercloudscale/system-sentinel"
 
@@ -63,10 +64,6 @@ public enum Updates {
         let tag = "v" + version
         guard isVersionTag(tag) else { return nil }
         let path = "repos/\(repo)/compare/\(tag)...main"
-        if let gh {
-            let r = run(gh, ["api", path])
-            if r.status == 0, let c = parseChanges(r.out) { return c }
-        }
         let r = run("/usr/bin/curl", ["-fsSL", "--proto", "=https", "--max-time", "15", "https://api.github.com/" + path])
         return r.status == 0 ? parseChanges(r.out) : nil
     }
@@ -117,6 +114,16 @@ public enum Updates {
         return nil
     }
 
+    /// This copy's designated requirement as text, for the swap script's last check.
+    public static func ownRequirement() -> String? {
+        var me: SecCode?, mine: SecStaticCode?, req: SecRequirement?, text: CFString?
+        guard SecCodeCopySelf([], &me) == errSecSuccess, let me,
+              SecCodeCopyStaticCode(me, [], &mine) == errSecSuccess, let mine,
+              SecCodeCopyDesignatedRequirement(mine, [], &req) == errSecSuccess, let req,
+              SecRequirementCopyString(req, [], &text) == errSecSuccess, let text else { return nil }
+        return text as String
+    }
+
     /// True when `a` is a later version than `b`: "0.10.0" is newer than "0.9.3".
     public static func isNewer(_ a: String, than b: String) -> Bool {
         let x = parts(a), y = parts(b)
@@ -149,11 +156,6 @@ public enum Updates {
         return out
     }
 
-    /// The GitHub CLI, where Homebrew or the installer put it.
-    public static var gh: String? {
-        ["/opt/homebrew/bin/gh", "/usr/local/bin/gh", "/usr/bin/gh"].first { FileManager.default.isExecutableFile(atPath: $0) }
-    }
-
     /// Blocks for up to a few seconds: run it off the main thread.
     public static func latest() -> Result<Release, CheckError> {
         // Once more after a pause: a network that is still coming up (after waking, joining
@@ -165,10 +167,6 @@ public enum Updates {
     }
 
     static func latestOnce() -> Result<Release, CheckError> {
-        if let gh {
-            let r = run(gh, ["api", "repos/\(repo)/releases/latest"])
-            if r.status == 0, let rel = parse(r.out) { return .success(rel) }
-        }
         let r = run("/usr/bin/curl", ["-fsSL", "--proto", "=https", "--max-time", "15", "https://api.github.com/repos/\(repo)/releases/latest"])
         if r.status == 0, let rel = parse(r.out) { return .success(rel) }
         if r.status == 0 { return .failure(.message("GitHub answered, but not with a release.")) }
@@ -182,14 +180,11 @@ public enum Updates {
         let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("system-sentinel-update-\(UUID().uuidString)")
         try? FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         var ok = false
-        if let gh {
-            ok = run(gh, ["release", "download", "--", rel.tag, "--repo", repo, "--pattern", "*.zip", "--dir", tmp.path]).status == 0
-        }
-        if !ok, let z = rel.zip {
+        if let z = rel.zip {
             ok = run("/usr/bin/curl", ["-fsSL", "--proto", "=https", "--max-time", "120", "-o", tmp.appendingPathComponent("app.zip").path, z.absoluteString]).status == 0
         }
         guard ok, let zip = (try? FileManager.default.contentsOfDirectory(atPath: tmp.path))?.first(where: { $0.hasSuffix(".zip") }) else {
-            return .failure(.message("The download failed. Run gh auth login in Terminal, or download it from the release page."))
+            return .failure(.message("The download failed. Download it from the release page instead."))
         }
         let out = tmp.appendingPathComponent("unzipped")
         guard run("/usr/bin/ditto", ["-x", "-k", tmp.appendingPathComponent(zip).path, out.path]).status == 0,
@@ -201,7 +196,9 @@ public enum Updates {
 
     /// The script that waits for this app to quit, swaps in the new copy and opens it. The
     /// new copy is staged next to the old one first, so a failed copy leaves the old app.
-    public static func swapScript(pid: Int32, newApp: String, installedAt: String) -> String {
+    /// `requirement` is this copy's designated requirement: the staged copy is checked against
+    /// it again just before the swap, so nothing can change the download after `verify`.
+    public static func swapScript(pid: Int32, newApp: String, installedAt: String, requirement: String) -> String {
         let q = { (s: String) in "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'" }
         let staged = installedAt + ".update", old = installedAt + ".previous"
         return """
@@ -210,6 +207,7 @@ public enum Updates {
         while kill -0 \(pid) 2>/dev/null; do sleep 0.2; done
         rm -rf \(q(staged)) \(q(old))
         /usr/bin/ditto \(q(newApp)) \(q(staged))
+        /usr/bin/codesign --verify --deep --strict -R=\(q(requirement)) \(q(staged)) || { rm -rf \(q(staged)); exit 1; }
         mv \(q(installedAt)) \(q(old))
         if mv \(q(staged)) \(q(installedAt)); then rm -rf \(q(old)); else mv \(q(old)) \(q(installedAt)); fi
         /usr/bin/open \(q(installedAt))

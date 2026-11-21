@@ -51,7 +51,11 @@ public enum Killer {
         guard !Safety.isCompanyAgent(s) else { return .refused(companyAgent(s)) }
         guard !Safety.processControlOff else { return .refused("Stopping processes is turned off by your organisation.") }
         guard isAlive(s.pid), isSameProcess(s) else { return .alreadyGone }
+        if let now = currentPath(s.pid), Safety.isCompanyAgent(ProcessSample(pid: s.pid, uid: s.uid, cpu: 0, path: now)) {
+            return .refused(companyAgent(s))
+        }
         if s.uid != getuid() {
+            guard !Safety.adminActionsOff else { return .refused(Safety.adminOff) }
             guard let command = rootKill(s.pid, signal: "KILL") else { return .alreadyGone }
             let task = Process()
             task.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
@@ -72,7 +76,20 @@ public enum Killer {
     }
 
     /// The force kill command to paste into Terminal.
-    public static func forceSudoCommand(for s: ProcessSample) -> String { "sudo kill -9 \(s.pid)" }
+    public static func forceSudoCommand(for s: ProcessSample) -> String { sudo(s, signal: "KILL") }
+
+    /// sudo runs the kill only if the pid still belongs to the process that started at the
+    /// same time: the password can be typed minutes later, and the pid reused by then.
+    static func sudo(_ s: ProcessSample, signal: String) -> String {
+        guard let command = rootKill(s.pid, signal: signal) else { return "echo 'That process has already exited.'" }
+        return "sudo /bin/sh -c '\(command)'"
+    }
+
+    /// The program a pid runs now, when it can be read.
+    static func currentPath(_ pid: Int32) -> String? {
+        var buf = [CChar](repeating: 0, count: 4 * Int(MAXPATHLEN))
+        return proc_pidpath(pid, &buf, UInt32(buf.count)) > 0 ? String(cString: buf) : nil
+    }
 
     /// Kills a process owned by this user. Blocks for up to `grace` seconds.
     public static func kill(_ s: ProcessSample, grace: TimeInterval = 5) -> KillOutcome {
@@ -80,6 +97,10 @@ public enum Killer {
         guard !Safety.processControlOff else { return .refused("Stopping processes is turned off by your organisation.") }
         guard Safety.canKillManually(s) else { return .refused("\(s.name) is protected") }
         guard isAlive(s.pid), isSameProcess(s) else { return .alreadyGone }
+        // Checked again on the program there now: the sample can be minutes old.
+        if let now = currentPath(s.pid), Safety.isCompanyAgent(ProcessSample(pid: s.pid, uid: s.uid, cpu: 0, path: now)) {
+            return .refused(companyAgent(s))
+        }
         if s.uid != getuid() { return killAsAdmin(s) }
         guard Darwin.kill(s.pid, SIGTERM) == 0 else {
             return .failed(String(cString: strerror(errno)))
@@ -106,12 +127,13 @@ public enum Killer {
     /// No trailing "# name" comment: interactive zsh does not treat # as a comment by
     /// default, so it reached kill as a pid ("kill: illegal process id: #").
     public static func sudoCommand(for s: ProcessSample) -> String {
-        "sudo kill -TERM \(s.pid)"
+        sudo(s, signal: "TERM")
     }
 
     /// Root and other users' processes: the standard macOS admin prompt via osascript.
     /// launchd restarts the daemons this is meant for (PerfPowerServices), so TERM is enough.
     static func killAsAdmin(_ s: ProcessSample) -> KillOutcome {
+        guard !Safety.adminActionsOff else { return .refused(Safety.adminOff) }
         guard let command = rootKill(s.pid, signal: "TERM") else { return .alreadyGone }
         let task = Process()
         task.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")

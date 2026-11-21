@@ -368,7 +368,7 @@ final class CheckupStore: ObservableObject {
                                  detail: (local ? "The router link itself is poor: Wi-Fi signal or interference." : "The router link is fine, so the slowness is beyond it: ISP or VPN.") + gw + how,
                                  steps: local ? ["Move closer to the router or use 5 GHz.", "Turn Wi-Fi off and on."] : ["Check the VPN, or restart the router."],
                                  // The interface name goes into a shell line, so only plain names like en0 pass.
-                                 fixes: local && iface.range(of: "^[a-z]{2,8}[0-9]{1,3}$", options: .regularExpression) != nil
+                                 fixes: local && iface.range(of: "\\A[a-z]{2,8}[0-9]{1,3}\\z", options: .regularExpression) != nil
                                     ? [.run(label: "Turn Wi-Fi off and on", path: "/bin/sh", args: ["-c", "/usr/sbin/networksetup -setairportpower \(iface) off; sleep 2; /usr/sbin/networksetup -setairportpower \(iface) on"])] : []))
             } else {
                 out.append(Check(id: "net-internet", area: .network, title: "Internet is healthy: \(Int(i.avg ?? 0)) ms, no loss", status: .ok, detail: "Via \(iface).\(gw)\(how)"))
@@ -660,11 +660,14 @@ final class CheckupStore: ObservableObject {
                 }
             }
         case .admin(let label, let command):
+            if Safety.adminActionsOff {
+                return toast(Model.Toast(ok: false, title: "\(label) was not changed", detail: Safety.adminOff))
+            }
             working.insert(key)
             let front = frontWindowNumber()
             Task.detached {
                 // The command is a fixed string from AdminCommand: nothing read off the Mac goes in.
-                let ok = CheckupStore.status("/usr/bin/osascript", ["-e", "do shell script \"\(command.rawValue)\" with administrator privileges"]) == 0
+                let ok = CheckupStore.status("/usr/bin/osascript", ["-e", RootStaging.appleScript(command.rawValue)]) == 0
                 await MainActor.run {
                     comeBack(to: front)
                     self.working.remove(key)

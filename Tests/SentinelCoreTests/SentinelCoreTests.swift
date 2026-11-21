@@ -526,6 +526,10 @@ final class AppIdentityTests: XCTestCase {
     func testProtectedOverrideStillRefusesLaunchdAndSelf() {
         XCTAssertEqual(Killer.killProtectedAsAdmin(ProcessSample(pid: 1, uid: 0, cpu: 1, path: "/sbin/launchd")), .refused("launchd cannot be killed"))
         XCTAssertEqual(Killer.killProtectedAsAdmin(ProcessSample(pid: getpid(), uid: getuid(), cpu: 1, path: "/me")), .refused("me cannot be killed"))
-        XCTAssertEqual(Killer.sudoCommand(for: ProcessSample(pid: 395, uid: 88, cpu: 1, path: "/x/WindowServer")), "sudo kill -TERM 395")
+        // The sudo command kills only the process that started when it was sampled.
+        let me = Killer.sudoCommand(for: ProcessSample(pid: getpid(), uid: getuid(), cpu: 1, path: "/me"))
+        XCTAssertTrue(me.hasPrefix("sudo /bin/sh -c '[ \"$(echo $(LC_ALL=C /bin/ps -o lstart= -p \(getpid())))\" = \""), me)
+        XCTAssertTrue(me.hasSuffix("\" ] && /bin/kill -TERM \(getpid())'"), me)
+        XCTAssertEqual(Killer.sudoCommand(for: ProcessSample(pid: 999_999, uid: 88, cpu: 1, path: "/x")), "echo 'That process has already exited.'")
     }
 }

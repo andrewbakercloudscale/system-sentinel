@@ -349,7 +349,8 @@ public enum DNSMap {
         s = s.lowercased()
         if s.hasSuffix(".") { s.removeLast() }
         let ok = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: ".-_:"))
-        guard !s.isEmpty, s.unicodeScalars.allSatisfy({ ok.contains($0) }) else { return nil }
+        // Not a leading "-": dig would read it as an option.
+        guard !s.isEmpty, !s.hasPrefix("-"), s.unicodeScalars.allSatisfy({ ok.contains($0) }) else { return nil }
         return s
     }
 

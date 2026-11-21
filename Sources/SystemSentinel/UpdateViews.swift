@@ -121,7 +121,11 @@ extension Model {
                     }
                     // In the download's own private folder, not a fixed name in the temp folder.
                     let script = app.deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("swap.sh")
-                    let text = Updates.swapScript(pid: ProcessInfo.processInfo.processIdentifier, newApp: app.path, installedAt: installed)
+                    guard let requirement = Updates.ownRequirement() else {
+                        self.updateState = .failed("This copy's signature could not be read.")
+                        return
+                    }
+                    let text = Updates.swapScript(pid: ProcessInfo.processInfo.processIdentifier, newApp: app.path, installedAt: installed, requirement: requirement)
                     do {
                         try text.write(to: script, atomically: true, encoding: .utf8)
                         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: script.path)
