@@ -11,8 +11,12 @@ import Foundation
 /// of history for 700 processes at a few hundred kilobytes.
 public final class CPUHistory {
     public let retention: TimeInterval
-    public let interval: TimeInterval
+    /// How often samples arrive. Settings can change it while running: each point is stored
+    /// as CPU-seconds (CPU times the time since the sample before), so history recorded at
+    /// the old rate keeps its weight.
+    public var interval: TimeInterval
     public let floor: Double
+    private var lastRecord: Date?
 
     private var series: [Int32: [(Date, Double)]] = [:]
     private var paths: [Int32: String] = [:]
@@ -27,6 +31,9 @@ public final class CPUHistory {
 
     public func record(_ samples: [ProcessSample], at now: Date) {
         if started == nil { started = now }
+        // A gap (sleep, a stalled sample) counts as at most three samples, not as hours of load.
+        let step = lastRecord.map { min(max(now.timeIntervalSince($0), 0), interval * 3) } ?? interval
+        lastRecord = now
         let cutoff = now.addingTimeInterval(-retention)
         var total = 0.0
         var live: Set<Int32> = []
@@ -34,7 +41,7 @@ public final class CPUHistory {
             live.insert(s.pid)
             total += s.cpu
             guard s.cpu >= floor else { continue }
-            series[s.pid, default: []].append((now, s.cpu))
+            series[s.pid, default: []].append((now, s.cpu * step))
             paths[s.pid] = s.path
         }
         totals.append((now, total))
@@ -56,7 +63,7 @@ public final class CPUHistory {
         guard span > 0, let points = series[pid] else { return 0 }
         let since = now.addingTimeInterval(-window)
         let sum = points.reduce(0.0) { $0 + ($1.0 > since ? $1.1 : 0) }
-        return sum * interval / span
+        return sum / span
     }
 
     /// Mean total CPU across all processes over the window.
@@ -71,14 +78,18 @@ public final class CPUHistory {
     public func sparkline(_ pid: Int32?, over window: TimeInterval, buckets: Int, at now: Date) -> [Double] {
         let points = pid.map { series[$0] ?? [] } ?? totals
         let width = window / Double(buckets)
-        let perBucket = max(width / interval, 1)
+        // Process points are CPU-seconds, averaged over the bucket's time; the totals are
+        // plain CPU, one per sample, averaged over the samples in the bucket.
         var sums = [Double](repeating: 0, count: buckets)
+        var counts = [Int](repeating: 0, count: buckets)
         let start = now.addingTimeInterval(-window)
         for (t, v) in points where t > start {
             let i = min(Int(t.timeIntervalSince(start) / width), buckets - 1)
             sums[i] += v
+            counts[i] += 1
         }
-        return sums.map { $0 / perBucket }
+        if pid == nil { return zip(sums, counts).map { $1 > 0 ? $0 / Double($1) : 0 } }
+        return sums.map { $0 / max(width, interval) }
     }
 
     /// Per-bucket CPU over `window`, summed per `key(path)`, for a stacked chart. Processes

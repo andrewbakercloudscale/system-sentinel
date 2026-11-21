@@ -333,7 +333,7 @@ struct NetworkDiskCard: View {
         let rows = Array(model.io.prefix(8))
         Card(title: "Network and disk", symbol: "arrow.up.arrow.down.circle.fill", tint: Color(hex: "#0d9488")) {
             if rows.isEmpty {
-                Text("Measuring (every 30 seconds)…").font(.caption).foregroundStyle(.secondary)
+                Text("Measuring (every \(RefreshRates.label(model.refreshEnergy)))…").font(.caption).foregroundStyle(.secondary)
             } else {
                 HStack {
                     Spacer()

@@ -47,7 +47,8 @@ public final class DailyUsage {
     public let floor: Double
     /// The longest gap a tick may stand for: a Mac waking from sleep must not count the
     /// whole night as sampled.
-    public let maxStep: TimeInterval
+    /// Settable: the app raises it when the sampling rate is slowed in Settings.
+    public var maxStep: TimeInterval
     /// Hours kept on disk. A shorter setting drops the oldest at the next new bucket.
     public var retainHours: Int {
         didSet { lastPrunedHour = nil }
