@@ -47,7 +47,7 @@ public enum RootStaging {
     /// Runs the command after the admin password prompt. nil when the prompt was cancelled
     /// or refused, or the output is not a folder root made.
     public static func run(_ items: [Item], uid: UInt32 = getuid()) -> (folder: String, anyFailed: Bool)? {
-        guard !items.isEmpty else { return nil }
+        guard !items.isEmpty, !Safety.adminActionsOff else { return nil }
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
         p.arguments = ["-e", appleScript(command(items, uid: uid))]

@@ -62,7 +62,8 @@ final class UpdatesTests: XCTestCase {
     }
 
     func testSwapScriptQuotesPaths() {
-        let s = Updates.swapScript(pid: 42, newApp: "/tmp/a b/System Sentinel.app", installedAt: "/Applications/O'Brien.app")
+        let s = Updates.swapScript(pid: 42, newApp: "/tmp/a b/System Sentinel.app", installedAt: "/Applications/O'Brien.app",
+                                    requirement: "identifier \"x\" and certificate leaf = H\"ab\"")
         XCTAssertTrue(s.contains("kill -0 42"))
         XCTAssertTrue(s.contains("set -euo pipefail"))
         XCTAssertFalse(s.contains("xattr"))
@@ -70,6 +71,7 @@ final class UpdatesTests: XCTestCase {
         XCTAssertFalse(s.contains("kickstart"))
         XCTAssertTrue(s.contains("'/tmp/a b/System Sentinel.app'"))
         XCTAssertTrue(s.contains("'/Applications/O'\\''Brien.app'"))
+        XCTAssertTrue(s.contains("codesign --verify --deep --strict -R='identifier \"x\" and certificate leaf = H\"ab\"'"))
     }
 
     func testFailureReasonDropsCurlPrefix() {

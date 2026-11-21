@@ -3,14 +3,16 @@
 ## Managed settings
 
 Set these booleans with a configuration profile (MDM) for the preference domain
-`consulting.cloudscale.systemsentinel`. A person cannot change them in the app.
+`consulting.cloudscale.systemsentinel`. Only values the profile forces count: `defaults write`
+and launch arguments are ignored, so a person cannot turn a policy off.
 
 | Key | Effect when `true` |
 |---|---|
 | `DisableSelfUpdate` | No update checks, no Install or Reinstall, no "Share with a friend". IT deploys each version. |
 | `DisableExplain` | No "Explain with ChatGPT". |
-| `DisablePublicDNSLookups` | The DNS map asks only the Mac's own DNS servers: no 1.1.1.1, 8.8.8.8, DNS over HTTPS or root walk. (Internal names are never sent outside, even without this.) |
+| `DisablePublicDNSLookups` | The DNS map asks only the Mac's own DNS servers: no 1.1.1.1, 8.8.8.8, DNS over HTTPS or root walk. Recommended: without it, a name counts as internal only if it has no dot, a private suffix (.local, .internal, .corp…) or falls under a VPN or search domain, so internal names under your public domain (jira.corp.example.com) can reach public resolvers. |
 | `DisableProcessControl` | No Kill, Force kill, Auto-kill, memory quit rules or lowering priority. Monitoring and alerts stay. |
+| `DisableAdminActions` | Nothing asks for the admin password: no root kills, Free up memory (purge), Low Power Mode, Checkup admin fixes, removing system startup items, or sudo kill commands for Terminal. |
 | `autoUpdateCheck` | `false` stops the daily update check (also covered by `DisableSelfUpdate`). |
 
 Example payload:
@@ -25,6 +27,7 @@ Example payload:
     <key>DisableExplain</key><true/>
     <key>DisablePublicDNSLookups</key><true/>
     <key>DisableProcessControl</key><false/>
+    <key>DisableAdminActions</key><true/>
 </dict>
 ```
 
@@ -33,7 +36,8 @@ Example payload:
 - Security, VPN and device management software (CrowdStrike, Defender, SentinelOne, Forcepoint,
   Netskope, Zscaler, Intune, Jamf and others, see `SecurityAgents.known` and
   `BackgroundItems.managed`) is never killed, auto-killed, slowed or removed as a startup item,
-  even with the admin password. It is still reported when it uses a lot of CPU.
+  even with the admin password. It is still reported when it uses a lot of CPU. This matches
+  names and paths: it prevents mistakes, it is not a tamper control.
 - Admin actions are a fixed list of commands; nothing read from the Mac is put into them unchecked.
   Root never writes into a folder the user can change.
 - Every fix that changes a security setting turns protection on, never off.

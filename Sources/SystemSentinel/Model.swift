@@ -714,6 +714,7 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
             // A service stopped from Checkup's network finding: check again once it has gone.
             DispatchQueue.main.asyncAfter(deadline: .now() + 7) { self.checkup.refreshExposure() }
         case .lowPowerMode:
+            if Safety.adminActionsOff { return showToast(Toast(ok: false, title: "Low Power Mode was not changed", detail: Safety.adminOff)) }
             let front = frontWindowNumber()
             Task.detached {
                 // osascript, so the admin prompt runs off the main thread.
@@ -922,7 +923,8 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
 
     /// ChatGPT about an insight: the finding, the processes involved, and this Mac.
     func explain(_ insight: Insight) {
-        let procs = insight.related.map { r in
+        // Company security software is left out, as in machineSummary: its names say what protects this Mac.
+        let procs = insight.related.filter { !Safety.isCompanyAgent($0.sample) }.map { r in
             "- \(r.sample.name) (pid \(r.sample.pid)): \(Int(r.sample.cpu))% of one core now, 15 min average \(Int(average(r.sample, 900)))%\(r.parent.map { ", started by \($0)" } ?? ""), path \(r.sample.path)"
         }.joined(separator: "\n")
         let prompt = """
@@ -1185,6 +1187,7 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
     /// or swap, so the toast reports what it actually changed.
     func purgeCaches() {
         guard !purging else { return }
+        if Safety.adminActionsOff { return showToast(Toast(ok: false, title: "Not available", detail: Safety.adminOff)) }
         purging = true
         let before = MemoryStatus.read()
         let front = frontWindowNumber()
@@ -1550,7 +1553,8 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
         }
         guard now.timeIntervalSince(chatGPTInFront) >= 15 * 60,
               helperStopped.map({ $0 < chatGPTInFront }) ?? true,
-              let s = sentinel.latest.first(where: { $0.name == "SkyComputerUseService" }) else { return }
+              // Only this user's: another user's process of that name must not raise an admin prompt.
+              let s = sentinel.latest.first(where: { $0.name == "SkyComputerUseService" && $0.uid == getuid() }) else { return }
         helperStopped = now
         Task.detached {
             guard Killer.isSameProcess(s) else { return }
@@ -1620,6 +1624,8 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
 
     /// Opens Terminal with the sudo kill typed and run, so the password goes to sudo itself.
     func openSudoShell(_ s: ProcessSample, force: Bool = false) {
+        if Safety.adminActionsOff { return showToast(Toast(ok: false, title: "Not available", detail: Safety.adminOff)) }
+        guard !Safety.isCompanyAgent(s), !Safety.processControlOff else { return companyAgentNotice(s) }
         let command = force ? Killer.forceSudoCommand(for: s) : Killer.sudoCommand(for: s)
         let cmd = command.replacingOccurrences(of: "\"", with: "\\\"")
         let source = "tell application \"Terminal\"\nactivate\ndo script \"\(cmd)\"\nend tell"

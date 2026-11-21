@@ -13,6 +13,9 @@ public enum Safety {
 
     /// Set by the organisation's profile (DisableProcessControl): nothing is killed or slowed.
     nonisolated(unsafe) public static var processControlOff = false
+    /// Set by the organisation's profile (DisableAdminActions): nothing asks for the admin password.
+    nonisolated(unsafe) public static var adminActionsOff = false
+    public static let adminOff = "Actions that need the admin password are turned off by your organisation."
 
     public static func isProtected(_ s: ProcessSample) -> Bool {
         processControlOff || s.pid <= 1 || protectedNames.contains(s.name) || s.pid == getpid() || isCompanyAgent(s)
