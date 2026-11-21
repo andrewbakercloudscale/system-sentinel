@@ -115,7 +115,7 @@ final class DNSMapStore: ObservableObject {
             // Public resolvers only for public names: an internal name (a VPN or search domain,
             // or a private suffix) must not be sent to Cloudflare or Google. The organisation
             // can turn them off altogether.
-            let outside = !Managed.noPublicDNS && !NetParse.isInternalName(name, resolvers: resolvers)
+            let outside = !Managed.noPublicDNS && !NetParse.isInternalName(name, resolvers: resolvers, extra: Managed.internalDomains)
             for extra in ["1.1.1.1", "8.8.8.8"] where outside && !serverList.contains(where: { $0.0 == extra }) {
                 serverList.append((extra, "public, for comparison"))
             }

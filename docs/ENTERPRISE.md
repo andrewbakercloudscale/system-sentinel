@@ -11,11 +11,12 @@ and launch arguments are ignored, so a person cannot turn a policy off.
 | `DisableSelfUpdate` | No update checks, no Install or Reinstall, no "Share with a friend". IT deploys each version. |
 | `DisableExplain` | No "Explain with ChatGPT". |
 | `DisablePublicDNSLookups` | The DNS map asks only the Mac's own DNS servers: no 1.1.1.1, 8.8.8.8, DNS over HTTPS or root walk. Recommended: without it, a name counts as internal only if it has no dot, a private suffix (.local, .internal, .corp…) or falls under a VPN or search domain, so internal names under your public domain (jira.corp.example.com) can reach public resolvers. |
+| `InternalDomains` | An array of your domains (`corp.example.com`, `example.internal`). Names under them are never sent to public DNS, on or off the VPN. Use it if you leave `DisablePublicDNSLookups` off. |
 | `DisableProcessControl` | No Kill, Force kill, Auto-kill, memory quit rules or lowering priority. Monitoring and alerts stay. |
 | `DisableAdminActions` | Nothing asks for the admin password: no root kills, Free up memory (purge), Low Power Mode, Checkup admin fixes, removing system startup items, or sudo kill commands for Terminal. |
 | `autoUpdateCheck` | `false` stops the daily update check (also covered by `DisableSelfUpdate`). |
 
-A ready-to-upload profile with these recommended values and a managed login item is in
+A ready-to-upload profile with these recommended values and a managed login item (replace the `corp.example.com` placeholder under `InternalDomains` with your own domains) is in
 [`SystemSentinel-Managed.mobileconfig`](SystemSentinel-Managed.mobileconfig).
 
 Example payload:
