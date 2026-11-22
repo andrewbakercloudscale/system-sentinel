@@ -310,7 +310,15 @@ private struct StorageTimeline: View {
                      value: sign + gb(change.magnitude), label: "change, \(range)")
             StatTile(symbol: "speedometer", color: storageTint, value: perDay.map { ($0 >= 0 ? "+" : "−") + gb(UInt64(abs($0))) } ?? "—",
                      label: "a day on average")
-            StatTile(symbol: "calendar.badge.exclamationmark", color: Theme.heat(80), value: forecast(perDay), label: "until full at this pace")
+            if let days = daysUntilFull(perDay) {
+                StatTile(symbol: "calendar.badge.exclamationmark", color: days < 90 ? Theme.heat(80) : amber,
+                         value: days >= 365 ? "Over a year" : "\(Int(days.rounded())) days", label: "until the disk is full")
+            } else if let g = perDay, g > 0 {
+                // Under 100 MB a day: full only in years, not worth a countdown.
+                StatTile(symbol: "checkmark.circle.fill", color: Tab.battery.color, value: "Years away", label: "until full: growing slowly")
+            } else {
+                StatTile(symbol: "checkmark.circle.fill", color: Tab.battery.color, value: "Not filling up", label: "disk use is steady or falling")
+            }
         }
     }
 
@@ -365,9 +373,10 @@ private struct StorageTimeline: View {
         }
     }
 
-    private func forecast(_ perDay: Double?) -> String {
-        guard let d = store.disk, let days = StorageAnalysis.daysUntilFull(free: d.available, perDay: perDay) else { return "not filling" }
-        return days >= 365 ? "over a year" : "\(Int(days.rounded())) days"
+    /// Days until the disk is full at the average growth; nil when it is not growing.
+    private func daysUntilFull(_ perDay: Double?) -> Double? {
+        guard let d = store.disk else { return nil }
+        return StorageAnalysis.daysUntilFull(free: d.available, perDay: perDay)
     }
 }
 

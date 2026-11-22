@@ -206,11 +206,14 @@ private struct HeroChip: View {
     let text: String
     let symbol: String
     var fill: Color? = nil
+    /// A white rim, for a fill close to the hero's own purple.
+    var outlined = false
     var body: some View {
         Label(text, systemImage: symbol)
             .font(.caption2.weight(.semibold)).foregroundStyle(.white).lineLimit(1)
             .padding(.horizontal, 7).padding(.vertical, 3)
             .background(Capsule().fill(fill ?? .white.opacity(0.18)))
+            .overlay(Capsule().strokeBorder(.white.opacity(outlined ? 0.85 : 0), lineWidth: 1.5))
     }
 }
 
@@ -314,10 +317,11 @@ private struct ThermalChip: View {
     let state: ProcessInfo.ThermalState
     var body: some View {
         switch state {
-        case .nominal: HeroChip(text: "Cool", symbol: "thermometer.low")
-        case .fair: HeroChip(text: "Warm", symbol: "thermometer.medium")
-        case .serious: HeroChip(text: "Hot, throttling", symbol: "thermometer.high")
-        case .critical: HeroChip(text: "Overheating", symbol: "thermometer.sun.fill")
+        // Green, amber, red, purple: the same colours as the power chips beside it.
+        case .nominal: HeroChip(text: "Cool", symbol: "thermometer.low", fill: Color(hex: "#16a34a"))
+        case .fair: HeroChip(text: "Warm", symbol: "thermometer.medium", fill: Color(hex: "#d97706"))
+        case .serious: HeroChip(text: "Hot, throttling", symbol: "thermometer.high", fill: Color(hex: "#dc2626"))
+        case .critical: HeroChip(text: "Overheating", symbol: "thermometer.sun.fill", fill: Color(hex: "#581c87"), outlined: true)
         @unknown default: EmptyView()
         }
     }

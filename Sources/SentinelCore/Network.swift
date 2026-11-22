@@ -421,7 +421,7 @@ public struct LinkHealth: Equatable, Sendable {
     public var internetLoss: Double?
     public var dnsMs: Double?
     public var dnsOK = true
-    /// The largest packet that crosses whole, and what the interface allows.
+    /// The largest packet that gets through in one piece, and what the interface allows.
     public var pathMTU: Int?
     public var interfaceMTU: Int?
     /// Pings to the internet got no answer but TCP did, so the internet figures are TCP handshakes:
@@ -704,7 +704,7 @@ public enum NetworkAnalysis {
                 why.append("Correct values here: tunnel MTU \(f) or less (now \(t.mtu)), Wi-Fi or Ethernet MTU \(h.interfaceMTU ?? 1500). Nothing to change.")
             }
         } else if let pm = h.pathMTU, let i = h.interfaceMTU {
-            why.append("Fragmentation: the largest packet that crosses whole is \(pm) bytes; this Mac sends up to \(i). Measured with do-not-split pings to 1.1.1.1.")
+            why.append("Fragmentation: the largest packet that gets through in one piece is \(pm) bytes; this Mac sends up to \(i). Measured with do-not-split pings to 1.1.1.1.")
             if pm < i {
                 split = true
                 bad.append("packets over \(pm) bytes get split")
@@ -735,7 +735,7 @@ public enum NetworkAnalysis {
         if bad.isEmpty {
             x = Insight(id: "net-packets", tone: unknown ? .info : .good, symbol: "checkmark.seal",
                         title: unknown ? "Packets: " + fine.joined(separator: ", ") : "Packets healthy: " + fine.joined(separator: ", "),
-                        detail: "Nothing lost, little resent, and full-size packets cross whole.")
+                        detail: "Nothing lost, little resent, and full-size packets get through in one piece.")
         } else {
             x = Insight(id: "net-packets", tone: .warning, symbol: "exclamationmark.triangle",
                         title: "Packets not healthy: " + bad.joined(separator: ", "),

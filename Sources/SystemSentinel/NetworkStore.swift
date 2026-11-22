@@ -7,6 +7,8 @@ import SentinelCore
 @MainActor
 final class NetworkStore: ObservableObject {
     @Published var throughput = Throughput()
+    /// Data per app per minute, last hour.
+    @Published var appData = AppDataHistory()
     @Published var link = NetworkLink()
     @Published var health: LinkHealth?
     @Published var testing = false
@@ -118,6 +120,7 @@ final class NetworkStore: ObservableObject {
                         return (Double(cur.bytesIn >= p.bytesIn ? cur.bytesIn - p.bytesIn : 0) / dt,
                                 Double(cur.bytesOut >= p.bytesOut ? cur.bytesOut - p.bytesOut : 0) / dt)
                     }
+                    self.recordAppData(t, previous: last.by, at: now)
                     let r = PacketHealth.resent(from: last.by, to: t)
                     self.resends = self.resends.filter { now.timeIntervalSince($0.at) < 300 } + [(now, r.sent, r.resent)]
                 }
@@ -321,6 +324,28 @@ final class NetworkStore: ObservableObject {
         insights = NetworkAnalysis.insights(link: link, health: health, problems: problems, apps: apps, closeWait: closeWait, at: now)
             + doctorInsights(paths: paths, at: now)
         lookUp(Array(Set(flows.prefix(40).map(\.host) + tracker.events.suffix(60).map(\.host))))
+    }
+
+    /// Bytes each app moved since the previous nettop reading, into the per-minute history.
+    private func recordAppData(_ t: [Int32: AppTraffic], previous: [Int32: AppTraffic], at now: Date) {
+        let paths = Dictionary(processes().map { ($0.pid, $0.path) }, uniquingKeysWith: { a, _ in a })
+        var by: [String: (name: String, down: UInt64, up: UInt64)] = [:]
+        for (pid, cur) in t {
+            // A process seen for the first time has no earlier reading: its totals since it
+            // started are not this interval's traffic.
+            guard let p = previous[pid] else { continue }
+            let down = cur.bytesIn >= p.bytesIn ? cur.bytesIn - p.bytesIn : 0
+            let up = cur.bytesOut >= p.bytesOut ? cur.bytesOut - p.bytesOut : 0
+            guard down + up > 0 else { continue }
+            // By the name shown: a helper seen with and without its path is still one row.
+            let name = paths[pid].map { Model.appName(Model.appKey($0)) } ?? cur.name
+            let key = name
+            var a = by[key] ?? (name, 0, 0)
+            a.down += down
+            a.up += up
+            by[key] = a
+        }
+        appData.add(by, at: now)
     }
 
     func appName(pid: Int32, fallback: String, paths: [Int32: String]? = nil) -> String {

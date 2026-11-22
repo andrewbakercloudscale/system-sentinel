@@ -15,6 +15,7 @@ struct NetworkView: View {
                 InsightList(model: model, only: store.insights, title: "Network issues")
             }
             ThroughputChart(store: store)
+            AppDataChart(store: store)
             HStack(alignment: .top, spacing: 10) {
                 LinkCard(store: store)
                 QualityCard(store: store)
@@ -148,6 +149,73 @@ private struct ThroughputChart: View {
     }
 }
 
+// MARK: Data by app over time
+
+/// Which apps moved the data, minute by minute over the last hour: the 10 busiest, stacked.
+private struct AppDataChart: View {
+    @ObservedObject var store: NetworkStore
+    @AppStorage("network.appData.way") private var way = "Download"
+
+    var body: some View {
+        let w: AppDataHistory.Way = way == "Upload" ? .upload : .download
+        let h = store.appData
+        let keys = h.top(10, w)
+        let slices = h.slices(10, w)
+        let totals = h.totals(w)
+        let colors = Self.colors(keys)
+        let color: (String) -> Color = { $0 == "other" ? Color.gray.opacity(0.5) : colors[$0] ?? .gray }
+        let order = keys.map { h.names[$0] ?? $0 } + (slices.contains { $0.key == "other" } ? ["Other"] : [])
+        Card(title: "Data by app, last hour", symbol: "chart.bar.xaxis", tint: netTint,
+             trailing: AnyView(ChipPicker(options: ["Download", "Upload"], selection: $way, color: netTint))) {
+            if slices.isEmpty {
+                Text("Measuring. Each app's \(way == "Upload" ? "uploads" : "downloads") show here minute by minute.")
+                    .font(.caption).foregroundStyle(.secondary).frame(height: 110)
+            } else {
+                Chart(slices) { s in
+                    BarMark(x: .value("Minute", s.start, unit: .minute), y: .value("MB", Double(s.bytes) / 1_000_000))
+                        .foregroundStyle(by: .value("App", s.name))
+                }
+                .chartForegroundStyleScale(domain: order, range: (keys + (order.count > keys.count ? ["other"] : [])).map(color))
+                .chartLegend(.hidden)
+                .chartXScale(domain: Date().addingTimeInterval(-3600)...Date())
+                .chartYAxis {
+                    AxisMarks(position: .leading, values: .automatic(desiredCount: 3)) { v in
+                        AxisGridLine().foregroundStyle(Color.primary.opacity(0.08))
+                        AxisValueLabel { if let d = v.as(Double.self) { Text(Fmt.tick(d, " MB")).font(.system(size: 9)) } }
+                    }
+                }
+                .chartXAxis { AxisMarks(values: .automatic(desiredCount: 4)) { _ in AxisValueLabel(format: .dateTime.hour().minute()).font(.system(size: 9)) } }
+                .frame(height: 130)
+                // The apps, busiest first, with what each moved in the hour.
+                LazyVGrid(columns: [GridItem(.flexible(), alignment: .leading), GridItem(.flexible(), alignment: .leading)], alignment: .leading, spacing: 4) {
+                    ForEach(keys, id: \.self) { k in
+                        HStack(spacing: 6) {
+                            Circle().fill(color(k)).frame(width: 9, height: 9)
+                            Text(h.names[k] ?? k).lineLimit(1).truncationMode(.middle)
+                            Spacer(minLength: 4)
+                            Text(ByteCountFormatter.string(fromByteCount: Int64(totals[k] ?? 0), countStyle: .decimal)).monospacedDigit().foregroundStyle(.secondary)
+                        }
+                        .padding(.trailing, 10)
+                    }
+                }
+                .font(.caption)
+                Text("Per minute, \(way == "Upload" ? "sent" : "received") by each app. Read every 10 s, also while this tab is closed.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+    }
+}
+
+extension AppDataChart {
+    /// The shared palette has 7 colours, the same as elsewhere for the same app; 3 more here.
+    static func colors(_ keys: [String]) -> [String: Color] {
+        var colors = ColorBook.shared.colors(for: keys)
+        let extra = ["#0891b2", "#a16207", "#be185d"].map { Color(hex: $0) }
+        for (i, k) in keys.filter({ colors[$0] == nil }).enumerated() where i < extra.count { colors[k] = extra[i] }
+        return colors
+    }
+}
+
 // MARK: The link
 
 private struct LinkCard: View {
@@ -243,7 +311,7 @@ private struct QualityCard: View {
                         }
                         Text(h.pathMTU == nil ? (h.icmpBlocked ? "Not measurable: it needs pings, which this network blocks." : "Pings marked do-not-split got no answer at any size.")
                              : h.fragments ? "Bigger packets get split or dropped on the way: big transfers can stall."
-                             : "Full-size packets cross whole: no fragmentation.")
+                             : "Full-size packets get through in one piece: no fragmentation.")
                             .font(.caption).foregroundStyle(.secondary).padding(.leading, 16)
                     }
                 }
