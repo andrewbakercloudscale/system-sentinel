@@ -48,7 +48,13 @@ NEW="$(ls -d "$TMP"/unzipped/*.app | head -1)"
 
 # Only an app signed by System Sentinel's publisher, the same check the in-app updater makes:
 # whoever could change the release on GitHub still cannot get another program installed.
+# PUBLISHER_TEAM is the same value as SENTINEL_PUBLISHER_TEAM in scripts/sign-id.sh: once the
+# company's Apple Team ID is set, Developer ID builds from that team are accepted as well.
+PUBLISHER_TEAM=""
 PUBLISHER='identifier "consulting.cloudscale.systemsentinel" and certificate leaf = H"8d7fbbb7fa351e97aebea46f65d73e69c1adab89"'
+if [ -n "$PUBLISHER_TEAM" ]; then
+  PUBLISHER="($PUBLISHER) or (identifier \"consulting.cloudscale.systemsentinel\" and anchor apple generic and certificate leaf[subject.OU] = \"$PUBLISHER_TEAM\")"
+fi
 if ! codesign --verify --strict --deep -R="$PUBLISHER" "$NEW" 2>/dev/null; then
   stop "The download is not signed by System Sentinel's publisher. Nothing was installed."
 fi

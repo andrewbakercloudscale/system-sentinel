@@ -12,7 +12,9 @@
 # NOTARY_PROFILE is a keychain profile made once with
 #   xcrun notarytool store-credentials system-sentinel --apple-id you@example.com --team-id TEAMID
 #
-# A Developer ID certificate in the keychain is found on its own; DEVELOPER_ID picks one.
+# Signs with Developer ID only once SENTINEL_PUBLISHER_TEAM is set in sign-id.sh; it then
+# finds that team's certificate on its own (DEVELOPER_ID picks one) and must notarise.
+# Also builds the MDM installer, dist/System-Sentinel-VERSION.pkg (scripts/build-pkg.sh).
 #
 # Without them the app is ad-hoc signed: users must clear the quarantine flag, `xattr -dr com.apple.quarantine`, on it (see the README).
 set -euo pipefail
@@ -22,7 +24,20 @@ VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" Resourc
 APP="build/System Sentinel.app"
 ZIP="dist/System-Sentinel-$VERSION.zip"
 DMG="dist/System-Sentinel-$VERSION.dmg"
-: "${DEVELOPER_ID:=$(security find-identity -v -p codesigning | sed -n 's/.*"\(Developer ID Application: .*\)"/\1/p' | head -1)}"
+source "$(dirname "$0")/sign-id.sh"
+# Who signs is decided by SENTINEL_PUBLISHER_TEAM in sign-id.sh, never by what happens to be
+# in the keychain: a different signer cuts every installed copy off its updates.
+if [[ -n "$SENTINEL_PUBLISHER_TEAM" ]]; then
+    : "${DEVELOPER_ID:=$(security find-identity -v -p codesigning | sed -n "s/.*\"\(Developer ID Application: .*($SENTINEL_PUBLISHER_TEAM)\)\"/\1/p" | head -1)}"
+    [[ "$DEVELOPER_ID" == *"($SENTINEL_PUBLISHER_TEAM)" ]] || { echo "!! no Developer ID Application certificate for team $SENTINEL_PUBLISHER_TEAM in the keychain, not releasing" >&2; exit 1; }
+    [[ -n "${NOTARY_PROFILE:-}" ]] || NOTARY_PROFILE=system-sentinel
+    xcrun notarytool history --keychain-profile "$NOTARY_PROFILE" >/dev/null 2>&1 \
+        || { echo "!! notarisation profile '$NOTARY_PROFILE' does not work (bash scripts/check-signing.sh), not releasing" >&2; exit 1; }
+elif [[ -n "${DEVELOPER_ID:-}" && -z "${ALLOW_OTHER_SIGNER:-}" ]]; then
+    echo "!! DEVELOPER_ID is set but SENTINEL_PUBLISHER_TEAM is empty: installed copies would refuse this build." >&2
+    echo "   Make the switch in sign-id.sh (docs/SIGNING.md), or set ALLOW_OTHER_SIGNER=1 for a test build." >&2
+    exit 1
+fi
 
 echo "== tests"
 swift test >/dev/null 2>&1 || { echo "tests failed, not releasing"; exit 1; }
@@ -59,7 +74,6 @@ if [[ -n "${DEVELOPER_ID:-}" ]]; then
         echo "!! NOTARY_PROFILE not set: signed but not notarised, Gatekeeper will still warn"
     fi
 else
-    source "$(dirname "$0")/sign-id.sh"
     # Only the publisher's certificate: installed copies refuse an update signed by anything else.
     if [[ "$SENTINEL_SIGN_ID" != "$SENTINEL_PUBLISHER_ID" && -z "${ALLOW_OTHER_SIGNER:-}" ]]; then
         echo "!! signing identity $SENTINEL_SIGN_ID is not the publisher's ($SENTINEL_PUBLISHER_ID): every installed copy would refuse this update." >&2
@@ -104,3 +118,6 @@ fi
 echo "== $DMG ($(du -h "$DMG" | cut -f1))"
 # Same file without the version, for the website's releases/latest/download link.
 cp "$DMG" dist/System-Sentinel.dmg
+
+# The installer package for MDM.
+NOTARY_PROFILE="${NOTARY_PROFILE:-}" bash scripts/build-pkg.sh

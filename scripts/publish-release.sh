@@ -4,7 +4,7 @@
 #   bash scripts/publish-release.sh NOTES.md
 #
 # Bump CFBundleShortVersionString and CFBundleVersion in Resources/Info.plist and commit first.
-# Uploads the zip (install.sh), the versioned .dmg and System-Sentinel.dmg, which the
+# Uploads the zip (install.sh), the .pkg for MDM, the versioned .dmg and System-Sentinel.dmg, which the
 # releases/latest/download link on cloudscale.consulting and andrewbaker.ninja serves, then
 # fetches that link to prove it now gives this version's .dmg.
 # Then puts both .dmg files on S3 (andrewninjawordpress, public) and checks what is served.
@@ -29,14 +29,15 @@ bash scripts/release.sh
 ZIP="dist/System-Sentinel-$VERSION.zip"
 DMG="dist/System-Sentinel-$VERSION.dmg"
 LATEST="dist/System-Sentinel.dmg"
-for f in "$ZIP" "$DMG" "$LATEST"; do [[ -s "$f" ]] || { echo "missing $f" >&2; exit 1; }; done
+PKG="dist/System-Sentinel-$VERSION.pkg"
+for f in "$ZIP" "$DMG" "$LATEST" "$PKG"; do [[ -s "$f" ]] || { echo "missing $f" >&2; exit 1; }; done
 
 git tag "$TAG"
 git push -q origin main "$TAG"
 # Checksums, so a download can be checked against what was published.
 SUMS="dist/SHA256SUMS-$VERSION.txt"
-(cd dist && shasum -a 256 "$(basename "$ZIP")" "$(basename "$DMG")" "$(basename "$LATEST")") > "$SUMS"
-gh release create "$TAG" "$ZIP" "$DMG" "$LATEST" "$SUMS" --title "$TAG" --notes-file "$NOTES"
+(cd dist && shasum -a 256 "$(basename "$ZIP")" "$(basename "$DMG")" "$(basename "$LATEST")" "$(basename "$PKG")") > "$SUMS"
+gh release create "$TAG" "$ZIP" "$DMG" "$LATEST" "$PKG" "$SUMS" --title "$TAG" --notes-file "$NOTES"
 
 # The latest/download link is what people click; check it serves this build.
 URL="https://github.com/andrewbakercloudscale/system-sentinel/releases/latest/download/System-Sentinel.dmg"

@@ -13,6 +13,11 @@
 # Releases pin the publisher's certificate (release.sh): every installed copy only accepts
 # updates signed by it, so signing with any other identity would cut the fleet off updates.
 SENTINEL_PUBLISHER_ID="8D7FBBB7FA351E97AEBEA46F65D73E69C1ADAB89"
+# The switch to Developer ID (docs/SIGNING.md): set this to the company's 10-character Apple
+# Team ID. From then on release.sh signs only with that team's Developer ID Application
+# certificate, notarises, and refuses to ship otherwise. Empty: the self-signed publisher.
+# install.sh has its own copy of this value, because it runs on its own from GitHub.
+SENTINEL_PUBLISHER_TEAM=""
 if [[ -z "${SENTINEL_SIGN_ID:-}" ]] && security find-identity -p codesigning 2>/dev/null | grep -q " $SENTINEL_PUBLISHER_ID "; then
     SENTINEL_SIGN_ID="$SENTINEL_PUBLISHER_ID"
 fi

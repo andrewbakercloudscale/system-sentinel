@@ -65,8 +65,10 @@ No telemetry, analytics or crash reporting is sent anywhere.
 
 ## Recommended for a rollout
 
-- Deploy as a package through MDM, with the profile above.
-- Grant Full Disk Access with a privacy (PPPC) profile using the code requirement
-  `identifier "consulting.cloudscale.systemsentinel" and certificate leaf = H"8d7fbbb7fa351e97aebea46f65d73e69c1adab89"`.
+- Follow `docs/ROLLOUT.md`.
+- Deploy `System-Sentinel-VERSION.pkg` from the GitHub release through MDM, with the profile above.
+- Pre-approve the privacy prompts with the profile `scripts/make-pppc.sh` writes. It is tied
+  to the publisher's signature. It never approves Terminal.
 - Better: a Developer ID signed and notarised build, so Gatekeeper and endpoint tools identify
-  the publisher by Team ID. Ship the change of signer only together with an update that accepts both.
+  the publisher by Team ID (`docs/SIGNING.md`). Installed copies refuse a build from a new
+  signer as an update, so the first Developer ID build goes out through MDM as a fresh install.
