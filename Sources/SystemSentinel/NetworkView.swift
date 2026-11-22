@@ -157,7 +157,7 @@ private struct AppDataChart: View {
     @AppStorage("network.appData.way") private var way = "Download"
 
     var body: some View {
-        let w: AppDataHistory.Way = way == "Upload" ? .upload : .download
+        let w: AppDataHistory.Way = way == "Upload" ? .upload : way == "Both" ? .both : .download
         let h = store.appData
         let keys = h.top(10, w)
         let slices = h.slices(10, w)
@@ -166,9 +166,9 @@ private struct AppDataChart: View {
         let color: (String) -> Color = { $0 == "other" ? Color.gray.opacity(0.5) : colors[$0] ?? .gray }
         let order = keys.map { h.names[$0] ?? $0 } + (slices.contains { $0.key == "other" } ? ["Other"] : [])
         Card(title: "Data by app, last hour", symbol: "chart.bar.xaxis", tint: netTint,
-             trailing: AnyView(ChipPicker(options: ["Download", "Upload"], selection: $way, color: netTint))) {
+             trailing: AnyView(ChipPicker(options: ["Download", "Upload", "Both"], selection: $way, color: netTint))) {
             if slices.isEmpty {
-                Text("Measuring. Each app's \(way == "Upload" ? "uploads" : "downloads") show here minute by minute.")
+                Text("Measuring. Each app's \(way == "Upload" ? "uploads" : way == "Both" ? "traffic" : "downloads") shows here minute by minute.")
                     .font(.caption).foregroundStyle(.secondary).frame(height: 110)
             } else {
                 Chart(slices) { s in
@@ -199,7 +199,7 @@ private struct AppDataChart: View {
                     }
                 }
                 .font(.caption)
-                Text("Per minute, \(way == "Upload" ? "sent" : "received") by each app. Read every 10 s, also while this tab is closed.")
+                Text("Per minute, \(way == "Upload" ? "sent" : way == "Both" ? "received and sent" : "received") by each app. Read every 10 s, also while this tab is closed.")
                     .font(.caption).foregroundStyle(.secondary)
             }
         }

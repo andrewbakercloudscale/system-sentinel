@@ -3,7 +3,7 @@ import Foundation
 /// Data each app moved, per minute, over the last hour: from the 10-second nettop readings,
 /// so it covers the time before the Network tab was opened.
 public struct AppDataHistory: Equatable, Sendable {
-    public enum Way: String, Sendable { case download, upload }
+    public enum Way: String, Sendable { case download, upload, both }
 
     public struct Minute: Equatable, Sendable {
         public let start: Date
@@ -44,10 +44,19 @@ public struct AppDataHistory: Equatable, Sendable {
         names = names.filter { live.contains($0.key) }
     }
 
-    /// Each app's total over the window, one way.
+    /// One minute's bytes by app: received, sent, or both added together.
+    static func bytes(_ m: Minute, _ way: Way) -> [String: UInt64] {
+        switch way {
+        case .download: return m.down
+        case .upload: return m.up
+        case .both: return m.down.merging(m.up, uniquingKeysWith: +)
+        }
+    }
+
+    /// Each app's total over the window, one way or both.
     public func totals(_ way: Way) -> [String: UInt64] {
         var t: [String: UInt64] = [:]
-        for m in minutes { for (k, b) in (way == .download ? m.down : m.up) { t[k, default: 0] += b } }
+        for m in minutes { for (k, b) in Self.bytes(m, way) { t[k, default: 0] += b } }
         return t
     }
 
@@ -62,7 +71,7 @@ public struct AppDataHistory: Equatable, Sendable {
         let shown = Set(keys)
         var out: [Slice] = []
         for m in minutes {
-            let by = way == .download ? m.down : m.up
+            let by = Self.bytes(m, way)
             for k in keys { if let b = by[k], b > 0 { out.append(Slice(start: m.start, key: k, name: names[k] ?? k, bytes: b)) } }
             let rest = by.filter { !shown.contains($0.key) }.values.reduce(0, +)
             if rest > 0 { out.append(Slice(start: m.start, key: "other", name: "Other", bytes: rest)) }

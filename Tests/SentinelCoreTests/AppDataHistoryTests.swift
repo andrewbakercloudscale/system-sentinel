@@ -12,6 +12,8 @@ import Foundation
         #expect(h.minutes.count == 1)
         #expect(h.totals(.download)["a"] == 150)
         #expect(h.totals(.upload)["a"] == 15)
+        #expect(h.totals(.both)["a"] == 165)
+        #expect(h.slices(10, .both).first?.bytes == 165)
     }
 
     @Test func topTenAndTheRestAsOther() {
