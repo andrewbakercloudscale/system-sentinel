@@ -1056,7 +1056,31 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
 
     static func appName(_ key: String) -> String {
         if key.contains("Google Chrome Helper (Renderer)") { return "Chrome tabs" }
-        return AppIdentity.bundlePath(of: key) != nil ? AppIdentity.appName(of: key) : (key as NSString).lastPathComponent
+        if AppIdentity.bundlePath(of: key) != nil { return AppIdentity.appName(of: key) }
+        if let cached = tidyNames[key] { return cached }
+        let name = tidyName(key)
+        tidyNames[key] = name
+        return name
+    }
+
+    private static var tidyNames: [String: String] = [:]
+
+    /// Command-line tools with a name people would not recognise.
+    private static let toolNames = ["claude": "Claude Code", "limactl": "Lima (Colima VMs)", "colima": "Colima"]
+
+    /// A readable name for a process outside an .app: a system extension or plug-in shows
+    /// its bundle's own name ("Falcon Sensor", not "com.crowdstrike.falcon.Agent").
+    private static func tidyName(_ path: String) -> String {
+        let bare = (path as NSString).lastPathComponent
+        if let r = path.range(of: "/Contents/MacOS/") {
+            let bundle = String(path[..<r.lowerBound])
+            if let info = NSDictionary(contentsOfFile: bundle + "/Contents/Info.plist") {
+                for k in ["CFBundleDisplayName", "CFBundleName"] {
+                    if let n = info[k] as? String, !n.isEmpty, !n.hasPrefix("$("), !n.contains(".") || n.contains(" ") { return n }
+                }
+            }
+        }
+        return toolNames[bare] ?? bare
     }
 
     private func insightInput() -> InsightInput {
