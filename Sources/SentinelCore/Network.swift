@@ -86,7 +86,7 @@ public enum NetParse {
                 if f.contains("bytes_in") { cols = f }
                 continue
             }
-            guard f.count >= cols.count, cols.count >= 2 else { continue }
+            guard f.count >= cols.count, cols.count >= 2, connection(f[0]) == nil else { continue }
             // Process names may contain commas: the counters are the last columns.
             let n = cols.count - 1
             let values = Array(f.suffix(n))
@@ -105,6 +105,68 @@ public enum NetParse {
                 }
             }
             out[pid] = t
+        }
+        return out
+    }
+
+    /// A per-connection row of nettop without -P ("tcp4 10.0.0.2:51234<->1.2.3.4:443"):
+    /// the remote host and the local port. nil for a process row.
+    public static func connection(_ ident: String) -> (remote: String, localPort: Int?)? {
+        guard ident.count > 5, ["tcp4 ", "tcp6 ", "udp4 ", "udp6 "].contains(String(ident.prefix(5))),
+              let arrow = ident.range(of: "<->") else { return nil }
+        let sep: Character = ident.hasPrefix("tcp4") || ident.hasPrefix("udp4") ? ":" : "."
+        func hostPort(_ s: Substring) -> (String, Int?) {
+            guard let i = s.lastIndex(of: sep) else { return (String(s), nil) }
+            return (String(s[..<i]), Int(s[s.index(after: i)...]))
+        }
+        let local = hostPort(ident[ident.index(ident.startIndex, offsetBy: 5)..<arrow.lowerBound])
+        let remote = hostPort(ident[arrow.upperBound...])
+        return (remote.0, local.1)
+    }
+
+    /// The other end is this Mac or a private network: loopback, link-local, private and
+    /// carrier-grade (VPN) ranges, multicast. Anything else is the internet.
+    public static func isLocalAddress(_ raw: String) -> Bool {
+        var h = raw.lowercased()
+        if let pct = h.firstIndex(of: "%") { h = String(h[..<pct]) }
+        if h.hasPrefix("::ffff:") { h = String(h.dropFirst(7)) }
+        if h.contains(":") {
+            return h == "::1" || h.hasPrefix("fe8") || h.hasPrefix("fe9") || h.hasPrefix("fea") || h.hasPrefix("feb")
+                || h.hasPrefix("fc") || h.hasPrefix("fd") || h.hasPrefix("ff")
+        }
+        let o = h.split(separator: ".").compactMap { Int($0) }
+        guard o.count == 4 else { return false }
+        switch o[0] {
+        case 10, 127: return true
+        case 172: return (16...31).contains(o[1])
+        case 192: return o[1] == 168
+        case 169: return o[1] == 254
+        case 100: return (64...127).contains(o[1])
+        case 224...255: return true
+        default: return false
+        }
+    }
+
+    /// Bytes in and out of each process's open connections whose other end is local, per
+    /// connection, from nettop without -P. Unconnected sockets count only for mDNS (5353).
+    public static func localConnections(_ s: String) -> [Int32: [String: (bytesIn: UInt64, bytesOut: UInt64)]] {
+        var out: [Int32: [String: (bytesIn: UInt64, bytesOut: UInt64)]] = [:]
+        var header = false
+        var pid: Int32?
+        for line in s.split(separator: "\n") {
+            var f = line.split(separator: ",", omittingEmptySubsequences: false).map(String.init)
+            if f.last == "" { f.removeLast() }
+            if !header { header = f.contains("bytes_in"); continue }
+            guard f.count >= 3 else { continue }
+            if let c = connection(f[0]) {
+                guard let pid else { continue }
+                let local = c.remote == "*" ? c.localPort == 5353 : isLocalAddress(c.remote)
+                guard local, let i = UInt64(f[1]), let o = UInt64(f[2]), i + o > 0 else { continue }
+                out[pid, default: [:]][f[0]] = (i, o)
+            } else {
+                let ident = f.dropLast(2).joined(separator: ",")
+                pid = ident.lastIndex(of: ".").flatMap { Int32(ident[ident.index(after: $0)...]) }
+            }
         }
         return out
     }

@@ -48,6 +48,8 @@ final class NetworkStore: ObservableObject {
     var traffic: [Int32: AppTraffic] = [:]
     private var rates: [Int32: (down: Double, up: Double)] = [:]
     private var lastTraffic: (at: Date, by: [Int32: AppTraffic])?
+    /// Bytes on each process's open local connections at the last reading.
+    private var lastLocal: [Int32: [String: (bytesIn: UInt64, bytesOut: UInt64)]] = [:]
     private var closeWait: [String: Int] = [:]
     private var looking: Set<String> = []
     private var busy = false
@@ -110,7 +112,10 @@ final class NetworkStore: ObservableObject {
     /// Every 10 s: per-process totals since each started, from nettop, and rates from them.
     private func readTraffic() {
         Task.detached(priority: .utility) {
-            let t = NetParse.nettop(sh("/usr/bin/nettop", ["-P", "-L", "1", "-n", "-x", "-J", "bytes_in,bytes_out,packets_in,packets_out,re-tx"], timeout: 8))
+            // Without -P: process totals plus each open connection, to tell local from internet.
+            let out = sh("/usr/bin/nettop", ["-L", "1", "-n", "-x", "-J", "bytes_in,bytes_out,packets_in,packets_out,re-tx"], timeout: 8)
+            let t = NetParse.nettop(out)
+            let local = NetParse.localConnections(out)
             await MainActor.run {
                 let now = Date()
                 if let last = self.lastTraffic, now > last.at {
@@ -120,11 +125,12 @@ final class NetworkStore: ObservableObject {
                         return (Double(cur.bytesIn >= p.bytesIn ? cur.bytesIn - p.bytesIn : 0) / dt,
                                 Double(cur.bytesOut >= p.bytesOut ? cur.bytesOut - p.bytesOut : 0) / dt)
                     }
-                    self.recordAppData(t, previous: last.by, at: now)
+                    self.recordAppData(t, previous: last.by, local: local, at: now)
                     let r = PacketHealth.resent(from: last.by, to: t)
                     self.resends = self.resends.filter { now.timeIntervalSince($0.at) < 300 } + [(now, r.sent, r.resent)]
                 }
                 self.lastTraffic = (now, t)
+                self.lastLocal = local
                 self.traffic = t
                 self.refresh()
             }
@@ -327,9 +333,11 @@ final class NetworkStore: ObservableObject {
     }
 
     /// Bytes each app moved since the previous nettop reading, into the per-minute history.
-    private func recordAppData(_ t: [Int32: AppTraffic], previous: [Int32: AppTraffic], at now: Date) {
+    private func recordAppData(_ t: [Int32: AppTraffic], previous: [Int32: AppTraffic],
+                               local: [Int32: [String: (bytesIn: UInt64, bytesOut: UInt64)]], at now: Date) {
         let paths = Dictionary(processes().map { ($0.pid, $0.path) }, uniquingKeysWith: { a, _ in a })
         var by: [String: (name: String, down: UInt64, up: UInt64)] = [:]
+        var near: [String: (down: UInt64, up: UInt64)] = [:]
         for (pid, cur) in t {
             // A process seen for the first time has no earlier reading: its totals since it
             // started are not this interval's traffic.
@@ -344,8 +352,17 @@ final class NetworkStore: ObservableObject {
             a.down += down
             a.up += up
             by[key] = a
+            // Local share: growth on each local connection since the last reading; one that
+            // opened since then counts in full.
+            var l = near[key] ?? (0, 0)
+            for (c, b) in local[pid] ?? [:] {
+                let was = lastLocal[pid]?[c] ?? (0, 0)
+                l.down += b.bytesIn >= was.bytesIn ? b.bytesIn - was.bytesIn : 0
+                l.up += b.bytesOut >= was.bytesOut ? b.bytesOut - was.bytesOut : 0
+            }
+            near[key] = (min(l.down, a.down), min(l.up, a.up))
         }
-        appData.add(by, at: now)
+        appData.add(by, local: near, at: now)
     }
 
     func appName(pid: Int32, fallback: String, paths: [Int32: String]? = nil) -> String {

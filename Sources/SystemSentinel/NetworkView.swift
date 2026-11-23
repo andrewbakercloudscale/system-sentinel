@@ -155,20 +155,40 @@ private struct ThroughputChart: View {
 private struct AppDataChart: View {
     @ObservedObject var store: NetworkStore
     @AppStorage("network.appData.way") private var way = "Download"
+    @AppStorage("network.appData.scope") private var scope = "Internet"
+
+    /// The title says exactly what the bars are: which network, which direction.
+    var title: String {
+        let what = way == "Upload" ? "uploads" : way == "Both" ? "downloads and uploads" : "downloads"
+        switch scope {
+        case "Local": return "Local network \(what) by app, last hour"
+        case "All": return "All \(what) by app, last hour"
+        default: return "Internet \(what) by app, last hour"
+        }
+    }
 
     var body: some View {
         let w: AppDataHistory.Way = way == "Upload" ? .upload : way == "Both" ? .both : .download
+        let sc: AppDataHistory.Scope = scope == "Local" ? .local : scope == "All" ? .all : .internet
         let h = store.appData
-        let keys = h.top(10, w)
-        let slices = h.slices(10, w)
-        let totals = h.totals(w)
+        let keys = h.top(10, w, sc)
+        let slices = h.slices(10, w, sc)
+        let totals = h.totals(w, sc)
         let colors = Self.colors(keys)
         let color: (String) -> Color = { $0 == "other" ? Color.gray.opacity(0.5) : colors[$0] ?? .gray }
         let order = keys.map { h.names[$0] ?? $0 } + (slices.contains { $0.key == "other" } ? ["Other"] : [])
-        Card(title: "Data by app, last hour", symbol: "chart.bar.xaxis", tint: netTint,
+        Card(title: title, symbol: "chart.bar.xaxis", tint: netTint,
              trailing: AnyView(ChipPicker(options: ["Download", "Upload", "Both"], selection: $way, color: netTint))) {
+            HStack(spacing: 8) {
+                ChipPicker(options: ["Internet", "Local", "All"], selection: $scope, color: netTint)
+                Text(scope == "Local" ? "This Mac, its virtual machines, and private networks (home, office, VPN)"
+                     : scope == "All" ? "Internet and local together"
+                     : "Traffic to and from the internet")
+                    .font(.caption).foregroundStyle(.secondary)
+                Spacer()
+            }
             if slices.isEmpty {
-                Text("Measuring. Each app's \(way == "Upload" ? "uploads" : way == "Both" ? "traffic" : "downloads") shows here minute by minute.")
+                Text("Nothing yet. Each app's \(title.lowercased().replacingOccurrences(of: " by app, last hour", with: "")) show here minute by minute.")
                     .font(.caption).foregroundStyle(.secondary).frame(height: 110)
             } else {
                 Chart(slices) { s in
@@ -199,7 +219,7 @@ private struct AppDataChart: View {
                     }
                 }
                 .font(.caption)
-                Text("Per minute, \(way == "Upload" ? "sent" : way == "Both" ? "received and sent" : "received") by each app. Read every 10 s, also while this tab is closed.")
+                Text("Per minute, \(way == "Upload" ? "sent" : way == "Both" ? "received and sent" : "received") by each app\(scope == "Local" ? " over local connections" : scope == "Internet" ? " over the internet" : ""). Local means this Mac, virtual machines and private addresses (home or office network, VPN). Read every 10 s, also while this tab is closed.")
                     .font(.caption).foregroundStyle(.secondary)
             }
         }

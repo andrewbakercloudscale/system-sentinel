@@ -37,4 +37,39 @@ import Foundation
         #expect(h.names["a"] == nil)
         #expect(h.names["b"] == "New")
     }
+
+    @Test func internetIsTotalLessLocal() {
+        var h = AppDataHistory()
+        h.add(["a": ("Lima", 1000, 400)], local: ["a": (900, 500)], at: t0)
+        #expect(h.totals(.download, .local)["a"] == 900)
+        #expect(h.totals(.download, .internet)["a"] == 100)
+        #expect(h.totals(.upload, .local)["a"] == 400)     // never more than the total
+        #expect(h.totals(.upload, .internet)["a"] == 0)
+        #expect(h.top(10, .upload, .internet).isEmpty)
+        #expect(h.totals(.both, .all)["a"] == 1400)
+    }
+
+    @Test func nettopConnectionsSplitLocalFromInternet() {
+        let out = """
+        ,bytes_in,bytes_out,
+        limactl.812,5000,7000,
+        tcp4 127.0.0.1:60022<->127.0.0.1:22,3000,4000,
+        tcp4 192.168.5.2:5000<->8.8.8.8:443,2000,3000,
+        mDNSResponder.593,60,40,
+        udp4 *:5353<->*:*,60,40,
+        Chrome.900,10,20,
+        tcp6 fd7a:115c::1.443<->2a00:1450::1.443,10,20,
+        tcp6 fe80::1%en0.5000<->fe80::2%en0.6000,1,1,
+        """
+        let l = NetParse.localConnections(out)
+        #expect(l[812]?.count == 1)
+        #expect(l[812]?.values.first?.bytesOut == 4000)
+        #expect(l[593]?.values.first?.bytesIn == 60)
+        #expect(l[900]?.count == 1)          // the fe80 one, not the internet one
+        let t = NetParse.nettop(out)
+        #expect(t.count == 3)
+        #expect(t[812]?.bytesIn == 5000)
+        #expect(NetParse.isLocalAddress("10.1.2.3") && NetParse.isLocalAddress("100.64.0.1") && NetParse.isLocalAddress("::ffff:192.168.1.1"))
+        #expect(!NetParse.isLocalAddress("172.32.0.1") && !NetParse.isLocalAddress("2a00:1450::1") && !NetParse.isLocalAddress("17.57.146.184"))
+    }
 }
