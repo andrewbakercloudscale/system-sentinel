@@ -26,6 +26,8 @@ public final class RecentLoad {
     private var known: Set<Int32> = []
     /// Each shell's command line, read once per shell (shells live long; their children don't).
     private var shellArgs: [Int32: [String]] = [:]
+    /// Python, node and other runtimes: the script each runs, read once per pid.
+    private var scripts: [Int32: String] = [:]
     private var newestPid: Int32?
     /// macOS hands out pids up to this, then starts again from the bottom.
     static let pidMax: Int32 = 99_999
@@ -41,7 +43,19 @@ public final class RecentLoad {
                        arguments: (Int32) -> [String] = RecentLoad.commandLine, at now: Date) {
         var fam: [String: (cpu: Double, pids: Set<Int32>, names: [String: Double])] = [:]
         for s in samples where s.cpu > 0 {
-            let k = LoadFamily.of(s).name
+            var k = LoadFamily.of(s).name
+            // A runtime is named after what it runs, not the app it lives in (Xcode's Python).
+            if AppIdentity.isInterpreter(s.path) {
+                if scripts[s.pid] == nil {
+                    let args = arguments(s.pid)
+                    var name = AppIdentity.jobKey(args: args).map { String($0.dropFirst(4)) }
+                    if name == nil, ProcessDetail.describe(args) == "worker (multiprocessing)", let p = parent(s.pid) {
+                        name = scripts[p] ?? AppIdentity.jobKey(args: arguments(p)).map { String($0.dropFirst(4)) }
+                    }
+                    if !args.isEmpty { scripts[s.pid] = name ?? k }
+                }
+                k = scripts[s.pid] ?? k
+            }
             var f = fam[k] ?? (0, [], [:])
             f.cpu += s.cpu
             f.pids.insert(s.pid)
@@ -79,6 +93,7 @@ public final class RecentLoad {
         }
         known = Set(samples.map(\.pid))
         shellArgs = shellArgs.filter { known.contains($0.key) }
+        scripts = scripts.filter { known.contains($0.key) }
         readings.append(Reading(at: now, families: fam, started: started, startedBy: startedBy, detail: detail))
         if !t.isEmpty {
             let sum = t.reduce(CoreLoad.Ticks(user: 0, system: 0, idle: 0, nice: 0)) {
@@ -279,6 +294,7 @@ public enum LoadFamily {
     public static let screen = "Screen drawing (WindowServer)"
     public static let kernel = "kernel_task"
     public static let security = "Company security software"
+    public static let devTools = "Compilers and build tools (Xcode toolchain)"
 
     static let updateNames: Set<String> = ["softwareupdated", "softwareupdate", "mobileassetd", "nsurlsessiond", "installd",
                                            "system_installd", "storedownloadd", "UpdateBrainService", "SoftwareUpdateNotificationManager"]
@@ -302,6 +318,12 @@ public enum LoadFamily {
         }
         if indexNames.contains(name) || name.hasPrefix("mdworker") { return (indexing, false) }
         if appleNames.contains(name) { return (apple, false) }
+        // Command-line tools that ship inside Xcode (swift-frontend, clang, ld, git…) are
+        // builds run from a terminal or an agent, not the Xcode app.
+        if (path.contains("/Contents/Developer/") || path.hasPrefix("/Library/Developer/CommandLineTools/")),
+           !AppIdentity.isInterpreter(path) {
+            return (devTools, false)
+        }
         return (AppIdentity.appName(of: path), true)
     }
 
@@ -314,6 +336,7 @@ public enum LoadFamily {
         case screen: "Draws every window. Busy with many windows, external displays, transparency or a page animating; closing windows and tabs helps."
         case kernel: "The kernel. Busy when the Mac is hot (it takes CPU away on purpose to cool down) or a driver or disk is working hard."
         case security: "Your company's security or device management software. Left alone; ask IT if it stays busy."
+        case devTools: "Compiling code: swift build, clang, the linker. Started from a terminal or a coding agent, not the Xcode app; it stops when the build ends."
         default: nil
         }
     }

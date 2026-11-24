@@ -169,7 +169,10 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
     /// grouped by the script it runs: Xcode's Python running a background service is that
     /// service, not "Xcode". Multiprocessing workers go with their parent.
     func memoryKey(_ s: ProcessSample) -> String {
-        guard AppIdentity.isInterpreter(s.path) else { return Model.appKey(s.path) }
+        guard AppIdentity.isInterpreter(s.path) else {
+            if s.path.contains("/Contents/Developer/") || s.path.hasPrefix("/Library/Developer/CommandLineTools/") { return "job:" + LoadFamily.devTools }
+            return Model.appKey(s.path)
+        }
         if let k = jobKeys[s.pid] { return k }
         let args = ProcessDetail.arguments(s.pid)
         var k = AppIdentity.jobKey(args: args)
