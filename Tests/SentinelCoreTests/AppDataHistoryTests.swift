@@ -72,4 +72,18 @@ import Foundation
         #expect(NetParse.isLocalAddress("10.1.2.3") && NetParse.isLocalAddress("100.64.0.1") && NetParse.isLocalAddress("::ffff:192.168.1.1"))
         #expect(!NetParse.isLocalAddress("172.32.0.1") && !NetParse.isLocalAddress("2a00:1450::1") && !NetParse.isLocalAddress("17.57.146.184"))
     }
+
+    @Test func interpretersGroupByScriptAndMatchTheirLaunchAgent() {
+        let py = "/Applications/Xcode.app/Contents/Developer/Library/Frameworks/Python3.framework/Versions/3.9/Resources/Python.app/Contents/MacOS/Python"
+        #expect(AppIdentity.isInterpreter(py))
+        #expect(!AppIdentity.isInterpreter("/Applications/Xcode.app/Contents/MacOS/Xcode"))
+        let args = [py, "/Users/me/.sg-tightener/app/sg_console.py", "serve", "--service", "--port", "8765"]
+        #expect(AppIdentity.jobKey(args: args) == "job:sg_console.py serve")
+        #expect(AppIdentity.jobKey(args: [py, "-B", "-m", "linkedin_relay.mcp_server"]) == "job:linkedin_relay.mcp_server")
+        #expect(AppIdentity.jobKey(args: [py, "-c", "from multiprocessing.spawn import spawn_main"]) == nil)
+        let agents = ["com.sg-tightener.console": ["/x/bin/python3.9", "/Users/me/.sg-tightener/app/sg_console.py", "serve", "--service", "--port", "8765"],
+                      "com.other": ["/usr/bin/other"]]
+        #expect(AppIdentity.launchLabel(args: args, agents: agents) == "com.sg-tightener.console")
+        #expect(AppIdentity.launchLabel(args: [py, "-B", "-m", "linkedin_relay.mcp_server"], agents: agents) == nil)
+    }
 }

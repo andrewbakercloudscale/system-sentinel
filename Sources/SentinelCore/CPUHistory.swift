@@ -142,6 +142,33 @@ public enum AppIdentity {
         bundlePath(of: path) ?? path
     }
 
+    /// A language runtime (Python, node, ruby…): what it runs is the program, not the
+    /// runtime, and its folder says nothing (Xcode's Python lives inside Xcode.app).
+    public static func isInterpreter(_ path: String) -> Bool {
+        let n = (path as NSString).lastPathComponent.lowercased()
+        return n.hasPrefix("python") || ["node", "ruby", "perl", "php", "bun", "deno", "java", "uvicorn", "gunicorn"].contains(n)
+    }
+
+    /// The group key for an interpreter process, from its command line: "job:sg_console.py serve".
+    /// nil when the arguments are unreadable or it is a multiprocessing worker (it goes with its parent).
+    public static func jobKey(args: [String]) -> String? {
+        guard args.count > 1 else { return nil }
+        let what = ProcessDetail.describe(args)
+        guard what != "worker (multiprocessing)", what != "unknown", what != "inline code" else { return nil }
+        return "job:" + what
+    }
+
+    /// The launchd job whose ProgramArguments start this command line: the script (or
+    /// module) after the interpreter must match. `agents` is label to ProgramArguments.
+    public static func launchLabel(args: [String], agents: [String: [String]]) -> String? {
+        guard args.count > 1 else { return nil }
+        let mine = Array(args.dropFirst())
+        for (label, prog) in agents.sorted(by: { $0.key < $1.key }) where prog.count > 1 {
+            if Array(prog.dropFirst().prefix(mine.count)) == Array(mine.prefix(prog.count - 1)) { return label }
+        }
+        return nil
+    }
+
     /// A system binary rather than something the owner installed.
     public static func isSystem(_ path: String) -> Bool {
         ["/System/", "/usr/libexec/", "/usr/sbin/", "/sbin/", "/usr/bin/", "/Library/Apple/"].contains { path.hasPrefix($0) }

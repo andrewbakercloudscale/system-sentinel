@@ -221,6 +221,12 @@ extension Model {
             if let m = memoryText(pids) { points.append(m) }
             Confirm.ask("Quit \(name)?", "A minute later you see what it changed.", symbol: "xmark.circle.fill", points: points,
                         undo: "Open \(name) again to undo.", button: "Quit") { self.perform(f) }
+        case .restart(let pids, let name) where launchLabel(pids) != nil:
+            var points = ["\(name) is a background service started by launchd. It is stopped and started again at once.",
+                          "Whatever job it is in the middle of is lost."]
+            if let m = memoryText(pids) { points.append(m) }
+            Confirm.ask("Restart \(name)?", "Frees the memory it holds, including its swap.", symbol: "arrow.clockwise.circle.fill",
+                        points: points, undo: nil, button: "Restart") { self.perform(f) }
         case .restart(let pids, let name):
             var points = ["\(name) is asked to quit the normal way, as ⌘Q would, so it can save first, then opened again.",
                           "Its windows and chats come back as the app restores them; anything it would ask to save, it asks."]

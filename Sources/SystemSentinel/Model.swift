@@ -161,6 +161,51 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
     /// Processes named in a pending notification, so its Kill button acts on the right one.
     private var pending: [String: ProcessSample] = [:]
     private var startTimes: [Int32: Date] = [:]
+    /// Interpreter processes by what they run, read once per pid.
+    private var jobKeys: [Int32: String] = [:]
+    private var launchLabels: [Int32: String?] = [:]
+
+    /// The group a process belongs to on the Memory tab. A Python, node or ruby process is
+    /// grouped by the script it runs: Xcode's Python running a background service is that
+    /// service, not "Xcode". Multiprocessing workers go with their parent.
+    func memoryKey(_ s: ProcessSample) -> String {
+        guard AppIdentity.isInterpreter(s.path) else { return Model.appKey(s.path) }
+        if let k = jobKeys[s.pid] { return k }
+        let args = ProcessDetail.arguments(s.pid)
+        var k = AppIdentity.jobKey(args: args)
+        if k == nil, ProcessDetail.describe(args) == "worker (multiprocessing)", let parent = sample(pid: s.ppid),
+           AppIdentity.isInterpreter(parent.path) {
+            k = memoryKey(parent)
+        }
+        let key = k ?? Model.appKey(s.path)
+        if !args.isEmpty { jobKeys[s.pid] = key }
+        return key
+    }
+
+    /// The launchd job (one of your launch agents) that runs these processes, if any:
+    /// such a job is restarted through launchd, and quitting it only brings it back.
+    func launchLabel(_ pids: [Int32]) -> String? {
+        for pid in pids {
+            if let cached = launchLabels[pid] { if let l = cached { return l } else { continue } }
+            guard let s = sample(pid: pid), s.ppid <= 1 else { continue }
+            let label = AppIdentity.launchLabel(args: ProcessDetail.arguments(pid), agents: Model.launchAgents())
+            launchLabels[pid] = .some(label)
+            if let label { return label }
+        }
+        return nil
+    }
+
+    /// Your launch agents: label to ProgramArguments.
+    static func launchAgents() -> [String: [String]] {
+        let dir = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/LaunchAgents")
+        var out: [String: [String]] = [:]
+        for f in (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? [] where f.pathExtension == "plist" {
+            guard let d = NSDictionary(contentsOf: f), let label = d["Label"] as? String else { continue }
+            if let prog = d["ProgramArguments"] as? [String] { out[label] = prog }
+            else if let p = d["Program"] as? String { out[label] = [p] }
+        }
+        return out
+    }
 
     @AppStorage("threshold") var threshold: Double = 80 { didSet { sentinel.detector.threshold = threshold } }
     @AppStorage("windowSeconds") var windowSeconds: Double = 120 { didSet { sentinel.detector.window = windowSeconds } }
@@ -477,7 +522,7 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
             if let n = MemoryStatus.pageins(s.pid) {
                 pageins[s.pid] = n
                 if seconds > 0, let b = pageinsBefore[s.pid], n > b {
-                    back[Model.memoryName(Model.appKey(s.path)), default: 0] += Double((n - b) * UInt64(vm_page_size)) / seconds
+                    back[Model.memoryName(memoryKey(s)), default: 0] += Double((n - b) * UInt64(vm_page_size)) / seconds
                 }
             }
             let fp = MemoryStatus.footprint(s.pid)
@@ -486,7 +531,7 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
             // Resident counts shared libraries too, so this is a floor, never an overstatement.
             let inRAM = MemoryStatus.resident(s.pid) ?? b
             let away = fp != nil && b > inRAM ? b - inRAM : 0
-            let k = Model.appKey(s.path)
+            let k = memoryKey(s)
             if var g = groups[k] {
                 g.bytes += b
                 g.away += away
@@ -520,7 +565,8 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
                 let a = Model.isVM(m.key) ? (vmHost() ?? m) : m
                 if a.sample.pid != getpid(), Safety.canKillManually(a.sample) {
                     // Out of RAM is mostly swap: a restart frees it and keeps the app.
-                    found[i].fixes = found[i].id == "mem-swapowner" && canRestart(a.pids)
+                    found[i].fixes = launchLabel(a.pids) != nil ? [.restart(pids: a.pids, name: a.name)]
+                        : found[i].id == "mem-swapowner" && canRestart(a.pids)
                         ? [.restart(pids: a.pids, name: a.name), .quit(pids: a.pids, name: a.name)]
                         : [.quit(pids: a.pids, name: a.name)]
                 }
@@ -835,11 +881,12 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
     }
 
     /// Only a real app with a bundle can be opened again.
-    func canRestart(_ pids: [Int32]) -> Bool { runningApps(pids).contains { $0.bundleURL != nil } }
+    func canRestart(_ pids: [Int32]) -> Bool { runningApps(pids).contains { $0.bundleURL != nil } || launchLabel(pids) != nil }
 
     /// Quits the app the normal way, waits up to 30 s for it to go, opens it again and says
     /// how much swap came back. The only way to free an app's swap short of a restart.
     func restart(pids: [Int32], name: String) {
+        if let label = launchLabel(pids) { return restartService(label, name: name) }
         let apps = runningApps(pids)
         guard let url = apps.first(where: { $0.activationPolicy == .regular })?.bundleURL ?? apps.first?.bundleURL else {
             quit(pids: pids, name: name)
@@ -868,6 +915,27 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
             }
             self.showToast(Toast(ok: true, title: "Restarted \(name)", detail: detail))
             self.tick()
+        }
+    }
+
+    /// A background service: launchd stops it and starts it again at once (kickstart -k).
+    func restartService(_ label: String, name: String) {
+        let before = MemoryStatus.read()?.swapUsed
+        showToast(Toast(ok: true, title: "Restarting \(name)…", detail: "launchd stops it and starts it again. Work it was doing is lost."))
+        Task.detached {
+            let out = sh("/bin/launchctl", ["kickstart", "-k", "gui/\(getuid())/\(label)"], timeout: 20)
+            try? await Task.sleep(for: .seconds(5))
+            let after = MemoryStatus.read()?.swapUsed
+            await MainActor.run {
+                self.launchLabels = [:]
+                self.jobKeys = [:]
+                var detail = "Running again."
+                if let b = before, let a = after, b > a { detail = "Swap went from \(ReportDocument.bytes(b)) to \(ReportDocument.bytes(a)): \(ReportDocument.bytes(b - a)) back." }
+                let failed = out.lowercased().contains("error") || out.contains("No such process")
+                self.showToast(Toast(ok: !failed, title: failed ? "Could not restart \(name)" : "Restarted \(name)",
+                                     detail: failed ? out.trimmingCharacters(in: .whitespacesAndNewlines) : detail))
+                self.tick()
+            }
         }
     }
 
@@ -1050,11 +1118,13 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
 
     /// App names for the Memory tab, where a bare Virtualization process needs explaining.
     static func memoryName(_ key: String) -> String {
-        key.hasSuffix("com.apple.Virtualization.VirtualMachine") || key.contains("com.apple.Virtualization.VirtualMachine.xpc")
+        if key.hasPrefix("job:") { return String(key.dropFirst(4)) }
+        return key.hasSuffix("com.apple.Virtualization.VirtualMachine") || key.contains("com.apple.Virtualization.VirtualMachine.xpc")
             ? "Virtual machine (Docker, Rancher, UTM…)" : appName(key)
     }
 
     static func appName(_ key: String) -> String {
+        if key.hasPrefix("job:") { return String(key.dropFirst(4)) }
         if key.contains("Google Chrome Helper (Renderer)") { return "Chrome tabs" }
         if AppIdentity.bundlePath(of: key) != nil { return AppIdentity.appName(of: key) }
         if let cached = tidyNames[key] { return cached }
@@ -1267,7 +1337,8 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
         let inRAM = a.bytes > a.outOfRAM ? a.bytes - a.outOfRAM : 0
         let procs = a.pids.count > 1 ? " across \(a.pids.count) processes" : ""
         let running = started(a.pids).map { ", running \(MemoryLargestAge.age($0))" } ?? ""
-        x.detail += " Quitting \(target.name) gives back about \(gb(a.bytes))\(procs): \(gb(inRAM)) of RAM and \(gb(a.outOfRAM)) that is compressed or in swap\(running)."
+        let service = launchLabel(target.pids) != nil
+        x.detail += " \(service ? "Restarting" : "Quitting") \(target.name)\(service ? ", a background service," : "") gives back about \(gb(a.bytes))\(procs): \(gb(inRAM)) of RAM and \(gb(a.outOfRAM)) that is compressed or in swap\(running)."
         if x.id == "mem-thrash" {
             let top = readingBack.prefix(4).filter { $0.rate >= 100_000 }
             if !top.isEmpty {
@@ -1276,7 +1347,10 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
             }
         }
         x.about = "Why \(a.name) is so big: " + memoryAbout(a)
-        x.fixes = [.quit(pids: target.pids, name: target.name)]
+        // A launchd service with KeepAlive comes straight back if quit: restart it instead.
+        x.fixes = service ? [.restart(pids: target.pids, name: target.name)]
+                          : canRestart(target.pids) && a.outOfRAM > inRAM ? [.restart(pids: target.pids, name: target.name), .quit(pids: target.pids, name: target.name)]
+                          : [.quit(pids: target.pids, name: target.name)]
         return x
     }
 
