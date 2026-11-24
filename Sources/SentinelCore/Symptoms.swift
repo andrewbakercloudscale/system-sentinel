@@ -213,7 +213,8 @@ public enum Diagnose {
                              top.map { "\($0.name) is the busiest, at \(CPUScale.text($0.amount)) of the Mac. Quitting it usually helps most." } ?? "Several apps add up to it.",
                              actions: quits(v.busyApps), items: v.busyApps.prefix(5).map { "\($0.name): \(CPUScale.text($0.amount)) of the Mac" }))
         }
-        if v.pressure != .normal || v.swap >= 8 * gb {
+        // Follows macOS's pressure, as the Memory tab does: swap that sits still is not a fault.
+        if v.pressure != .normal {
             out.append(check(.slow, "memory", v.pressure == .critical ? "Memory is critically short" : "Memory is running short",
                              v.pressure == .critical ? .problem : .warning,
                              "Apps no longer fit in memory, so macOS parks some on the disk (\(bytes(v.swap)) so far). Switching apps then stalls.",
