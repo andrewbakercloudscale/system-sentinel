@@ -428,9 +428,8 @@ public struct HealthRAG: Equatable, Sendable {
         else if let g = s.gpu, g >= 60 { r.append(.init(rag: .amber, symbol: "square.stack.3d.up.fill", text: "GPU \(Int(g))%")) }
         if s.pressure >= 2 { r.append(.init(rag: .red, symbol: "memorychip", text: "Memory pressure critical")) }
         else if s.pressure == 1 { r.append(.init(rag: .amber, symbol: "memorychip", text: "Memory under pressure")) }
-        if s.swapBytes >= 8 << 30, s.pressure < 2 {
-            r.append(.init(rag: .amber, symbol: "memorychip", text: "\(ReportDocument.bytes(s.swapBytes)) in swap"))
-        }
+        // Memory follows macOS's own pressure: Normal is green, however much sits in swap
+        // (swap that sits still is harmless; the Memory tab still shows it).
         if s.disk >= 2 { r.append(.init(rag: .red, symbol: "internaldrive", text: "disk almost full, \(ReportDocument.bytes(s.diskFree)) free")) }
         else if s.disk == 1 { r.append(.init(rag: .amber, symbol: "internaldrive", text: "disk low, \(ReportDocument.bytes(s.diskFree)) free")) }
         if s.thermal >= 3 { r.append(.init(rag: .red, symbol: "thermometer.high", text: "Mac is very hot")) }
