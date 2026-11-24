@@ -10,7 +10,8 @@ struct MemoryView: View {
     var body: some View {
         VStack(spacing: 10) {
             if let m = model.memory {
-                MemoryHero(memory: m, swapSince: MemoryAnalysis.summary(model.memoryHistory.points).swapSince)
+                MemoryHero(memory: m, swapSince: MemoryAnalysis.summary(model.memoryHistory.points).swapSince,
+                           warning: MenuView.tabWarnings(model.health)[.memory])
                 CleanUp(model: model, memory: m)
                 InsightList(model: model, only: model.insights.filter { $0.id == "memory" } + model.memoryInsights,
                             title: "Memory insights")
@@ -41,6 +42,8 @@ private func pressureColor(_ p: MemoryStatus.Pressure) -> Color {
 private struct MemoryHero: View {
     let memory: MemoryStatus
     let swapSince: Date?
+    /// The reason the Memory tab shows a warning, so the hero says it too.
+    var warning: (rag: LoadRAG, why: String)? = nil
 
     var body: some View {
         let m = memory
@@ -58,6 +61,12 @@ private struct MemoryHero: View {
 
             VStack(alignment: .leading, spacing: 4) {
                 Text("Pressure: \(m.pressure.label)").font(.title3.weight(.bold)).foregroundStyle(.white)
+                if let w = warning {
+                    // Pressure can read Normal while swap is high: say why the tab warns.
+                    Label(m.pressure == .normal ? "\(w.why). Pressure is normal now, but the Mac is slower while this much sits on disk." : w.why,
+                          systemImage: "exclamationmark.triangle.fill")
+                        .font(.callout.weight(.semibold)).foregroundStyle(.white)
+                }
                 Text("\(gb(m.used)) of \(gb(m.total)) in use, \(gb(m.total > m.used ? m.total - m.used : 0)) available")
                     .font(.callout).foregroundStyle(.white.opacity(0.9))
                 if let since = swapSince, m.swapUsed >= MemoryAnalysis.swapNoise {
@@ -77,6 +86,9 @@ private struct MemoryHero: View {
     }
 
     private var colors: [Color] {
+        if memory.pressure == .normal, let w = warning {
+            return w.rag == .red ? [Color(hex: "#b91c1c"), Color(hex: "#9f1239")] : [Color(hex: "#b45309"), Color(hex: "#c2410c")]
+        }
         switch memory.pressure {
         case .normal: return [Color(hex: "#0e7490"), Color(hex: "#1d4ed8")]
         case .warning: return [Color(hex: "#b45309"), Color(hex: "#c2410c")]

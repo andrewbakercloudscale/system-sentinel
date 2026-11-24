@@ -572,6 +572,8 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
                 }
             }
         }
+        // History may still hold an old grouping (Xcode before its Python was named by script).
+        found.removeAll { f in f.id.hasPrefix("mem-grow-") && !memoryApps.contains { $0.key == String(f.id.dropFirst("mem-grow-".count)) } }
         for i in found.indices where ["mem-thrash", "mem-swapgrow", "mem-pressure24"].contains(found[i].id) {
             found[i] = explainQuit(found[i])
         }
@@ -1515,6 +1517,13 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
                 return base + " To make it lighter: Settings, Performance, turn on Memory Saver and pick Maximum, so tabs you are not using give their memory back. In Settings, System, turn off \"Continue running background apps\" when it is closed. Remove extensions you do not use: each one runs all the time."
             }
             return base
+        }
+        if let label = launchLabel(a.pids) {
+            let helpers = a.pids.count > 1 ? " with \(a.pids.count - 1) worker processes" : ""
+            return "\(a.name)\(helpers): a background service (\(label)) that launchd keeps running, on \((a.sample.path as NSString).lastPathComponent). Quitting it only brings it straight back; Restart stops and starts it, which frees its memory and loses the job it is doing."
+        }
+        if a.key.hasPrefix("job:") {
+            return "\(a.name), run by \((a.sample.path as NSString).lastPathComponent)\(a.pids.count > 1 ? " in \(a.pids.count) processes" : ""). Quitting stops it."
         }
         if AppIdentity.bundlePath(of: a.sample.path) != nil, !a.sample.path.hasPrefix("/System/") {
             let helpers = a.pids.count > 1 ? " with \(a.pids.count - 1) helper processes" : ""
