@@ -76,7 +76,15 @@ private struct Hero: View {
                     Text(String(format: "%.1f of %d cores busy", busyCores, Int(model.cores)))
                         .font(.callout).foregroundStyle(.white.opacity(0.85))
                     HStack(spacing: 6) {
-                        ThermalChip(state: model.thermal, celsius: model.chipTemp.flatMap { $0.cpu ?? $0.die }, labelled: model.chipTemp?.cpu != nil)
+                        ThermalChip(state: model.thermal)
+                        // Its own chip in its own colour, like the GPU's: "Cool" in green beside
+                        // 83°C in amber, rather than one green chip reading "Cool · 83°C".
+                        if let c = model.chipTemp.flatMap({ $0.cpu ?? $0.die }) {
+                            HeroChip(text: String(format: "%.0f°C", c), symbol: "thermometer.medium", fill: Hero.tempColor(c))
+                                .tip(model.chipTemp?.cpu != nil
+                                     ? "The hottest CPU core's temperature sensor. Green under 70°C, amber to 90°C, red above. Apple silicon runs at 40 to 100°C by design."
+                                     : "The hottest of the chip's own sensors; this chip does not say which are the CPU's, so it covers the graphics too. Green under 70°C, amber to 90°C, red above.")
+                        }
                         if let w = model.partWatts?.cpu { HeroChip(text: String(format: "%.1f W", w), symbol: "bolt.fill").tip("Power the CPU is drawing now") }
                         if ProcessInfo.processInfo.isLowPowerModeEnabled {
                             HeroChip(text: "Low Power", symbol: "leaf.fill")
@@ -337,23 +345,18 @@ struct BatteryTimeChip: View {
 /// cool it), with the chip's temperature where the sensors give one.
 private struct ThermalChip: View {
     let state: ProcessInfo.ThermalState
-    var celsius: Double? = nil
-    /// The reading is the CPU's own sensor, not the hottest spot on the chip.
-    var labelled = false
     var body: some View {
-        let t = celsius.map { String(format: " · %@%.0f°C", labelled ? "" : "chip ", $0) } ?? ""
         Group {
             switch state {
             // Green, amber, red, purple: the same colours as the power chips beside it.
-            case .nominal: HeroChip(text: "Cool" + t, symbol: "thermometer.low", fill: Color(hex: "#16a34a"))
-            case .fair: HeroChip(text: "Warm" + t, symbol: "thermometer.medium", fill: Color(hex: "#d97706"))
-            case .serious: HeroChip(text: "Hot, throttling" + t, symbol: "thermometer.high", fill: Color(hex: "#dc2626"))
-            case .critical: HeroChip(text: "Overheating" + t, symbol: "thermometer.sun.fill", fill: Color(hex: "#581c87"), outlined: true).flashing(true)
+            case .nominal: HeroChip(text: "Cool", symbol: "thermometer.low", fill: Color(hex: "#16a34a"))
+            case .fair: HeroChip(text: "Warm", symbol: "thermometer.medium", fill: Color(hex: "#d97706"))
+            case .serious: HeroChip(text: "Hot, throttling", symbol: "thermometer.high", fill: Color(hex: "#dc2626"))
+            case .critical: HeroChip(text: "Overheating", symbol: "thermometer.sun.fill", fill: Color(hex: "#581c87"), outlined: true).flashing(true)
             @unknown default: EmptyView()
             }
         }
-        .tip("Cool, Warm, Hot or Overheating is macOS's own verdict: whether it is slowing the chip down to cool it. "
-             + (celsius == nil ? "" : labelled ? "The figure is the hottest CPU core's temperature sensor. Apple silicon runs at 40 to 100°C by design." : "The figure is the hottest of the chip's own sensors; this chip does not say which belong to the CPU and which to the graphics, so there is one figure for both. Apple silicon runs at 40 to 100°C by design."))
+        .tip("macOS's own heat verdict, not a temperature: Cool and Warm are fine; Hot means it is slowing the chip to cool it; Overheating means it is slowing it hard.")
     }
 }
 

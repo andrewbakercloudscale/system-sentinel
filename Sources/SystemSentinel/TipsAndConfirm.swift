@@ -97,6 +97,9 @@ struct TipLayer: View {
                     .foregroundStyle(.primary)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, 10).padding(.vertical, 7)
+                    // A long tip gets the full width so it wraps inside the bubble; sizing it
+                    // to its ideal width let the text spill out over the page.
+                    .frame(width: text.count > 45 ? width : nil, alignment: .leading)
                     .frame(maxWidth: width, alignment: .leading)
                     .background(RoundedRectangle(cornerRadius: 8).fill(.regularMaterial))
                     .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.primary.opacity(0.15)))
