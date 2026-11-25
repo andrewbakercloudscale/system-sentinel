@@ -171,7 +171,7 @@ public enum Updates {
         if r.status == 0, let rel = parse(r.out) { return .success(rel) }
         if r.status == 0 { return .failure(.message("GitHub answered, but not with a release.")) }
         let why = reason(r.err)
-        return .failure(.message("Could not reach GitHub" + (why.isEmpty ? "" : " (\(why))") + ". Check the network and try again."))
+        return .failure(.message("Could not reach GitHub" + (why.isEmpty ? "" : " (\(why))") + ". This Mac was probably offline for a moment."))
     }
 
     /// Downloads the release zip and unpacks it; returns the .app inside.

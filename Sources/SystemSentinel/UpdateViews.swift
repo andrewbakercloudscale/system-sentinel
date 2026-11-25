@@ -41,6 +41,7 @@ extension Model {
                 switch result {
                 case .success(let rel):
                     self.taskHealth.ran(.updateCheck)
+                    Model.updateRetries = 0
                     if Updates.isNewer(rel.version, than: Model.appVersion) {
                         self.update = rel
                         self.updateState = .idle
@@ -53,9 +54,25 @@ extension Model {
                 case .failure(let e):
                     self.updateState = .failed(e.text)
                     Diagnostics.report("update", "Update check failed: \(e.text)")
+                    self.retryUpdateCheck()
                     if manual { self.showToast(Toast(ok: false, title: "Could not check for updates", detail: e.text, surface: surface)) }
                 }
             }
+        }
+    }
+
+    /// Failed checks are nearly always a network that was down for a moment (asleep, between
+    /// Wi-Fi networks, a VPN reconnecting): try again after 2, 5 and 15 minutes rather than
+    /// waiting 6 hours with "Could not check" on screen.
+    nonisolated(unsafe) static var updateRetries = 0
+    private func retryUpdateCheck() {
+        let waits: [Double] = [120, 300, 900]
+        guard autoUpdateCheck, Model.updateRetries < waits.count else { return }
+        let wait = waits[Model.updateRetries]
+        Model.updateRetries += 1
+        DispatchQueue.main.asyncAfter(deadline: .now() + wait) { [weak self] in
+            guard let self, case .failed = self.updateState else { return }
+            self.checkForUpdates(manual: false)
         }
     }
 
@@ -263,7 +280,7 @@ struct UpdatesCard: View {
             }
             ChangesList(changes: model.changes)
             if case .failed(let why) = model.updateState {
-                Text(why).font(.caption).foregroundStyle(Theme.heat(100)).fixedSize(horizontal: false, vertical: true)
+                Text(why + (auto && Model.updateRetries < 3 ? " Trying again in a few minutes." : "")).font(.caption).foregroundStyle(Color(hex: "#b45309")).fixedSize(horizontal: false, vertical: true)
             }
             Toggle("Check automatically (at launch and every 6 hours) and notify me", isOn: $auto).toggleStyle(.switch)
             Text("Updates come from the GitHub releases. Install and relaunch downloads the new version, replaces this copy and reopens it.")
@@ -284,7 +301,7 @@ struct UpdatesCard: View {
 
     private var statusColor: Color {
         if model.update != nil { return Color(hex: "#2563eb") }
-        if case .failed = model.updateState { return Theme.heat(100) }
+        if case .failed = model.updateState { return Color(hex: "#b45309") }
         return .primary
     }
 }
