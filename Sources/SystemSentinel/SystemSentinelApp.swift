@@ -243,8 +243,19 @@ struct MenuView: View {
         .tipsAndConfirmations(tips, surface: "main")
     }
 
+    /// One row when everything fits; otherwise the figures move to a second row, so nothing
+    /// is squeezed or wrapped.
     private var header: some View {
-        HStack(spacing: 10) {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 10) { titleBlock; Spacer(minLength: 8); status; figures }
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 10) { titleBlock; Spacer(minLength: 8); status }
+                HStack(spacing: 8) { Spacer(minLength: 0); figures }
+            }
+        }
+    }
+
+    private var titleBlock: some View {
             Button { AboutWindow.show(model) } label: {
                 HStack(spacing: 10) {
                     SymbolTile(symbol: "cpu", color: Color(hex: "#dc2626"), size: 28)
@@ -261,7 +272,10 @@ struct MenuView: View {
             }
             .buttonStyle(.plain)
             .tip("About System Sentinel: version, updates and who made it")
-            Spacer()
+            .fixedSize()
+    }
+
+    @ViewBuilder private var status: some View {
             HealthChip(health: model.health) { t in
                 model.goTab = t.title
                 // Runaways are listed at the top of Processes: scroll there even if already open.
@@ -269,19 +283,44 @@ struct MenuView: View {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { model.focus = "runaway" }
                 }
             }
+            .fixedSize()
             SnoozeButton()
-            LoadPill(name: "CPU", load: model.machineLoad, tip: "CPU: share of all \(Int(model.cores)) cores in use right now. Click to see which processes are using it.") {
-                // Processes, busiest right now at the top.
-                UserDefaults.standard.set("Now", forKey: "processSort")
-                model.goTab = Tab.processes.title
-            }
-            if let gpu = model.gpu {
-                LoadPill(name: "GPU", load: gpu, tip: "GPU: how busy the graphics chip is right now. Click to see which apps are drawing with it.") {
-                    model.goTab = "Now"
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { model.focus = "graphics" }
+    }
+
+    @ViewBuilder private var figures: some View {
+            let shown = Set(model.headerChips.split(separator: ",").map(String.init))
+            if shown.contains("cpu") {
+                LoadPill(name: "CPU", load: model.machineLoad, tip: "CPU: share of all \(Int(model.cores)) cores in use right now. Click to see which processes are using it.") {
+                    // Processes, busiest right now at the top.
+                    UserDefaults.standard.set("Now", forKey: "processSort")
+                    model.goTab = Tab.processes.title
                 }
             }
-        }
+            if shown.contains("gpu"), let gpu = model.gpu {
+                    LoadPill(name: "GPU", load: gpu, tip: "GPU: how busy the graphics chip is right now. Click to see which apps are drawing with it.") {
+                        model.goTab = "Now"
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { model.focus = "graphics" }
+                    }
+            }
+            if shown.contains("power"), let w = model.battery?.watts {
+                HeaderPill(text: String(format: "%.1f W", w), color: HeaderPill.power(w, alertAt: model.heatWatts),
+                           tip: String(format: "Power: the whole Mac is drawing %.1f W. Green under %.0f W, amber from there, red at your heat alert's %.0f W. Click for what uses it.", w, model.heatWatts * 0.6, model.heatWatts)) {
+                    model.goTab = Tab.battery.title
+                }
+            }
+            if shown.contains("memory"), let m = model.memory, m.total > 0 {
+                HeaderPill(text: "Memory \(Int((Double(m.used) / Double(m.total) * 100).rounded()))%",
+                           color: m.pressure == .normal ? HeaderPill.green : m.pressure == .warning ? HeaderPill.amber : HeaderPill.red,
+                           tip: "Memory: share in use. The colour is macOS's memory pressure, now \(m.pressure.label.lowercased()). Click for what holds it.") {
+                    model.goTab = Tab.memory.title
+                }
+            }
+            if shown.contains("temp"), let c = model.chipTemp.flatMap({ $0.cpu ?? $0.die }) {
+                HeaderPill(text: String(format: "%.0f°C", c), color: HeaderPill.temp(c),
+                           tip: "Temperature: the hottest CPU core. Green under 70°C, amber to 90°C, red above.") {
+                    model.goTab = "Now"
+                }
+            }
     }
 
     @ViewBuilder
@@ -476,6 +515,7 @@ struct SettingsDraft: Equatable {
     var window: Double
     var login: Bool
     var menuBarShows: String
+    var headerChips: String
     var alertHeat: Bool
     var heatWatts: Double
     var heatMinutes: Double
@@ -495,7 +535,7 @@ struct SettingsDraft: Equatable {
 
     @MainActor init(_ m: Model) {
         threshold = m.threshold; window = m.windowSeconds; login = m.launchAtLogin
-        menuBarShows = m.menuBarShows; alertHeat = m.alertHeat; heatWatts = m.heatWatts; heatMinutes = m.heatMinutes
+        menuBarShows = m.menuBarShows; headerChips = m.headerChips; alertHeat = m.alertHeat; heatWatts = m.heatWatts; heatMinutes = m.heatMinutes
         alertBlockers = m.alertBlockers; blockerHours = m.blockerHours; weeklyReport = m.weeklyReport
         autoUpdateCheck = m.autoUpdateCheck
         alarmCPU = m.alarmCPU; alarmCPUPercent = m.alarmCPUPercent; alarmCPUMinutes = m.alarmCPUMinutes
@@ -517,7 +557,7 @@ struct SettingsDraft: Equatable {
     @MainActor func apply(to m: Model) {
         m.threshold = threshold; m.windowSeconds = window
         if login != m.launchAtLogin { m.launchAtLogin = login }
-        m.menuBarShows = menuBarShows; m.alertHeat = alertHeat; m.heatWatts = heatWatts; m.heatMinutes = heatMinutes
+        m.menuBarShows = menuBarShows; m.headerChips = headerChips; m.alertHeat = alertHeat; m.heatWatts = heatWatts; m.heatMinutes = heatMinutes
         m.alertBlockers = alertBlockers; m.blockerHours = blockerHours; m.weeklyReport = weeklyReport
         m.autoUpdateCheck = autoUpdateCheck
         m.alarmCPU = alarmCPU; m.alarmCPUPercent = alarmCPUPercent; m.alarmCPUMinutes = alarmCPUMinutes
@@ -1163,6 +1203,32 @@ enum Migration {
 }
 
 /// "CPU 22%" in the header, coloured by how busy it is.
+/// A header figure other than a load: power, memory or temperature, in its own colour.
+private struct HeaderPill: View {
+    let text: String
+    let color: Color
+    let tip: String
+    let open: () -> Void
+    static let green = Color(hex: "#16a34a"), amber = Color(hex: "#d97706"), red = Color(hex: "#dc2626")
+    static func power(_ w: Double, alertAt: Double) -> Color { w >= alertAt ? red : w >= alertAt * 0.6 ? amber : green }
+    static func temp(_ c: Double) -> Color { c >= 90 ? red : c >= 70 ? amber : green }
+
+    var body: some View {
+        Button(action: open) {
+            HStack(spacing: 6) {
+                Circle().fill(color).frame(width: 8, height: 8)
+                Text(text).font(.callout.weight(.semibold)).monospacedDigit()
+            }
+            .fixedSize()
+            .padding(.horizontal, 10).padding(.vertical, 5)
+            .background(Capsule().fill(color.opacity(0.13)))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .tip(tip)
+    }
+}
+
 private struct LoadPill: View {
     let name: String
     let load: Double
@@ -1175,6 +1241,7 @@ private struct LoadPill: View {
                 Circle().fill(Theme.machineHeat(load)).frame(width: 8, height: 8)
                 Text("\(name) \(Int(load))%").font(.callout.weight(.semibold)).monospacedDigit()
             }
+            .fixedSize()
             .padding(.horizontal, 10).padding(.vertical, 5)
             .background(Capsule().fill(Theme.machineHeat(load).opacity(0.13)))
             .contentShape(Capsule())

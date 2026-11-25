@@ -230,6 +230,8 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
     @AppStorage("historyDays") var historyDays = HistoryRetention.defaultDays { didSet { applyRetention() } }
     /// What the menu bar shows beside the icon: none, load, watts or battery.
     @AppStorage("menuBarShows") var menuBarShows = "none"
+    /// Which figures the panel's header shows beside the health chip, comma-separated.
+    @AppStorage("headerChips") var headerChips = "cpu,gpu,power"
     @AppStorage("alertBlockers") var alertBlockers = true
     /// Heat and power alerts: hot (thermal serious or worse), or over `heatWatts` for `heatMinutes`.
     @AppStorage("alertHeat") var alertHeat = true

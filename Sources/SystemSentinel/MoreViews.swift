@@ -615,8 +615,27 @@ struct MenuBarSettingsCard: View {
         return s
     }
 
+    static let headerOptions = [(key: "cpu", label: "CPU"), (key: "gpu", label: "GPU"), (key: "power", label: "Power"),
+                                (key: "memory", label: "Memory"), (key: "temp", label: "Temperature")]
+
+    private func headerToggle(_ key: String, _ label: String) -> some View {
+        var set = Set(draft.headerChips.split(separator: ",").map(String.init))
+        let on = set.contains(key)
+        return Button {
+            if on { set.remove(key) } else { set.insert(key) }
+            draft.headerChips = Self.headerOptions.map(\.key).filter(set.contains).joined(separator: ",")
+        } label: {
+            Label(label, systemImage: on ? "checkmark.circle.fill" : "circle")
+                .font(.callout.weight(.semibold))
+                .padding(.horizontal, 9).padding(.vertical, 4)
+                .background(Capsule().fill(on ? Tab.overview.color.opacity(0.18) : Color.primary.opacity(0.06)))
+                .foregroundStyle(on ? Tab.overview.color : .primary)
+        }
+        .buttonStyle(.plain)
+    }
+
     var body: some View {
-        Card(title: "Menu bar", symbol: "menubar.rectangle", tint: Tab.overview.color) {
+        Card(title: "Menu bar and header", symbol: "menubar.rectangle", tint: Tab.overview.color) {
             Picker("Beside the icon", selection: $draft.menuBarShows) {
                 Text("Nothing").tag("none")
                 Text("CPU load").tag("load")
@@ -624,7 +643,15 @@ struct MenuBarSettingsCard: View {
                 Text("Battery").tag("battery")
             }
             .pickerStyle(.segmented)
-            Text("CPU load is the share of the whole Mac. Power draw is in watts. Battery shows the charge, and the time left when unplugged.")
+            Text("Text next to System Sentinel's icon in the menu bar. CPU load is the share of the whole Mac. Power draw is in watts. Battery shows the charge, and the time left when unplugged.")
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            Divider()
+            HStack(spacing: 6) {
+                Text("Panel header shows")
+                Spacer()
+                ForEach(Self.headerOptions, id: \.key) { o in headerToggle(o.key, o.label) }
+            }
+            Text("The figures at the top of this panel, beside All clear. Each is coloured green, amber or red, and opens the tab that explains it.")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
         Card(title: "Heat and power alerts", symbol: "thermometer.sun.fill", tint: Theme.heat(90)) {
