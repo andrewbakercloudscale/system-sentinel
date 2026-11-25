@@ -155,10 +155,32 @@ struct MenuView: View {
         return out
     }
 
+    /// Leaving Settings with unsaved changes asks first: save them, throw them away, or stay.
+    private func leave(to next: Tab) {
+        guard next != tab else { return }
+        guard tab == .settings, !fullLength, let edits = model.settingsEdits, edits != SettingsDraft(model) else {
+            tab = next; return
+        }
+        Confirm.ask(ConfirmRequest(
+            surface: "main", symbol: "pencil.circle.fill", tint: Tab.settings.color,
+            title: "Save your settings changes?",
+            message: "You changed settings on this tab but have not saved them. They only take effect once saved.",
+            confirm: .init(title: "Save") {
+                model.settingsEdits?.apply(to: model)
+                model.settingsEdits = nil
+                model.lastAction = "Settings saved"
+                tab = next
+            },
+            others: [.init(title: "Discard changes", destructive: true) {
+                model.settingsEdits = nil
+                tab = next
+            }]))
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             header
-            TabBar(selection: $tab, badges: [.events: model.flagged.count, .checkup: model.attention().count],
+            TabBar(selection: Binding(get: { tab }, set: { leave(to: $0) }), badges: [.events: model.flagged.count, .checkup: model.attention().count],
                    unsaved: model.settingsEdits.map { $0 != SettingsDraft(model) } == true ? [.settings] : [],
                    warnings: Self.tabWarnings(model.health))
                 .onChange(of: tab) { _, t in
@@ -174,7 +196,7 @@ struct MenuView: View {
                 .onChange(of: model.goTab) { _, t in
                     guard let t, let to = Tab.named(t) else { return }
                     if let page = to.page { UserDefaults.standard.set(page, forKey: to.tab.pageKey) }
-                    tab = to.tab
+                    leave(to: to.tab)
                     DispatchQueue.main.async { model.goTab = nil }
                 }
             Group {
