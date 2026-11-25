@@ -70,13 +70,13 @@ private struct Hero: View {
             // One panel each for the processor and the graphics chip: AI and graphics work
             // shows on the GPU, not the CPU.
             panel {
-                Dial(value: load, label: "CPU").tip("The whole Mac's CPU load right now")
+                Dial(value: load, label: "CPU", maxed: load >= Hero.maxedOut).tip("The whole Mac's CPU load right now")
                 VStack(alignment: .leading, spacing: 4) {
                     Text(headline(load)).font(.title3.weight(.bold)).foregroundStyle(.white)
                     Text(String(format: "%.1f of %d cores busy", busyCores, Int(model.cores)))
                         .font(.callout).foregroundStyle(.white.opacity(0.85))
                     HStack(spacing: 6) {
-                        ThermalChip(state: model.thermal)
+                        ThermalChip(state: model.thermal, celsius: model.chipTemp.flatMap { $0.cpu ?? $0.die }, labelled: model.chipTemp?.cpu != nil)
                         if let w = model.partWatts?.cpu { HeroChip(text: String(format: "%.1f W", w), symbol: "bolt.fill").tip("Power the CPU is drawing now") }
                         if ProcessInfo.processInfo.isLowPowerModeEnabled {
                             HeroChip(text: "Low Power", symbol: "leaf.fill")
@@ -101,17 +101,21 @@ private struct Hero: View {
                     }
                 }
                 Spacer(minLength: 8)
-                stats(model.machineAverage(60), model.machineAverage(900), model.machineAverage(3600), of: "the whole Mac's CPU")
+                stats(model.machineAverage(60), model.machineAverage(900), model.machineAverage(3600), of: "the whole Mac's CPU", rag: Hero.cpuRAG)
             }
             if let gpu = model.gpuStatus {
                 panel {
-                    Dial(value: gpu.busy, label: "GPU")
+                    Dial(value: gpu.busy, label: "GPU", maxed: gpu.busy >= Hero.maxedOut)
                         .tip("Graphics chip busy right now. Local AI models, video and games use it. The Graphics card below has the detail.")
                     VStack(alignment: .leading, spacing: 4) {
                         Text(gpuHeadline(gpu.busy)).font(.title3.weight(.bold)).foregroundStyle(.white)
                         Text(gpu.name.map { $0 + (gpu.cores.map { ", \($0) graphics cores" } ?? "") } ?? "Graphics chip")
                             .font(.callout).foregroundStyle(.white.opacity(0.85)).lineLimit(1)
                         HStack(spacing: 6) {
+                            if let c = model.chipTemp?.gpu {
+                                HeroChip(text: String(format: "%.0f°C", c), symbol: "thermometer.medium", fill: Hero.tempColor(c))
+                                    .tip("The hottest graphics core's temperature sensor. Green under 70°C, amber to 90°C, red above.")
+                            }
                             if let w = model.partWatts?.gpu { HeroChip(text: String(format: "%.1f W", w), symbol: "bolt.fill").tip("Power the graphics chip is drawing now") }
                             // The top two, in the same colours as the CPU panel's apps.
                             let top = Array(model.gpuApps.filter { $0.cpu >= 5 }.prefix(2))
@@ -123,7 +127,7 @@ private struct Hero: View {
                         }
                     }
                     Spacer(minLength: 8)
-                    stats(model.gpuAverage(60) ?? gpu.busy, model.gpuAverage(900) ?? gpu.busy, model.gpuAverage(3600) ?? gpu.busy, of: "the graphics chip")
+                    stats(model.gpuAverage(60) ?? gpu.busy, model.gpuAverage(900) ?? gpu.busy, model.gpuAverage(3600) ?? gpu.busy, of: "the graphics chip", rag: Hero.gpuRAG)
                 }
             }
             // Always shown on a Mac with a battery: power in and out, and how long it lasts.
@@ -149,13 +153,24 @@ private struct Hero: View {
             .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous).strokeBorder(.white.opacity(0.16), lineWidth: 1))
     }
 
-    private func stats(_ m1: Double, _ m15: Double, _ h1: Double, of what: String) -> some View {
+    private func stats(_ m1: Double, _ m15: Double, _ h1: Double, of what: String, rag: @escaping (Double) -> Color) -> some View {
         HStack(spacing: 10) {
-            Stat(label: "1 min", value: m1, of: what)
-            Stat(label: "15 min", value: m15, of: what)
-            Stat(label: "1 hour", value: h1, of: what)
+            Stat(label: "1 min", value: m1, of: what, fill: rag(m1))
+            Stat(label: "15 min", value: m15, of: what, fill: rag(m15))
+            Stat(label: "1 hour", value: h1, of: what, fill: rag(h1))
         }
     }
+
+    /// At or above this the part is maxed out: its dial and figures flash red.
+    static let maxedOut = 95.0
+    static let green = Color(hex: "#16a34a"), amber = Color(hex: "#d97706"), red = Color(hex: "#dc2626")
+    /// The same thresholds as the header's health chip: CPU amber from 40%, red from 70%;
+    /// graphics amber from 60%, red from 90%.
+    static func cpuRAG(_ v: Double) -> Color { v >= 70 ? red : v >= 40 ? amber : green }
+    static func gpuRAG(_ v: Double) -> Color { v >= 90 ? red : v >= 60 ? amber : green }
+    /// Apple silicon runs warm by design: under 70°C is fine, 70 to 90 is working hard,
+    /// over 90 is hot.
+    static func tempColor(_ c: Double) -> Color { c >= 90 ? red : c >= 70 ? amber : green }
 
     private func gpuHeadline(_ busy: Double) -> String {
         busy < 15 ? "Graphics idle" : busy < 40 ? "Graphics in use" : busy < 70 ? "Graphics working hard" : "Graphics flat out"
@@ -169,6 +184,7 @@ private struct Hero: View {
     private struct Dial: View {
         let value: Double
         let label: String
+        var maxed = false
         var body: some View {
             VStack(spacing: 6) {
                 Gauge(value: min(max(value, 0), 100), in: 0...100) {
@@ -180,8 +196,10 @@ private struct Hero: View {
                 .tint(Theme.machineHeat(value))
                 .scaleEffect(1.2)
                 .frame(width: 64, height: 64)
+                .background(Circle().fill(Hero.red).opacity(maxed ? 0.9 : 0).padding(-4))
                 Text(label).font(.caption.weight(.bold)).foregroundStyle(.white.opacity(0.9))
             }
+            .flashing(maxed)
         }
     }
 
@@ -189,6 +207,7 @@ private struct Hero: View {
         let label: String
         let value: Double
         var of = "the whole Mac's CPU"
+        var fill: Color = .white.opacity(0.12)
         var body: some View {
             VStack(spacing: 2) {
                 Text("\(Int(value.rounded()))%").font(.system(size: 17, weight: .bold, design: .rounded)).foregroundStyle(.white)
@@ -196,7 +215,8 @@ private struct Hero: View {
             }
             .frame(minWidth: 44)
             .padding(.vertical, 6).padding(.horizontal, 4)
-            .background(RoundedRectangle(cornerRadius: 8).fill(.white.opacity(0.12)))
+            .background(RoundedRectangle(cornerRadius: 8).fill(fill))
+            .flashing(value >= Hero.maxedOut)
             .tip("Average use of \(of) over the last \(label)")
         }
     }
@@ -313,16 +333,36 @@ struct BatteryTimeChip: View {
     }
 }
 
+/// macOS's own heat verdict (Cool, Warm, Hot, Overheating: whether it is slowing the chip to
+/// cool it), with the chip's temperature where the sensors give one.
 private struct ThermalChip: View {
     let state: ProcessInfo.ThermalState
+    var celsius: Double? = nil
+    /// The reading is the CPU's own sensor, not the hottest spot on the chip.
+    var labelled = false
     var body: some View {
-        switch state {
-        // Green, amber, red, purple: the same colours as the power chips beside it.
-        case .nominal: HeroChip(text: "Cool", symbol: "thermometer.low", fill: Color(hex: "#16a34a"))
-        case .fair: HeroChip(text: "Warm", symbol: "thermometer.medium", fill: Color(hex: "#d97706"))
-        case .serious: HeroChip(text: "Hot, throttling", symbol: "thermometer.high", fill: Color(hex: "#dc2626"))
-        case .critical: HeroChip(text: "Overheating", symbol: "thermometer.sun.fill", fill: Color(hex: "#581c87"), outlined: true)
-        @unknown default: EmptyView()
+        let t = celsius.map { String(format: " · %@%.0f°C", labelled ? "" : "chip ", $0) } ?? ""
+        Group {
+            switch state {
+            // Green, amber, red, purple: the same colours as the power chips beside it.
+            case .nominal: HeroChip(text: "Cool" + t, symbol: "thermometer.low", fill: Color(hex: "#16a34a"))
+            case .fair: HeroChip(text: "Warm" + t, symbol: "thermometer.medium", fill: Color(hex: "#d97706"))
+            case .serious: HeroChip(text: "Hot, throttling" + t, symbol: "thermometer.high", fill: Color(hex: "#dc2626"))
+            case .critical: HeroChip(text: "Overheating" + t, symbol: "thermometer.sun.fill", fill: Color(hex: "#581c87"), outlined: true).flashing(true)
+            @unknown default: EmptyView()
+            }
+        }
+        .tip("Cool, Warm, Hot or Overheating is macOS's own verdict: whether it is slowing the chip down to cool it. "
+             + (celsius == nil ? "" : labelled ? "The figure is the hottest CPU core's temperature sensor. Apple silicon runs at 40 to 100°C by design." : "The figure is the hottest of the chip's own sensors; this chip does not say which belong to the CPU and which to the graphics, so there is one figure for both. Apple silicon runs at 40 to 100°C by design."))
+    }
+}
+
+extension View {
+    /// Pulses the view when something is maxed out, so it catches the eye.
+    func flashing(_ on: Bool) -> some View {
+        TimelineView(.animation(minimumInterval: 1 / 20, paused: !on)) { ctx in
+            let phase = ctx.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.2) / 1.2
+            self.opacity(on ? 0.45 + 0.55 * (0.5 + 0.5 * cos(phase * 2 * .pi)) : 1)
         }
     }
 }

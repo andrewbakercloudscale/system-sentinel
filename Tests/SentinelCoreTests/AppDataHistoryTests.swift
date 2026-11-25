@@ -86,4 +86,11 @@ import Foundation
         #expect(AppIdentity.launchLabel(args: args, agents: agents) == "com.sg-tightener.console")
         #expect(AppIdentity.launchLabel(args: [py, "-B", "-m", "linkedin_relay.mcp_server"], agents: agents) == nil)
     }
+
+    @Test func chipTemperatureSortsSensors() {
+        let m5 = ChipTemperature.of([("PMU tdie1", 51.5), ("PMU2 tdie6", 53.0), ("PMU tdev1", -22.1), ("gas gauge battery", 33.0)])
+        #expect(m5.cpu == nil && m5.gpu == nil && m5.die == 53.0)
+        let m1 = ChipTemperature.of([("pACC MTR Temp Sensor2", 60), ("eACC MTR Temp Sensor0", 48), ("GPU MTR Temp Sensor1", 44)])
+        #expect(m1.cpu == 60 && m1.gpu == 44 && m1.die == 60)
+    }
 }

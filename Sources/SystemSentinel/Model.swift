@@ -87,6 +87,8 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
     @Published var gpuHistory: [(at: Date, busy: Double)] = []
     /// Watts by part (CPU, graphics, Neural Engine, memory), and the graphics watts over the last hour.
     @Published var partWatts: PartPower.Watts?
+    /// The chip's own temperature sensors, read with the power counters.
+    @Published var chipTemp: ChipTemperature?
     /// The built-in screen's brightness and backlight current. nil without a built-in screen.
     @Published var screenLight: ScreenLight?
     @Published var gpuWattsHistory: [(at: Date, watts: Double)] = []
@@ -454,6 +456,7 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
             readMemory(now)
         }
         if due(&lastGPURead, every: RefreshRates.clamp(refreshGPU, RefreshRates.followers), at: now) { readGPU(now) }
+        if powerDue { chipTemp = ChipTemperature.read() }
         if powerDue, let w = partPower?.read(now: now) {
             partWatts = w
             screenLight = Self.readScreenLight()
