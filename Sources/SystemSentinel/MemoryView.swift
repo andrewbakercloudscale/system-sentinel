@@ -512,7 +512,7 @@ private struct CleanUp: View {
             SymbolTile(symbol: symbol, color: Tab.memory.color, size: 24)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(.callout.weight(.semibold))
-                Text(text).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                Text(metrics: text).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 if let extra { extra }
             }
             Spacer(minLength: 6)
@@ -668,7 +668,7 @@ private struct MemoryGuide: View {
             SymbolTile(symbol: symbol, color: Tab.memory.color, size: 24)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(.callout.weight(.semibold))
-                Text(text).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                Text(metrics: text).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
         }
     }

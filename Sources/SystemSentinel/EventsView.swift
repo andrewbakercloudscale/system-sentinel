@@ -133,7 +133,7 @@ private struct EventRow: View {
                     Pill(text: EventsView.label(e.kind), color: EventsView.color(e.kind))
                 }
                 if let detail = Self.friendly(e.detail) {
-                    Text(detail).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    Text(metrics: detail).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
             }
             Spacer()

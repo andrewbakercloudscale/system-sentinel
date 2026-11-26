@@ -139,7 +139,7 @@ private struct ItemRow: View {
             VStack(alignment: .leading, spacing: 1) {
                 Text(item.name).font(.callout).lineLimit(1).truncationMode(.middle)
                 Text(subtitle ?? shortPath(item.path)).font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
-                if let note { Text(note).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
+                if let note { Text(metrics: note).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
             }
             Spacer(minLength: 6)
             Text(gb(item.bytes)).font(.callout.weight(.semibold)).monospacedDigit()

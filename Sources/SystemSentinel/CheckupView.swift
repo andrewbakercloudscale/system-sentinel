@@ -194,7 +194,7 @@ struct CheckupView: View {
             }
             if isOpen {
                 VStack(alignment: .leading, spacing: 4) {
-                    if let why = c.why { Text(why).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
+                    if let why = c.why { Text(metrics: why).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
                     ForEach(Array(c.steps.enumerated()), id: \.offset) { i, s in
                         Text("\(i + 1). \(s)").font(.caption).fixedSize(horizontal: false, vertical: true)
                     }

@@ -830,7 +830,7 @@ struct InsightCard: View {
                 SymbolTile(symbol: i.symbol, color: color)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(i.title).font(.callout.weight(.semibold)).fixedSize(horizontal: false, vertical: true)
-                    Text(i.detail).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    Text(metrics: i.detail).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 0)
                 if let onIgnore { IgnoreButton(subject: !i.related.isEmpty, action: onIgnore) }
@@ -855,12 +855,12 @@ struct InsightCard: View {
             if expanded {
                 if let about = i.about {
                     Section("What it is") {
-                        Text(about).font(.caption).fixedSize(horizontal: false, vertical: true)
+                        Text(metrics: about).font(.caption).fixedSize(horizontal: false, vertical: true)
                     }
                 }
                 if let why = i.why {
                     Section("What is happening") {
-                        Text(why).font(.caption).fixedSize(horizontal: false, vertical: true)
+                        Text(metrics: why).font(.caption).fixedSize(horizontal: false, vertical: true)
                     }
                 }
                 if !i.related.isEmpty {
@@ -939,7 +939,7 @@ private struct RelatedRow: View {
                     if s.isRoot { Pill(text: "root", symbol: "lock.fill", color: Color(hex: "#b45309")) }
                 }
                 if let about = related.about {
-                    Text(about).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    Text(metrics: about).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
                 if let parent = related.parent {
                     Label("started by \(parent)", systemImage: "arrow.turn.down.right")
