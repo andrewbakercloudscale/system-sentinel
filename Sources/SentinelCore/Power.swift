@@ -34,6 +34,11 @@ public struct BatteryStatus: Equatable, Sendable {
     /// Negative while plugged in means the charger cannot keep up.
     public var batteryWatts: Double?
     public var lowPowerMode: Bool
+    /// Plugged in, yet the battery is giving out power now: the watts it covers. nil otherwise.
+    public var netDraw: Double? {
+        guard !onBattery, let w = batteryWatts, w <= -0.5 else { return nil }
+        return -w
+    }
     /// Battery voltage in volts, to turn mAh into watt-hours.
     public var voltage: Double?
     /// The "Maximum Capacity" percentage System Settings shows. Apple's own figure, which

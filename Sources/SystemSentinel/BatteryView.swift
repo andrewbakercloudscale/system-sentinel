@@ -77,7 +77,9 @@ private struct BatteryHero: View {
         }
         .padding(16)
         .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(
-            LinearGradient(colors: [Color(hex: "#15803d"), Color(hex: "#0f766e")], startPoint: .topLeading, endPoint: .bottomTrailing)))
+            LinearGradient(colors: battery.netDraw != nil || minutesLeft != nil
+                           ? [Color(hex: "#dc2626"), Color(hex: "#9f1239")]
+                           : [Color(hex: "#15803d"), Color(hex: "#0f766e")], startPoint: .topLeading, endPoint: .bottomTrailing)))
     }
 
     private var headline: String {
@@ -86,6 +88,7 @@ private struct BatteryHero: View {
             return eta.map { "Empty in \(Insights.duration(Double($0.minutes) * 60))" } ?? "On battery"
         }
         if let m = minutesLeft { return "Losing charge: empty in \(Insights.duration(Double(m) * 60))" }
+        if b.netDraw != nil { return "Plugged in, using battery" }
         if b.charging { return b.minutesToFull.map { "Full in \(Insights.duration(Double($0) * 60))" } ?? "Charging" }
         return b.fullyCharged || b.percent >= 100 ? "Charged, on power" : "On power, not charging"
     }
@@ -95,7 +98,11 @@ private struct BatteryHero: View {
         if b.onBattery, let e = eta { return "Around \(BatteryETABanner.clock(e.minutes)), \(BatteryETABanner.basis(e))" }
         if b.onBattery { return "Running on battery" }
         if minutesLeft != nil { return "Losing charge on power: the charger is too small for what the Mac is doing" }
-        if b.charging { return "Charging" }
+        if let d = b.netDraw {
+            return (b.adapterWatts.map { "The \($0) W charger" } ?? "The charger")
+                + String(format: " cannot keep up: the battery is covering %.1f W", d)
+        }
+        if b.charging { return b.batteryWatts.flatMap { $0 >= 0.5 ? String(format: "%.1f W going into the battery", $0) : nil } ?? "Charging" }
         if b.percent < 100 { return "macOS is holding the charge to protect the battery" }
         return "Plugged in"
     }
@@ -216,15 +223,20 @@ struct BatteryETABanner: View {
             } else if b.onBattery {
                 Text("On battery: the time left appears once there is a reading.").font(.callout).foregroundStyle(.secondary)
             } else {
+                let red = Color(hex: "#dc2626")
                 HStack(spacing: 10) {
-                    SymbolTile(symbol: b.charging ? "battery.100percent.bolt" : "powerplug.fill", color: Tab.battery.color, size: 32)
-                    Text(b.charging ? (b.minutesToFull.map { "Plugged in: full in \(Insights.duration(Double($0) * 60))" } ?? "Plugged in, charging")
-                                    : "Plugged in at \(b.percent)%: no battery countdown while on power")
-                        .font(.headline)
+                    SymbolTile(symbol: b.netDraw != nil ? "battery.25percent" : b.charging ? "battery.100percent.bolt" : "powerplug.fill",
+                               color: b.netDraw != nil ? red : Tab.battery.color, size: 32)
+                    // "Plugged in, charging at 12 W: full in 1h 5m": the watts going into the battery.
+                    let rate = b.batteryWatts.flatMap { $0 >= 0.5 ? String(format: " at %.0f W", $0) : nil } ?? ""
+                    Text(b.netDraw.map { String(format: "Plugged in, but the battery is going down at %.1f W", $0) }
+                         ?? (b.charging ? "Plugged in, charging\(rate)" + (b.minutesToFull.map { ": full in \(Insights.duration(Double($0) * 60))" } ?? "")
+                                    : "Plugged in at \(b.percent)%: no battery countdown while on power"))
+                        .font(.headline).foregroundStyle(b.netDraw != nil ? red : .primary)
                     Spacer(minLength: 0)
                 }
                 .padding(10)
-                .background(RoundedRectangle(cornerRadius: 10).fill(Tab.battery.color.opacity(0.08)))
+                .background(RoundedRectangle(cornerRadius: 10).fill((b.netDraw != nil ? red : Tab.battery.color).opacity(0.08)))
             }
         }
     }
