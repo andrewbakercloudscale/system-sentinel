@@ -95,6 +95,9 @@ public final class DailyUsage {
         return n
     }
 
+    /// The whole-chip entry in the graphics store, beside the per-app ones.
+    public static let gpuBusyKey = "#gpu-busy"
+
     public static func hour(_ d: Date) -> Int { Int(d.timeIntervalSince1970) / 3600 * 3600 }
 
     /// The hour starts of the last `hours` hours, oldest first, ending with the current one.
@@ -203,6 +206,21 @@ public final class DailyUsage {
             guard c > 0 else { return 0 }
             return entries.values.reduce(0) { $0 + ($1.hours[h] ?? 0) } / c * 100
         }
+    }
+
+    /// One entry's mean percent per bucket, oldest first (0 where nothing was sampled).
+    public func hourly(for key: String, at now: Date, hours: Int = 24) -> [Double] {
+        starts(at: now, count: count(hours)).map { h in
+            let c = coverage[h] ?? 0
+            guard c > 0, let e = entries[key] else { return 0 }
+            return (e.hours[h] ?? 0) / c * 100
+        }
+    }
+
+    /// One entry's highest sample in the last `hours`.
+    public func peak(for key: String, at now: Date, hours: Int = 24) -> Double? {
+        let since = start(now) - (count(hours) - 1) * bucket
+        return entries[key]?.peaks.filter { $0.key >= since }.values.max()
     }
 
     public func save() {

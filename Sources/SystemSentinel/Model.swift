@@ -124,6 +124,9 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
     let powerHistory: PowerHistory
     /// Energy Impact per app, hourly for 7 days, stored the same way as CPU.
     let energyUsage: DailyUsage
+    /// Graphics chip busy per hour (key `DailyUsage.gpuBusyKey`) and each app's share of it, for
+    /// the Next Mac page. Same format as CPU.
+    let gpuUsage: DailyUsage
     private let coreSampler = CoreSampler()
     private let wakeups = WakeupTracker()
     private var lastEnergy: Date?
@@ -311,6 +314,8 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
         energyUsage = DailyUsage(fileURL: Model.supportDir.appendingPathComponent("energy-7d.json"), maxStep: 45,
                                  saveEvery: 900, readOnly: Model.snapshotDir != nil)
         energyUsage.dropOutliers(above: EnergySampler.maxImpact)
+        gpuUsage = DailyUsage(fileURL: Model.supportDir.appendingPathComponent("gpu-hourly.json"), maxStep: 45,
+                              saveEvery: 900, readOnly: Model.snapshotDir != nil)
         memoryHistory = MemoryHistory(fileURL: Model.supportDir.appendingPathComponent("memory-7d.json"), readOnly: Model.snapshotDir != nil)
         healthLog = HealthLog(fileURL: Model.supportDir.appendingPathComponent("battery-health.json"), readOnly: Model.snapshotDir != nil)
         storage = StorageStore(supportDir: Model.supportDir, readOnly: Model.snapshotDir != nil)
@@ -354,6 +359,7 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
         sentinel.dailyUsage.maxStep = max(15, every * 3)
         sentinel.recentUsage.maxStep = max(15, every * 3)
         energyUsage.maxStep = max(45, RefreshRates.clamp(refreshEnergy, RefreshRates.energy) * 1.5)
+        gpuUsage.maxStep = max(45, RefreshRates.clamp(refreshGPU, RefreshRates.followers) * 1.5)
         if let t = timer, t.timeInterval == every { return }
         timer?.invalidate()
         timer = Timer.scheduledTimer(withTimeInterval: every, repeats: true) { [weak self] _ in
@@ -631,6 +637,7 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
         memoryHistory.retain = Double(days) * 86_400
         powerHistory.retain = Double(days) * 86_400
         energyUsage.retainHours = days * 24
+        gpuUsage.retainHours = days * 24
         sentinel.dailyUsage.retainHours = days * 24
     }
 
@@ -736,6 +743,15 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
             return s
         }
         return sentinel.latest.filter { $0.pid != getpid() }.max { sentinel.cpuHistory.average($0.pid, over: 60, at: now) < sentinel.cpuHistory.average($1.pid, over: 60, at: now) }
+    }
+
+    /// The menu bar glyph while everything is green: the kind of figure shown beside it.
+    var menuBarGlyph: String {
+        switch menuBarShows {
+        case "watts": return "bolt.fill"
+        case "battery": return battery?.onBattery == false ? "battery.100percent.bolt" : "battery.75percent"
+        default: return "cpu"
+        }
     }
 
     /// The text beside the menu bar icon, per the setting.
@@ -1419,6 +1435,8 @@ final class Model: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
             apps[k] = g
         }
         gpuAppLog.append((now, apps.mapValues { min($0.share, 100) }))
+        gpuUsage.record([ProcessSample(pid: 0, uid: 0, cpu: s.busy, path: DailyUsage.gpuBusyKey)]
+                        + apps.map { ProcessSample(pid: 0, uid: 0, cpu: min($0.value.share, 100), path: $0.key) }, at: now)
         gpuAppLog.removeAll { now.timeIntervalSince($0.at) > 300 }
         gpuAppPIDs.merge(pids) { _, new in new }
         let names = Dictionary(memoryApps.map { ($0.key, $0.name) }, uniquingKeysWith: { a, _ in a })
@@ -1890,6 +1908,7 @@ extension Model {
         sentinel.dailyUsage.save()
         sentinel.recentUsage.save()
         energyUsage.save()
+        gpuUsage.save()
         powerHistory.save()
         memoryHistory.save()
         storage.history.save()

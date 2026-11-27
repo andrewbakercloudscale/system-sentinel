@@ -3,7 +3,7 @@ import SwiftUI
 
 extension Model {
     /// What this Mac has done over the kept history, up to 30 days, from the stores the other
-    /// pages already keep: CPU per hour, memory and swap per minute, disk use, power.
+    /// pages already keep: CPU and graphics per hour, memory per minute, disk use.
     func deviceWorkload(at now: Date = Date()) -> DeviceAdvisor.Workload {
         let hours = min(retentionDays, 30) * 24
         let usage = sentinel.dailyUsage
@@ -19,19 +19,41 @@ extension Model {
         let need = mem.map { Double($0.used) }
         let pressured = mem.filter { $0.pressure >= MemoryStatus.Pressure.warning.rawValue }.count
 
-        let power = powerHistory.points.filter { $0.t >= since }
-        let powerN = power.reduce(0) { $0 + $1.n }
-        let onBattery = power.filter(\.onBattery).reduce(0) { $0 + $1.n }
+        // Graphics: hours with ten minutes of readings, as for CPU.
+        let gUse = gpuUsage
+        let gCov = gUse.coverageHourly(at: now, hours: hours)
+        let gpu = zip(gUse.hourly(for: DailyUsage.gpuBusyKey, at: now, hours: hours), gCov).filter { $0.1 >= 600 }.map(\.0)
+        let gpuHours = gCov.reduce(0, +) / 3600
+        // Under an hour stored yet (the first day after updating): the last hour in memory.
+        let recentGPU = gpuHistory.map(\.busy)
+        let gpuFigures: (Double, Double, Double)? = !gpu.isEmpty
+            ? (DeviceAdvisor.percentile(gpu, 0.5), DeviceAdvisor.percentile(gpu, 0.95),
+               gUse.peak(for: DailyUsage.gpuBusyKey, at: now, hours: hours) ?? gpu.max() ?? 0)
+            : recentGPU.isEmpty ? nil
+            : (DeviceAdvisor.percentile(recentGPU, 0.5), recentGPU.reduce(0, +) / Double(recentGPU.count), recentGPU.max() ?? 0)
 
-        // The kinds of work, from the apps that did at least a twentieth of the CPU work or
-        // held 4 GB of memory.
+        // Who uses this Mac, from three views of each app's share of the work: CPU time (half
+        // the weight), memory held over time (a third) and graphics time (the rest). Office,
+        // chat and browsers do little CPU work but hold memory all day.
+        func shares(_ pairs: [(String, Double)]) -> [String: Double] {
+            let t = pairs.reduce(0) { $0 + $1.1 }
+            guard t > 0 else { return [:] }
+            return pairs.reduce(into: [:]) { $0[$1.0, default: 0] += $1.1 / t }
+        }
         let rows = usage.summaries(at: now, hours: hours, group: Model.appKey, name: Model.appName)
-        let totalCS = max(rows.reduce(0) { $0 + $1.coreSeconds }, 1)
-        var apps = rows.prefix(25).map { (name: $0.name, share: $0.coreSeconds / totalCS) }
-        var biggest: [String: UInt64] = [:]
-        for p in mem { for a in p.apps { biggest[a.name] = max(biggest[a.name] ?? 0, a.bytes) } }
-        apps += biggest.filter { $0.value >= 4 << 30 }.map { (name: $0.key, share: 1.0) }
-        let kindApps = DeviceAdvisor.kinds(in: apps)
+        let cpuShare = shares(rows.prefix(60).map { ($0.name, $0.coreSeconds) })
+        var held: [String: Double] = [:]
+        for p in mem { for a in p.apps { held[a.name, default: 0] += Double(a.bytes) } }
+        let memShare = shares(held.map { ($0.key, $0.value) })
+        let gpuRows = gUse.summaries(at: now, hours: hours, group: Model.appKey, name: Model.appName)
+            .filter { $0.key != DailyUsage.gpuBusyKey && $0.name != DailyUsage.gpuBusyKey }
+        let gpuShare = shares(gpuRows.prefix(30).map { ($0.name, $0.coreSeconds) })
+        let weights = gpuShare.isEmpty ? (0.6, 0.4, 0.0) : (0.5, 0.3, 0.2)
+        var combined: [String: Double] = [:]
+        for (k, v) in cpuShare { combined[k, default: 0] += v * weights.0 }
+        for (k, v) in memShare { combined[k, default: 0] += v * weights.1 }
+        for (k, v) in gpuShare { combined[k, default: 0] += v * weights.2 }
+        let profiles = DeviceAdvisor.profiles(in: combined.map { (name: $0.key, share: $0.value) })
 
         let disk = storage.disk
         let diskPoints = storage.history.since(now.addingTimeInterval(-30 * 86_400))
@@ -42,8 +64,8 @@ extension Model {
             cpuTypical: DeviceAdvisor.percentile(cpu, 0.5), cpuBusy: DeviceAdvisor.percentile(cpu, 0.95), cpuPeak: cpu.max() ?? 0,
             memoryNeed: UInt64(DeviceAdvisor.percentile(need, 0.95)), memoryPeak: UInt64(need.max() ?? 0),
             pressureShare: mem.isEmpty ? 0 : Double(pressured) / Double(mem.count),
-            batteryShare: powerN > 0 ? Double(onBattery) / Double(powerN) : nil,
-            kinds: kindApps.keys.sorted(), kindApps: kindApps)
+            gpuTypical: gpuFigures?.0, gpuBusy: gpuFigures?.1, gpuPeak: gpuFigures?.2,
+            gpuHours: gpu.isEmpty ? (recentGPU.isEmpty ? 0 : 1) : gpuHours, profiles: profiles)
     }
 
     /// The built-in screen's diagonal in inches, rounded. nil on a desktop Mac or with the lid shut.
@@ -110,7 +132,7 @@ struct DeviceRecommenderView: View {
                         Spacer(minLength: 0)
                     }
                     HStack(alignment: .top, spacing: 10) {
-                        PickCard(title: "Budget", symbol: "dollarsign.circle.fill", tint: Self.budget,
+                        PickCard(title: "Recommended", symbol: "checkmark.seal.fill", tint: Self.budget,
                                  lead: "The least that fits this workload", pick: a.budget)
                         PickCard(title: "Gold Plated", symbol: "crown.fill", tint: Self.gold,
                                  lead: "Room to grow for four or five years", pick: a.gold)
@@ -145,17 +167,25 @@ private struct ThisMacCard: View {
             row("cpu.fill", "Processor", v.cpu, v.cpuText)
             row("memorychip.fill", "Memory", v.memory, v.memoryText)
             row("internaldrive.fill", "Disk", v.disk, v.diskText)
-            if let b = w.batteryShare {
-                row("battery.75percent", "Battery", .good, String(format: "On battery %.0f%% of the time.", b * 100))
-            }
-            if !w.kinds.isEmpty {
+            if let t = v.gpuText { row("square.stack.3d.up.fill", "Graphics", v.gpu, t) }
+            if let top = w.profiles.first {
+                Divider()
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text("Workloads seen").font(.callout.weight(.semibold)).frame(width: 110, alignment: .leading)
-                    FlowLayout(spacing: 6) {
-                        ForEach(w.kinds, id: \.self) { k in
-                            Pill(text: w.kindApps[k].map { "\(k.rawValue): \($0)" } ?? k.rawValue, color: Theme.trends)
+                    Image(systemName: top.profile.symbol).foregroundStyle(Theme.trends).frame(width: 18)
+                    Text("User type").font(.callout.weight(.semibold)).frame(width: 86, alignment: .leading)
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(top.profile.rawValue).font(.title3.weight(.bold))
+                        Text(top.profile.needs).font(.callout).fixedSize(horizontal: false, vertical: true)
+                        FlowLayout(spacing: 6) {
+                            ForEach(w.profiles, id: \.profile) { p in
+                                Pill(text: "\(p.profile.rawValue) \(Int((p.share * 100).rounded()))%: \(p.apps.joined(separator: ", "))",
+                                     symbol: p.profile.symbol, color: p.profile == top.profile ? Theme.trends : .secondary)
+                            }
                         }
+                        Text("Share of the work: CPU time, memory held and graphics time of each app, sorted by what it is used for.")
+                            .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     }
+                    Spacer(minLength: 0)
                 }
             }
         }
