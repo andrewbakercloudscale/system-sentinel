@@ -643,7 +643,7 @@ struct MenuBarSettingsCard: View {
                 Text("Battery").tag("battery")
             }
             .pickerStyle(.segmented)
-            Text("Text next to System Sentinel's icon in the menu bar. CPU load is the share of the whole Mac. Power draw is in watts. Battery shows the charge, and the time left when unplugged.")
+            Text("Text next to System Sentinel's icon in the menu bar. CPU load is the share of the whole Mac. Power draw is in watts. Battery shows the charge, and the time left when unplugged. The icon's colour is the whole Mac's health; its symbol shows what is wrong (CPU, then GPU, memory, disk), or the figure beside it when all is well.")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             Divider()
             HStack(spacing: 6) {

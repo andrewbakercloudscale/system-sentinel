@@ -45,8 +45,11 @@ struct SystemSentinelApp: App {
         if blink.active { return Self.plugIcon(lit: blink.lit) }
         let alert = model.level == .alert
         let h = model.health
-        // The glyph names the worst risk: chip, memory, disk, heat or battery.
-        return Self.menuIcon(alert: alert, rag: h.rag, update: model.update != nil, symbol: h.reasons.first?.symbol)
+        // The colour is the whole Mac's health. The glyph names the worst risk (red before
+        // amber, then CPU, GPU, memory, disk, heat, battery); all green, it matches the figure
+        // beside it, so a green chip next to watts does not read as a CPU figure.
+        return Self.menuIcon(alert: alert, rag: h.rag, update: model.update != nil,
+                             symbol: h.reasons.first?.symbol ?? model.menuBarGlyph)
     }
 
     /// Green under 40% of the Mac over the last minute, amber to 70%, red above or when
