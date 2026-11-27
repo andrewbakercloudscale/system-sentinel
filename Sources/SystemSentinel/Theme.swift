@@ -184,7 +184,7 @@ enum Tab: Int, CaseIterable, Identifiable {
     /// Settings, so the bar has nine tabs instead of eleven.
     var pages: [(title: String, symbol: String, color: Color)] {
         switch self {
-        case .overview: return [("Now", symbol, color), ("Trends", "chart.bar.xaxis", Theme.trends)]
+        case .overview: return [("Now", symbol, color), ("Trends", "chart.bar.xaxis", Theme.trends), ("Next Mac", "laptopcomputer", DeviceRecommenderView.gold)]
         case .settings: return [("Settings", symbol, color), ("Rules", "slider.horizontal.3", Theme.rules)]
         default: return []
         }

@@ -335,7 +335,7 @@ struct MenuView: View {
         switch tab {
         case .overview:
             TabPages(tab: .overview, forced: forcedPage) { page in
-                if page == "Trends" { TrendsView(model: model) } else { OverviewView(model: model) }
+                if page == "Trends" { TrendsView(model: model) } else if page == "Next Mac" { DeviceRecommenderView(model: model) } else { OverviewView(model: model) }
             }
         case .processes: ProcessesView(model: model)
         case .memory: MemoryView(model: model)
